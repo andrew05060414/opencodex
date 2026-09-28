@@ -126,7 +126,7 @@ alias <provider> <id|alias> <display-name|->  Set or clear an account's display 
 pause <provider> <id|alias|main>  Hold an account out of automatic selection.
 resume <provider> <id|alias|main>  Return a paused account to automatic selection.
 pause-exhausted <provider>  Pause every account whose quota is spent.
-clear-cooldown <provider> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
+clear-cooldown <openai|anthropic> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
 strategy <provider> [<quota|round-robin|fill-first|least-loaded|reset-first>]  Havuz stratejisi; least-loaded yalnızca Kiro içindir.
 sticky <provider> [<1-100>]  Requests a bound thread keeps on one account; omit the value to read it.
 priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|reset]  Selection order; omit the value to read it.
@@ -238,6 +238,21 @@ ayar yalnızca kullanıma dayalı proaktif geçişi devre dışı bırakır.
 ### `ocx account clear <provider> [--json]`
 
 Bir hesap id'si çözümlemeden Codex hesabının elle seçimini temizler; `auto` adında bir hesap olsa bile çalışır. Yalnızca Codex havuzları içindir; diğer sağlayıcı türlerinde geri yüklenecek otomatik seçim yoktur.
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+Kaydedilmiş kimlik bilgilerini değiştirmeden süreç içi hata cooldown durumunu kaldırır. Codex havuzu
+hesabı için `openai`, Anthropic OAuth hesabı için `anthropic` kullanın; diğer sağlayıcılar reddedilir.
+Her iki biçim de hesap id'sini veya benzersiz takma adı kabul eder, `main` ise yalnızca Codex havuzuna
+özgüdür.
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+Etkin cooldown olmasa da komut başarılı olur ve JSON'da `cleared: false` döner. Anthropic cooldown
+temizliği hesap generation değerini de ilerletir; böylece eski bir quota probe temizlenen durumu geri
+getiremez veya eski quota uygunluğunu yayımlayamaz.
 
 ### `ocx account refresh <provider> [--json]`
 

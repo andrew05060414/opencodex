@@ -107,7 +107,7 @@ alias <provider> <id|alias> <display-name|->  Set or clear an account's display 
 pause <provider> <id|alias|main>  Hold an account out of automatic selection.
 resume <provider> <id|alias|main>  Return a paused account to automatic selection.
 pause-exhausted <provider>  Pause every account whose quota is spent.
-clear-cooldown <provider> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
+clear-cooldown <openai|anthropic> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
 strategy <provider> [<quota|round-robin|fill-first|reset-first>]  Pool placement strategy; omit the value to read it.
 sticky <provider> [<1-100>]  Requests a bound thread keeps on one account; omit the value to read it.
 priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|reset]  Selection order; omit the value to read it.
@@ -193,6 +193,21 @@ credential'а, это состояние тоже печатается, но к�
 ### `ocx account clear <provider> [--json]`
 
 Снимает ручной выбор аккаунта Codex без разрешения id, поэтому работает, даже когда аккаунт буквально называется `auto`. Только для пулов Codex; у других типов провайдеров нет автоматического выбора для восстановления.
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+Снимает локальный для процесса cooldown после сбоя, не меняя сохранённые учётные данные. Используйте
+`openai` для аккаунта пула Codex или `anthropic` для OAuth-аккаунта Anthropic; другие провайдеры
+отклоняются. Обе формы принимают id аккаунта или уникальный псевдоним, а `main` относится только к
+пулу Codex.
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+Команда завершается успешно и без активного cooldown, возвращая `cleared: false` в JSON. При снятии
+cooldown Anthropic также увеличивается поколение аккаунта, поэтому старый quota probe не сможет
+восстановить снятое состояние или опубликовать устаревшую доступность.
 
 ### `ocx account refresh <provider> [--json]`
 

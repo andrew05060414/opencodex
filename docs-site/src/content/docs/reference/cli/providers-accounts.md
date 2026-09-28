@@ -251,7 +251,7 @@ alias <provider> <id|alias> <display-name|->  Set or clear an account's display 
 pause <provider> <id|alias|main>  Hold an account out of automatic selection.
 resume <provider> <id|alias|main>  Return a paused account to automatic selection.
 pause-exhausted <provider>  Pause every account whose quota is spent.
-clear-cooldown <provider> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
+clear-cooldown <openai|anthropic> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
 strategy <provider> [<quota|round-robin|fill-first|least-loaded|reset-first>]  Pool placement strategy; least-loaded is Kiro-only.
 sticky <provider> [<1-100>]  Requests a bound thread keeps on one account; omit the value to read it.
 priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|reset]  Selection order; omit the value to read it.
@@ -483,6 +483,20 @@ alias. The JSON response reports the account id, pause state, and active account
 ocx account pause google-antigravity <account-id-or-alias>
 ocx account resume google-antigravity <account-id-or-alias>
 ```
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+Drops a process-local failure cooldown without changing stored credentials. Use `openai` for a Codex
+pool account or `anthropic` for an Anthropic OAuth account; other providers are rejected. Both forms
+accept an account id or unique alias, while `main` is specific to the Codex pool.
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+The command reports success even when no cooldown is active, with `cleared: false` in JSON. Clearing
+an Anthropic cooldown also advances the account generation so an older in-flight quota probe cannot
+restore the cleared state or publish stale quota-derived eligibility afterward.
 
 ### `ocx account refresh <provider> [--json]`
 

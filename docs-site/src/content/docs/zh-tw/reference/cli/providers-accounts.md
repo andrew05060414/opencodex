@@ -76,7 +76,7 @@ priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|r
 pause <provider> <id|alias|main>  將帳號移出自動選擇。
 resume <provider> <id|alias|main>  將暫停的帳號放回自動選擇。
 pause-exhausted <provider>  暫停所有配額已用盡的帳號。
-clear-cooldown <provider> <id|alias|main>  清除上游失敗後設定的冷卻。
+clear-cooldown <openai|anthropic> <id|alias|main>  清除上游失敗後設定的冷卻。
 strategy <provider> [<quota|round-robin|fill-first|reset-first>]  帳號池放置策略；省略取值即讀取目前值。
 sticky <provider> [<1-100>]  已綁定執行緒在同一帳號上保留的請求數；省略取值即讀取目前值。
 remove <provider> <id|alias|main> --yes  在存在檢查後移除已儲存的帳號或金鑰。
@@ -157,6 +157,19 @@ JSON 回應會提供帳號 id、暫停狀態與目前 active 帳號 id。
 ocx account pause google-antigravity <account-id-or-alias>
 ocx account resume google-antigravity <account-id-or-alias>
 ```
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+清除行程本地的失敗冷卻，但不變更已儲存的憑證。Codex 池帳號使用 `openai`，Anthropic
+OAuth 帳號使用 `anthropic`；其他供應商會被拒絕。兩種形式都接受帳號 id 或唯一別名，
+而 `main` 僅適用於 Codex 池。
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+即使沒有作用中的冷卻，命令也會成功，JSON 中的 `cleared` 為 `false`。清除 Anthropic
+冷卻也會推進帳號 generation，因此舊的 quota probe 無法恢復已清除狀態或發布過期的配額資格。
 
 ### `ocx account refresh <provider> [--json]`
 

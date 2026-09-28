@@ -92,7 +92,7 @@ alias <provider> <id|alias> <display-name|->  Set or clear an account's display 
 pause <provider> <id|alias|main>  Hold an account out of automatic selection.
 resume <provider> <id|alias|main>  Return a paused account to automatic selection.
 pause-exhausted <provider>  Pause every account whose quota is spent.
-clear-cooldown <provider> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
+clear-cooldown <openai|anthropic> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
 strategy <provider> [<quota|round-robin|fill-first|reset-first>]  Pool placement strategy; omit the value to read it.
 sticky <provider> [<1-100>]  Requests a bound thread keeps on one account; omit the value to read it.
 priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|reset]  Selection order; omit the value to read it.
@@ -162,6 +162,21 @@ Codex pool selection applies to the next request after clearing existing affinit
 ### `ocx account clear <provider> [--json]`
 
 アカウント id を解決せずに Codex アカウントの手動選択を解除するため、`auto` という id のアカウントが存在しても機能します。Codex プール専用です。他のプロバイダー種別には復元する自動選択がありません。
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+保存済み認証情報を変更せず、プロセスローカルな障害 cooldown を解除します。Codex Pool
+アカウントには `openai`、Anthropic OAuth アカウントには `anthropic` を使い、その他の
+provider は拒否されます。どちらもアカウント id または一意の alias を受け付けますが、
+`main` は Codex Pool 専用です。
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+有効な cooldown がなくても成功し、JSON では `cleared: false` になります。Anthropic の
+cooldown を解除するとアカウント generation も進むため、古い quota probe が解除済み状態を
+復元したり、古い quota ベースの eligibility を公開したりできません。
 
 ### `ocx account refresh <provider> [--json]`
 

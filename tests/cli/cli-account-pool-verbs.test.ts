@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cmdPause, cmdPauseExhausted, cmdStrategy, cmdSticky, cmdRoutes } from "../../src/cli/account-extended";
+import { cmdClearCooldown, cmdPause, cmdPauseExhausted, cmdStrategy, cmdSticky, cmdRoutes } from "../../src/cli/account-extended";
 import type { AccountDeps } from "../../src/cli/account-api";
 
 /**
@@ -150,6 +150,71 @@ describe("ocx account pause / resume", () => {
     } finally { out.restore(); }
     expect(code).not.toBe(0);
     expect(out.errors.join("\n")).toContain("Account not found");
+  });
+});
+
+describe("ocx account clear-cooldown", () => {
+  test("Codex keeps its dedicated route and body", async () => {
+    const calls: Captured[] = [];
+    const out = capture();
+    try {
+      expect(await cmdClearCooldown(["openai", "acct_1"], deps(() => ({ json: { ok: true, cleared: true } }), calls))).toBe(0);
+    } finally { out.restore(); }
+    expect(calls.at(-1)).toEqual({
+      method: "POST",
+      path: "/api/codex-auth/accounts/clear-cooldown",
+      body: { id: "acct_1" },
+    });
+  });
+
+  test("Anthropic resolves an alias and posts to the OAuth cooldown owner", async () => {
+    const calls: Captured[] = [];
+    const out = capture();
+    const anthropicDeps: AccountDeps = {
+      baseUrl: "http://127.0.0.1:10100",
+      loadConfigImpl: () => ({ providers: { anthropic: {} } }) as never,
+      fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+        const parsed = new URL(String(url));
+        const call: Captured = {
+          method: init?.method ?? "GET",
+          path: parsed.pathname + parsed.search,
+          body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+        };
+        calls.push(call);
+        const json = call.method === "GET"
+          ? { accounts: [{ id: "anthropic_1", alias: "work" }] }
+          : { ok: true, cleared: true };
+        return Response.json(json);
+      }) as typeof fetch,
+    };
+    try {
+      expect(await cmdClearCooldown(["anthropic", "work"], anthropicDeps)).toBe(0);
+    } finally { out.restore(); }
+    expect(calls).toEqual([
+      { method: "GET", path: "/api/oauth/accounts?provider=anthropic", body: undefined },
+      {
+        method: "POST",
+        path: "/api/oauth/accounts/clear-cooldown",
+        body: { provider: "anthropic", accountId: "anthropic_1" },
+      },
+    ]);
+    expect(out.lines.join("\n")).toContain("anthropic: cooldown lifted for work");
+  });
+
+  test("unrelated OAuth providers are rejected before any management request", async () => {
+    const calls: Captured[] = [];
+    const out = capture();
+    let code: number;
+    try {
+      code = await cmdClearCooldown(["google-antigravity", "acct_1"], {
+        baseUrl: "http://127.0.0.1:10100",
+        loadConfigImpl: () => ({ providers: { "google-antigravity": { authMode: "oauth" } } }) as never,
+        fetchImpl: (async () => { calls.push({ method: "GET", path: "unexpected", body: undefined }); return Response.json({}); }) as typeof fetch,
+      });
+    } finally { out.restore(); }
+    expect(code).toBe(1);
+    expect(calls).toHaveLength(0);
+    expect(out.errors.join("\n")).toContain("no operator-clearable account cooldown");
   });
 });
 

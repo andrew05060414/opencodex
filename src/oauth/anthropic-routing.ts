@@ -34,6 +34,12 @@ import type { OcxAccountPoolQuotaWindow, OcxAccountPoolRotationStrategy, OcxConf
 import { sweepExpiredOnWrite } from "../lib/state-store-sweeper";
 import { retainedUtf8Bytes } from "../lib/admission";
 import { routeCandidates, type AnthropicRouteDecision } from "./anthropic-model-routes";
+import type { ProviderQuota } from "../providers/quota-types";
+import {
+  anthropicCooldownGeneration,
+  clearAnthropicCooldownGenerations,
+  noteAnthropicCooldownMutation,
+} from "../providers/quota/anthropic-cooldown-recovery";
 
 /**
  * The read side of a `Headers` object, so a caller can pass the live upstream response's
@@ -66,10 +72,15 @@ export type AnthropicAccountPoolConfig = NonNullable<OcxConfig["anthropicAccount
  * `retry-after` would report a drained five-hour window as request-rate throttling.
  */
 type AnthropicCooldownSource = "retry-after" | "reset-derived" | "default";
+type AnthropicQuotaWindow = "five-hour" | "weekly";
 
 interface AccountHealth {
   cooldownUntil: number;
   cooldownSource: AnthropicCooldownSource;
+  /** Windows whose rejected status established a reset-derived cooldown. */
+  rejectedQuotaWindows?: AnthropicQuotaWindow[];
+  /** Monotonic fence so an older quota probe cannot erase a newer refusal. */
+  cooldownGeneration: number;
 }
 
 interface AffinityEntry {
@@ -140,11 +151,16 @@ function parseRetryAfterMs(value: string | null | undefined, now: number): numbe
 }
 
 /** Only rejected windows constrain recovery; all must reopen, so take the latest reset. */
-function parseRateLimitResetMs(headers: AnthropicRateLimitHeaders | null | undefined, now: number): number | undefined {
+function parseRateLimitReset(
+  headers: AnthropicRateLimitHeaders | null | undefined,
+  now: number,
+): { delayMs: number; rejectedQuotaWindows: AnthropicQuotaWindow[] } | undefined {
   if (!headers) return undefined;
   let latest: number | undefined;
-  for (const window of ["5h", "7d"] as const) {
+  const rejectedQuotaWindows: AnthropicQuotaWindow[] = [];
+  for (const [window, quotaWindow] of [["5h", "five-hour"], ["7d", "weekly"]] as const) {
     if (headers.get(`anthropic-ratelimit-unified-${window}-status`)?.trim() !== "rejected") continue;
+    rejectedQuotaWindows.push(quotaWindow);
     const resetSeconds = Number(headers.get(`anthropic-ratelimit-unified-${window}-reset`)?.trim());
     if (!Number.isFinite(resetSeconds) || resetSeconds <= 0) continue;
     const resetAt = resetSeconds * 1000;
@@ -152,7 +168,55 @@ function parseRateLimitResetMs(headers: AnthropicRateLimitHeaders | null | undef
     if (latest === undefined || resetAt > latest) latest = resetAt;
   }
   if (latest === undefined) return undefined;
-  return latest - now;
+  return { delayMs: latest - now, rejectedQuotaWindows };
+}
+
+export type AnthropicCooldownRecoveryClaim = Readonly<{
+  accountId: string;
+  cooldownGeneration: number;
+  claimedAt: number;
+}>;
+
+export type AnthropicCooldownRecoverySettlement = "cleared" | "retained" | "superseded";
+
+/**
+ * Capture the exact reset-derived refusal a fresh usage probe is allowed to recover.
+ *
+ * The generation fence matters because the usage request is asynchronous: a newer 429 may
+ * arrive while it is in flight, and an older answer must never erase that newer refusal.
+ */
+export function captureAnthropicCooldownRecovery(
+  accountId: string,
+  now = Date.now(),
+): AnthropicCooldownRecoveryClaim | null {
+  const entry = upstreamHealth.get(accountId);
+  if (!entry || entry.cooldownUntil <= now || entry.cooldownSource !== "reset-derived") return null;
+  return { accountId, cooldownGeneration: entry.cooldownGeneration, claimedAt: now };
+}
+
+/**
+ * Clear only the claimed reset-derived cooldown when a fresh, complete usage result proves
+ * headroom in every window that upstream previously reported as rejected.
+ */
+export function settleAnthropicCooldownRecovery(
+  claim: AnthropicCooldownRecoveryClaim,
+  quota: ProviderQuota,
+): AnthropicCooldownRecoverySettlement {
+  const entry = upstreamHealth.get(claim.accountId);
+  if (!entry || entry.cooldownSource !== "reset-derived"
+    || entry.cooldownGeneration !== claim.cooldownGeneration
+    || anthropicCooldownGeneration(claim.accountId) !== claim.cooldownGeneration
+    || !Number.isFinite(quota.updatedAt) || quota.updatedAt < claim.claimedAt) return "superseded";
+  const windows = entry.rejectedQuotaWindows;
+  if (!windows?.length) return "retained";
+  const recovered = windows.every(window => {
+    const percent = window === "five-hour" ? quota.fiveHourPercent : quota.weeklyPercent;
+    return typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent < 100;
+  });
+  if (!recovered) return "retained";
+  upstreamHealth.delete(claim.accountId);
+  noteAnthropicCooldownMutation(claim.accountId);
+  return "cleared";
 }
 
 export function getAnthropicAccountHealthSnapshot(
@@ -163,13 +227,16 @@ export function getAnthropicAccountHealthSnapshot(
   if (!entry) return null;
   if (entry.cooldownUntil <= now) {
     upstreamHealth.delete(accountId);
+    noteAnthropicCooldownMutation(accountId);
     return null;
   }
   return { cooldownUntil: entry.cooldownUntil, cooldownSource: entry.cooldownSource };
 }
 
 export function clearAnthropicAccountCooldown(accountId: string): boolean {
-  return upstreamHealth.delete(accountId);
+  const cleared = upstreamHealth.delete(accountId);
+  if (cleared) noteAnthropicCooldownMutation(accountId);
+  return cleared;
 }
 
 export function sweepExpiredAnthropicRoutingHealth(now = Date.now()): number {
@@ -177,6 +244,7 @@ export function sweepExpiredAnthropicRoutingHealth(now = Date.now()): number {
   for (const [accountId, health] of upstreamHealth) {
     if (health.cooldownUntil > now) continue;
     upstreamHealth.delete(accountId);
+    noteAnthropicCooldownMutation(accountId);
     removed += 1;
   }
   return removed;
@@ -185,6 +253,7 @@ export function sweepExpiredAnthropicRoutingHealth(now = Date.now()): number {
 /** Test / logout helper. */
 export function clearAnthropicAccountPoolState(): void {
   upstreamHealth.clear();
+  clearAnthropicCooldownGenerations();
   sessionAffinity.clear();
   manualPreference = undefined;
   quorumCache = null;
@@ -749,13 +818,16 @@ export function rotateAnthropicAccountOn429(
   // without that fallback such a refusal cools for the 60s default and the exhausted
   // account is back in the rotation a minute later.
   const parsedRetry = parseRetryAfterMs(retryAfterHeader, now);
-  const resetDerived = parsedRetry === undefined ? parseRateLimitResetMs(rateLimitHeaders, now) : undefined;
-  const cooldownMs = parsedRetry ?? resetDerived ?? DEFAULT_COOLDOWN_MS;
+  const resetDerived = parsedRetry === undefined ? parseRateLimitReset(rateLimitHeaders, now) : undefined;
+  const cooldownMs = parsedRetry ?? resetDerived?.delayMs ?? DEFAULT_COOLDOWN_MS;
+  const cooldownGeneration = noteAnthropicCooldownMutation(failedAccountId);
   upstreamHealth.set(failedAccountId, {
     cooldownUntil: now + cooldownMs,
     cooldownSource: parsedRetry !== undefined
       ? "retry-after"
       : resetDerived !== undefined ? "reset-derived" : "default",
+    ...(resetDerived ? { rejectedQuotaWindows: resetDerived.rejectedQuotaWindows } : {}),
+    cooldownGeneration,
   });
   sweepExpiredOnWrite(now);
   clearAnthropicSessionAffinityForAccount(failedAccountId);

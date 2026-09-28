@@ -97,7 +97,7 @@ alias <provider> <id|alias> <display-name|->  Set or clear an account's display 
 pause <provider> <id|alias|main>  Hold an account out of automatic selection.
 resume <provider> <id|alias|main>  Return a paused account to automatic selection.
 pause-exhausted <provider>  Pause every account whose quota is spent.
-clear-cooldown <provider> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
+clear-cooldown <openai|anthropic> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
 strategy <provider> [<quota|round-robin|fill-first|reset-first>]  Pool placement strategy; omit the value to read it.
 sticky <provider> [<1-100>]  Requests a bound thread keeps on one account; omit the value to read it.
 priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|reset]  Selection order; omit the value to read it.
@@ -176,6 +176,19 @@ Codex Pool 选择会清除进程本地 affinity，并从下一次请求开始生
 ### `ocx account clear <provider> [--json]`
 
 在不解析账号 id 的情况下清除 Codex 账号的手动选择，因此即使存在名为 `auto` 的账号也有效。仅适用于 Codex Pool；其他提供商类型没有可恢复的自动选择。
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+清除进程本地的失败冷却，但不更改已保存的凭据。Codex Pool 账号使用 `openai`，Anthropic
+OAuth 账号使用 `anthropic`；其他 provider 会被拒绝。两种形式都接受账号 id 或唯一别名，
+而 `main` 仅适用于 Codex Pool。
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+即使没有活动冷却，命令也会成功，JSON 中的 `cleared` 为 `false`。清除 Anthropic 冷却还会
+推进账号 generation，因此旧的 quota probe 无法恢复已清除的状态或发布过期的配额资格。
 
 ### `ocx account refresh <provider> [--json]`
 

@@ -68,7 +68,7 @@ import { fetchCommandCodeQuota, fetchKimiQuota, keyQuotaReaderForProvider } from
 import { antigravityQuotaDiagnosticIdentity, fetchAntigravityQuota, probeAntigravityUsageQuota } from "./quota/antigravity";
 import { persistKiroAccountState } from "./kiro-account-state-disk";
 import { kiroProbeCurrent, kiroProbeIdentity } from "./quota/kiro-account-probe";
-
+import { AnthropicQuotaProbeOwnershipError, anthropicCooldownFlightKey, probeAnthropicQuotaWithRecovery } from "./quota/anthropic-cooldown-recovery";
 export type { ProviderQuota, ProviderQuotaCreditsUsd, ProviderQuotaWindow } from "./quota-types";
 export { QUOTA_RESPONSE_MAX_BYTES } from "./quota-wire";
 export {
@@ -98,7 +98,6 @@ export {
 export { fetchAntigravityUsageQuota, isCanonicalAntigravityQuotaUrl, setAntigravityAccountQuotaTransportForTests } from "./quota/antigravity";
 export { parseOllamaCloudQuota, parseZaiQuotaLimits, providerApiKeyQuotaMode } from "./quota/vendor-probes-key";
 export { parseXaiCreditsResponse } from "./quota/vendor-probes-oauth";
-
 export async function fetchProviderApiKeyQuotas(config: OcxConfig, name: string, forceRefresh = false): Promise<ProviderApiKeyQuota[]> {
   const provider = config.providers[name];
   if (!provider || !keyQuotaReaderForProvider(name, provider)) return [];
@@ -109,7 +108,6 @@ export async function fetchProviderApiKeyQuotas(config: OcxConfig, name: string,
     return result ? { kind: "quota", quota: result.quota } : { kind: "unavailable" };
   });
 }
-
 async function maybeFetchProviderQuota(
   name: string,
   provider: OcxProviderConfig,
@@ -338,7 +336,6 @@ export async function fetchProviderQuotaReports(config: OcxConfig, forceRefresh 
     if (inflight.get(key) === entry) inflight.delete(key);
   }
 }
-
 async function readExplicitAccountQuota(provider: string, accountId: string, configured?: OcxProviderConfig): Promise<{
   result: ProviderQuotaProbeResult;
   identity: string | undefined;
@@ -367,7 +364,6 @@ async function readExplicitAccountQuota(provider: string, accountId: string, con
   }
   return { result, identity, isCurrent };
 }
-
 async function fetchExplicitAccountQuota(provider: string, accountId: string, force: boolean, configured?: OcxProviderConfig): Promise<AccountQuotaCacheEntry> {
   const key = accountCacheKey(provider, accountId);
   const identity = explicitQuotaIdentity(provider, accountId, configured);
@@ -433,13 +429,13 @@ async function fetchAccountQuota(
     if (provider === "google-antigravity" && cached.quotaFailure && cached.quotaFailureIsCurrent?.() !== true) return { ...cached, quotaFailure: undefined };
     return provider === "anthropic" ? { ...cached, quota: normalizeAnthropicQuota(cached.quota, Date.now()) } : cached;
   }
-  const joinable = accountQuotaInflight.get(key);
+  const flightKey = provider === "anthropic" ? anthropicCooldownFlightKey(key, accountId) : key;
+  const joinable = accountQuotaInflight.get(flightKey);
   if (joinable) {
     const joined = await joinable;
     return provider !== "kiro" || joined.identity === kiroIdentity
       ? joined : fetchAccountQuota(provider, accountId, true, providerConfig);
   }
-
   const epoch = explicitAccountEpoch;
   const probe = (async (): Promise<AccountQuotaCacheEntry> => {
     let diagnosticIdentity: string | undefined;
@@ -469,7 +465,10 @@ async function fetchAccountQuota(
           quota = result.kind === "available" ? result.quota : null;
           if (result.kind === "unavailable") quotaFailure = result.failure;
         } else if (provider === "anthropic") {
-          quota = await fetchAnthropicUsageQuota(token);
+          const result = await probeAnthropicQuotaWithRecovery(accountId, token,
+            fresh => fetchAnthropicUsageQuota(token, fresh), () => mayCommitAccountQuotaKey(key, writerGeneration));
+          if (result && !result.isCurrent()) throw new AnthropicQuotaProbeOwnershipError("anthropic quota probe lost publication ownership");
+          quota = result?.quota ?? null;
         } else {
           return { ts: Date.now(), quota: null, unavailable: true };
         }
@@ -495,13 +494,15 @@ async function fetchAccountQuota(
         ts: Date.now(), quota: provider === "anthropic" ? normalizeAnthropicQuota(quota, Date.now()) : quota,
         ...(provider === "kiro" ? { identity: kiroIdentity } : {}),
       };
-      if (mayCommitAccountQuotaKey(key, writerGeneration) && (provider !== "kiro" || kiroProbeCurrent(accountId, kiroIdentity))) {
+      if (mayCommitAccountQuotaKey(key, writerGeneration)
+        && (provider !== "kiro" || kiroProbeCurrent(accountId, kiroIdentity))) {
         accountQuotaCache.set(key, entry);
         if (provider === "kiro") { commitKiroAccountUsageState(key, kiroSnapshot, kiroIdentity); persistKiroAccountState(); }
         sweepExpiredOnWrite(entry.ts);
       }
       return entry;
-    } catch {
+    } catch (error) {
+      if (provider === "anthropic" && error instanceof AnthropicQuotaProbeOwnershipError) return { ts: Date.now(), quota: null, unavailable: true };
       if (provider === "google-antigravity") quotaFailure = "account_unavailable";
       const entry: AccountQuotaCacheEntry = {
         ts: Date.now(),
@@ -519,12 +520,11 @@ async function fetchAccountQuota(
       return entry;
     }
   })().finally(() => {
-    if (accountQuotaInflight.get(key) === probe) accountQuotaInflight.delete(key);
+    if (accountQuotaInflight.get(flightKey) === probe) accountQuotaInflight.delete(flightKey);
   });
-  accountQuotaInflight.set(key, probe);
+  accountQuotaInflight.set(flightKey, probe);
   return probe;
 }
-
 /**
  * Per-account quota rows for a provider's logged-in accounts. Probes run in parallel; a
  * single failing account never blocks the others.

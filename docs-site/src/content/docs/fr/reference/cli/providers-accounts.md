@@ -118,7 +118,7 @@ alias <provider> <id|alias> <display-name|->  Set or clear an account's display 
 pause <provider> <id|alias|main>  Hold an account out of automatic selection.
 resume <provider> <id|alias|main>  Return a paused account to automatic selection.
 pause-exhausted <provider>  Pause every account whose quota is spent.
-clear-cooldown <provider> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
+clear-cooldown <openai|anthropic> <id|alias|main>  Drop a cooldown the proxy set after an upstream failure.
 strategy <provider> [<quota|round-robin|fill-first|least-loaded|reset-first>]  Stratégie du pool ; least-loaded est réservé à Kiro.
 sticky <provider> [<1-100>]  Requests a bound thread keeps on one account; omit the value to read it.
 priority <provider> <id|alias|main> [first|earlier|normal|later|last|-100..100|reset]  Selection order; omit the value to read it.
@@ -217,6 +217,21 @@ faire basculer la requête vers un autre compte de pool admissible. Ces transiti
 ### `ocx account clear <provider> [--json]`
 
 Efface la sélection manuelle du compte Codex sans résoudre d'id de compte, donc fonctionne même lorsqu'un compte s'appelle littéralement `auto`. Pools Codex uniquement ; les autres types de fournisseur n'ont pas de sélection automatique à rétablir.
+
+### `ocx account clear-cooldown <openai|anthropic> <id|alias|main> [--json]`
+
+Supprime un délai d'échec local au processus sans modifier les identifiants enregistrés. Utilisez
+`openai` pour un compte du pool Codex ou `anthropic` pour un compte OAuth Anthropic ; les autres
+fournisseurs sont refusés. Les deux formes acceptent un id de compte ou un alias unique, tandis que
+`main` est réservé au pool Codex.
+
+```bash
+ocx account clear-cooldown anthropic <id-or-alias>
+```
+
+La commande réussit même sans délai actif, avec `cleared: false` dans le JSON. La suppression d'un
+délai Anthropic avance aussi la génération du compte afin qu'une ancienne sonde de quota ne puisse
+pas rétablir l'état supprimé ni publier une éligibilité périmée.
 
 ### `ocx account refresh <provider> [--json]`
 
