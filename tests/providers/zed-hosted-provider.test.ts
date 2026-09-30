@@ -151,4 +151,35 @@ describe("Zed Hosted AI provider", () => {
     expect(completionRequest?.headers.get("authorization")).toBe("Bearer llm-token-1");
     expect(await completionRequest?.clone().text()).toBe(request.body);
   });
+
+  test("normalizes Anthropic string message content to sequence blocks for Zed backend", async () => {
+    const responses = [
+      jsonResponse({ default_organization_id: "org-1" }),
+      jsonResponse({ token: "llm-token-1" }),
+      jsonResponse({ models: [{ id: "claude-haiku-4-5", provider: "anthropic" }] }),
+    ];
+    globalThis.fetch = (async () => {
+      const response = responses.shift();
+      if (!response) throw new Error("unexpected Zed catalog fetch");
+      return response;
+    }) as typeof globalThis.fetch;
+
+    const provider: OcxProviderConfig = {
+      adapter: "zed",
+      baseUrl: "https://cloud.zed.dev",
+      authMode: "oauth",
+      apiKey: "access-token",
+    };
+    const parsed = parseRequest({ model: "claude-haiku-4-5", input: "hello zed", stream: true });
+    parsed._zedAuthContext = { userId: "user-1" };
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    const request = await adapter.buildRequest(parsed);
+    const body = JSON.parse(request.body) as { provider: string; provider_request: { messages: Array<{ role: string; content: unknown }> } };
+
+    expect(body.provider).toBe("anthropic");
+    expect(body.provider_request.messages[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "hello zed" }],
+    });
+  });
 });

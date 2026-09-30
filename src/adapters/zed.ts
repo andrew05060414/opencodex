@@ -188,12 +188,20 @@ export function createZedAdapter(provider: OcxProviderConfig): ProviderAdapter {
     }
     const zedProvider = providerFromCatalog(catalog, parsed.modelId);
     const selected = createDelegate(provider, zedProvider);
-    const built = await selected.buildRequest(forceStreaming(parsed), incoming);
-    let providerRequest: unknown;
-    try { providerRequest = JSON.parse(built.body) as unknown; } catch { throw new Error("Zed delegate produced an invalid request body"); }
-    if (zedProvider === "google" && isRecord(providerRequest)) delete providerRequest.safetySettings;
-    if (!isRecord(providerRequest)) throw new Error("Zed delegate produced a non-object request body");
-    delegate = { provider: zedProvider, adapter: selected };
+   const built = await selected.buildRequest(forceStreaming(parsed), incoming);
+   let providerRequest: unknown;
+   try { providerRequest = JSON.parse(built.body) as unknown; } catch { throw new Error("Zed delegate produced an invalid request body"); }
+   if (zedProvider === "google" && isRecord(providerRequest)) delete providerRequest.safetySettings;
+    if (zedProvider === "anthropic" && isRecord(providerRequest) && Array.isArray(providerRequest.messages)) {
+      providerRequest.messages = providerRequest.messages.map((m: unknown) => {
+        if (isRecord(m) && typeof m.content === "string") {
+          return { ...m, content: [{ type: "text", text: m.content }] };
+        }
+        return m;
+      });
+    }
+   if (!isRecord(providerRequest)) throw new Error("Zed delegate produced a non-object request body");
+   delegate = { provider: zedProvider, adapter: selected };
     const requestUrl = `${provider.baseUrl.replace(/\/+$/, "")}/completions`;
     return {
       url: requestUrl,
