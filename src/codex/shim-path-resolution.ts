@@ -1,5 +1,7 @@
-import { lstatSync, realpathSync } from "node:fs";
-import { posix, win32 } from "node:path";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { delimiter, posix, win32 } from "node:path";
+import { isWslRuntime, wslAutomountRoot } from "./home";
+import { SHIM_MARKER } from "./shim-templates";
 
 /**
  * A PATH entry that reaches Windows through WSL drive interop
@@ -24,6 +26,11 @@ export type CodexPathScanDeps = {
   realpath?: (path: string) => string;
 };
 
+export type CodexPathCandidate = {
+  path: string;
+  isShim: boolean;
+};
+
 export function realIsDirectory(path: string): boolean {
   try {
     return lstatSync(path).isDirectory();
@@ -32,12 +39,50 @@ export function realIsDirectory(path: string): boolean {
   }
 }
 
+function isShimFile(path: string): boolean {
+  try {
+    return readFileSync(path, "utf8").includes(SHIM_MARKER);
+  } catch {
+    return false;
+  }
+}
+
+function commandNames(name: string): string[] {
+  if (process.platform !== "win32") return [name];
+  const exts = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD;.PS1").split(";").filter(Boolean);
+  return [name, ...exts.flatMap(ext => [`${name}${ext.toLowerCase()}`, `${name}${ext.toUpperCase()}`])];
+}
+
 /** The shell-local bin directory that fnm creates for one interactive shell. */
 export function isFnmMultishellPath(path: string, posixPaths: boolean): boolean {
   const normalized = (posixPaths
     ? posix.normalize(path)
     : win32.normalize(path).replace(/\\/g, "/")).toLowerCase();
   return /(?:^|\/)fnm_multishells?(?:\/|$)/.test(normalized);
+}
+
+/** Find the command the shell would actually use, including an OpenCodex shim. */
+export function findFirstCodexOnPath(deps: CodexPathScanDeps = {}): CodexPathCandidate | null {
+  const exists = deps.exists ?? existsSync;
+  const shimFile = deps.isShimFile ?? isShimFile;
+  const isDir = deps.isDirectory ?? realIsDirectory;
+  const wsl = deps.wsl ?? (process.platform === "linux" && isWslRuntime());
+  const usePosix = deps.posixPaths ?? (wsl || process.platform !== "win32");
+  const joinPath = usePosix ? posix.join : win32.join;
+  const pathSep = usePosix ? ":" : delimiter;
+  const automountRoot = deps.automountRoot ?? (wsl ? wslAutomountRoot() : "/mnt");
+  const interopNames = ["codex", "codex.exe", "codex.cmd", "codex.ps1"];
+
+  for (const dir of (deps.pathValue ?? process.env.PATH ?? "").split(pathSep).filter(Boolean)) {
+    if (wsl && isWindowsInteropDir(dir, automountRoot)) continue;
+    const names = isWindowsInteropDir(dir, automountRoot) ? interopNames : commandNames("codex");
+    for (const name of names) {
+      const path = joinPath(dir, name);
+      if (!exists(path) || isDir(path)) continue;
+      return { path, isShim: shimFile(path) };
+    }
+  }
+  return null;
 }
 
 /**
@@ -54,10 +99,14 @@ export function resolveStableFnmCodexPath(
 ): string | null {
   if (!isFnmMultishellPath(path, posixPaths)) return path;
   try {
-    const resolved = realpath(path);
+    // fnm normally links the temporary directory to the durable installation,
+    // while npm may link the command file again into its package internals.
+    // Resolve only the directory so the command basename remains the stable
+    // installation entry that the installer is allowed to replace.
     const pathTools = posixPaths ? posix : win32;
-    if (!resolved || isFnmMultishellPath(resolved, posixPaths) || !pathTools.isAbsolute(resolved)) return null;
-    return resolved;
+    const resolvedParent = realpath(pathTools.dirname(path));
+    if (!resolvedParent || isFnmMultishellPath(resolvedParent, posixPaths) || !pathTools.isAbsolute(resolvedParent)) return null;
+    return pathTools.join(resolvedParent, pathTools.basename(path));
   } catch {
     return null;
   }

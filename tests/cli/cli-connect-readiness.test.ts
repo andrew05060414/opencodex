@@ -22,6 +22,7 @@ import { repoRoot } from "../helpers/repo-root";
 import { INTERNAL_DEADLINE_MS, SPAWN_BUDGET_MS } from "../helpers/test-budget";
 import { codexShimReadinessLine, connectCompletionReport } from "../../src/cli/connect";
 import { codexConnectShimReadiness } from "../../src/cli/codex-shim-readiness";
+import { findFirstCodexOnPath } from "../../src/codex/shim-path-resolution";
 import { dispatchCommand } from "../../src/cli/dispatch";
 import type { CliDispatchDeps } from "../../src/cli/dispatch";
 import { ClientCatalogIncompatibleError } from "../../src/client/catalog-compatibility";
@@ -635,6 +636,49 @@ describe("Codex shim readiness on connect", () => {
     });
     expect(readiness).toEqual({ status: "ready", message: "installed and healthy" });
     expect(codexShimReadinessLine(["codex"], () => readiness)).toBe("Codex autostart shim: installed and healthy");
+  });
+
+  test("a healthy shim remains ready when it is first on PATH", () => {
+    const shim = "/home/u/.npm-global/bin/codex";
+    const native = "/opt/homebrew/bin/codex";
+    const candidate = findFirstCodexOnPath({
+      pathValue: `/home/u/.npm-global/bin:/opt/homebrew/bin`,
+      wsl: false,
+      posixPaths: true,
+      exists: path => path === shim || path === native,
+      isShimFile: path => path === shim,
+      isDirectory: () => false,
+    });
+    expect(candidate).toEqual({ path: shim, isShim: true });
+
+    const readiness = codexConnectShimReadiness({
+      diagnosis: { installed: true, healthy: true, summary: "unused" },
+      commandPath: candidate?.path ?? null,
+      commandIsShim: candidate?.isShim,
+    });
+    expect(readiness).toEqual({ status: "ready", message: "installed and healthy" });
+  });
+
+  test("a user wrapper before the shim is reported as shadowing it", () => {
+    const wrapper = "/home/u/.local/bin/codex";
+    const shim = "/home/u/.npm-global/bin/codex";
+    const candidate = findFirstCodexOnPath({
+      pathValue: `/home/u/.local/bin:/home/u/.npm-global/bin`,
+      wsl: false,
+      posixPaths: true,
+      exists: path => path === wrapper || path === shim,
+      isShimFile: path => path === shim,
+      isDirectory: () => false,
+    });
+    expect(candidate).toEqual({ path: wrapper, isShim: false });
+
+    const readiness = codexConnectShimReadiness({
+      diagnosis: { installed: true, healthy: true, summary: "unused" },
+      commandPath: candidate?.path ?? null,
+      commandIsShim: candidate?.isShim,
+    });
+    expect(readiness.status).toBe("missing");
+    expect(readiness.message).toContain(wrapper);
   });
 
   test("a missing shim or user PATH wrapper gives a secret-free repair hint", () => {

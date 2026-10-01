@@ -3,7 +3,8 @@ import {
   getCodexRoutingKind,
   type CodexRoutingKind,
 } from "../codex/inject";
-import { diagnoseCodexShim, findCodexOnPath, type CodexShimDiagnostic } from "../codex/shim";
+import { diagnoseCodexShim, type CodexShimDiagnostic } from "../codex/shim";
+import { findFirstCodexOnPath, type CodexPathCandidate } from "../codex/shim-path-resolution";
 import { loadConfig, resolveEnvValue } from "../config";
 
 const PROXY_ENV_KEYS = [
@@ -32,7 +33,7 @@ export interface CodexConnectShimReadiness {
 
 export interface CodexConnectShimInspectionDeps {
   diagnose?: () => Pick<CodexShimDiagnostic, "installed" | "healthy" | "summary">;
-  findOnPath?: () => string | null;
+  findOnPath?: () => CodexPathCandidate | null;
 }
 
 const CODEX_TOKEN_ACTION = "The connected Codex config uses OPENCODEX_API_AUTH_TOKEN; "
@@ -42,6 +43,7 @@ const CODEX_TOKEN_ACTION = "The connected Codex config uses OPENCODEX_API_AUTH_T
 export function codexConnectShimReadiness(inputs: {
   diagnosis: Pick<CodexShimDiagnostic, "installed" | "healthy" | "summary">;
   commandPath: string | null;
+  commandIsShim?: boolean;
 }): CodexConnectShimReadiness {
   if (inputs.diagnosis.installed && !inputs.diagnosis.healthy) {
     return {
@@ -49,7 +51,7 @@ export function codexConnectShimReadiness(inputs: {
       message: `installed but unhealthy: ${inputs.diagnosis.summary}. ${CODEX_TOKEN_ACTION}`,
     };
   }
-  if (inputs.diagnosis.healthy && inputs.commandPath) {
+  if (inputs.diagnosis.healthy && inputs.commandPath && !inputs.commandIsShim) {
     return {
       status: "missing",
       message: `not active; PATH resolves 'codex' to ${inputs.commandPath}, not an OpenCodex shim. ${CODEX_TOKEN_ACTION}`,
@@ -79,13 +81,17 @@ export function inspectCodexShimForConnect(
   } catch {
     diagnosis = { installed: true, healthy: false, summary: "diagnostic state could not be read" };
   }
-  let commandPath: string | null = null;
+  let command: CodexPathCandidate | null = null;
   try {
-    commandPath = (deps.findOnPath ?? findCodexOnPath)();
+    command = (deps.findOnPath ?? findFirstCodexOnPath)();
   } catch {
     // The diagnosis above still gives the operator a repair path.
   }
-  return codexConnectShimReadiness({ diagnosis, commandPath });
+  return codexConnectShimReadiness({
+    diagnosis,
+    commandPath: command?.path ?? null,
+    commandIsShim: command?.isShim ?? false,
+  });
 }
 
 function externalProviderLabel(provider: string | null): string {

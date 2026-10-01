@@ -573,19 +573,25 @@ exit 126
     () => {
       const root = mkdtempSync(join(tmpdir(), "ocx-shim-install-fnm-"));
       const home = join(root, "opencodex-home");
-      const multishellBin = join(root, "fnm_multishells", "619109", "bin");
-      const stableBin = join(root, "node-versions", "v24.20.0", "installation", "bin");
+      const multishellDir = join(root, "fnm_multishells", "619109");
+      const multishellBin = join(multishellDir, "bin");
+      const stableInstallation = join(root, "node-versions", "v24.20.0", "installation");
+      const stableBin = join(stableInstallation, "bin");
+      const packageBin = join(stableInstallation, "lib", "node_modules", "@openai", "codex", "bin");
       const stableCodex = join(stableBin, "codex");
+      const packageCodex = join(packageBin, "codex.js");
       const multishellCodex = join(multishellBin, "codex");
       const oldPath = process.env.PATH;
       const oldHome = process.env.OPENCODEX_HOME;
       try {
         mkdirSync(home, { recursive: true });
-        mkdirSync(multishellBin, { recursive: true });
+        mkdirSync(join(root, "fnm_multishells"), { recursive: true });
         mkdirSync(stableBin, { recursive: true });
-        writeFileSync(stableCodex, successfulLauncher("fnm-stable-codex"), "utf8");
-        chmodSync(stableCodex, 0o755);
-        symlinkSync(stableCodex, multishellCodex);
+        mkdirSync(packageBin, { recursive: true });
+        writeFileSync(packageCodex, successfulLauncher("fnm-stable-codex"), "utf8");
+        chmodSync(packageCodex, 0o755);
+        symlinkSync(stableInstallation, multishellDir);
+        symlinkSync("../lib/node_modules/@openai/codex/bin/codex.js", stableCodex);
         process.env.PATH = prependPath(multishellBin, oldPath);
         process.env.OPENCODEX_HOME = home;
 
@@ -597,8 +603,11 @@ exit 126
         expect(installed.message).not.toContain("fnm_multishells");
         expect(state).toContain(stableCodex);
         expect(state).not.toContain("fnm_multishells");
+        expect(state).not.toContain(packageCodex);
         expect(readFileSync(stableCodex, "utf8")).toContain(SHIM_MARKER);
-        expect(lstatSync(multishellCodex).isSymbolicLink()).toBe(true);
+        expect(readFileSync(multishellCodex, "utf8")).toContain(SHIM_MARKER);
+        expect(readFileSync(packageCodex, "utf8")).toContain("fnm-stable-codex");
+        expect(lstatSync(`${stableCodex}.opencodex-real`).isSymbolicLink()).toBe(true);
       } finally {
         if (oldPath === undefined) delete process.env.PATH;
         else process.env.PATH = oldPath;
@@ -2264,7 +2273,7 @@ describe("WSL PATH interop guard", () => {
       exists: path => path === transientCodex,
       isShimFile: () => false,
       isDirectory: () => false,
-      realpath: path => path === transientCodex ? stableCodex : path,
+      realpath: path => path === multishell ? stable : path,
     });
     expect(found).toBe(stableCodex);
     expect(found).not.toContain("fnm_multishells");
@@ -2281,7 +2290,7 @@ describe("WSL PATH interop guard", () => {
       exists: path => path === transientCodex,
       isShimFile: () => false,
       isDirectory: () => false,
-      realpath: path => path === transientCodex ? stableCodex : path,
+      realpath: path => path === multishell ? stable : path,
     });
     expect(found).toBe(stableCodex);
     expect(found).not.toContain("fnm_multishells");
@@ -2297,12 +2306,26 @@ describe("WSL PATH interop guard", () => {
       exists: path => path === transientCodex || path === fallback,
       isShimFile: () => false,
       isDirectory: () => false,
-      realpath: path => path === transientCodex ? transientCodex : path,
+      realpath: path => path === multishell ? multishell : path,
     });
     expect(found).toBeNull();
     expect(lastCodexDiscoveryError()).toContain("Refusing to install a shim");
     expect(lastCodexDiscoveryError()).toContain("durable Node installation");
     expect(lastCodexDiscoveryError()).not.toContain(fallback);
+  });
+
+  test("stable nvm installation paths are not treated as fnm temporary paths", () => {
+    const nvmBin = "/home/u/.nvm/versions/node/v24.20.0/bin";
+    const nvmCodex = `${nvmBin}/codex`;
+    const found = findCodexOnPath({
+      pathValue: nvmBin,
+      posixPaths: true,
+      exists: path => path === nvmCodex,
+      isShimFile: () => false,
+      isDirectory: () => false,
+      realpath: () => { throw new Error("non-fnm paths must not be realpathed"); },
+    });
+    expect(found).toBe(nvmCodex);
   });
 });
 
