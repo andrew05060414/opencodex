@@ -3,6 +3,7 @@ import {
   getCodexRoutingKind,
   type CodexRoutingKind,
 } from "../codex/inject";
+import { diagnoseCodexShim, findCodexOnPath, type CodexShimDiagnostic } from "../codex/shim";
 import { loadConfig, resolveEnvValue } from "../config";
 
 const PROXY_ENV_KEYS = [
@@ -19,6 +20,72 @@ export interface CodexShimReadinessInputs {
   externalProvider: string | null;
   processProxyEnvPresent: boolean;
   configuredProxyResolved: boolean;
+}
+
+export type CodexConnectShimStatus = "ready" | "missing" | "unhealthy";
+
+export interface CodexConnectShimReadiness {
+  status: CodexConnectShimStatus;
+  /** Secret-free, actionable text rendered by ocx connect. */
+  message: string;
+}
+
+export interface CodexConnectShimInspectionDeps {
+  diagnose?: () => Pick<CodexShimDiagnostic, "installed" | "healthy" | "summary">;
+  findOnPath?: () => string | null;
+}
+
+const CODEX_TOKEN_ACTION = "The connected Codex config uses OPENCODEX_API_AUTH_TOKEN; "
+  + "without a working shim or when a PATH wrapper replaces it, Codex may fail with "
+  + '\"Missing environment variable\". Run \'ocx codex-shim install\' to repair it.';
+
+export function codexConnectShimReadiness(inputs: {
+  diagnosis: Pick<CodexShimDiagnostic, "installed" | "healthy" | "summary">;
+  commandPath: string | null;
+}): CodexConnectShimReadiness {
+  if (inputs.diagnosis.installed && !inputs.diagnosis.healthy) {
+    return {
+      status: "unhealthy",
+      message: `installed but unhealthy: ${inputs.diagnosis.summary}. ${CODEX_TOKEN_ACTION}`,
+    };
+  }
+  if (inputs.diagnosis.healthy && inputs.commandPath) {
+    return {
+      status: "missing",
+      message: `not active; PATH resolves 'codex' to ${inputs.commandPath}, not an OpenCodex shim. ${CODEX_TOKEN_ACTION}`,
+    };
+  }
+  if (inputs.diagnosis.installed && inputs.diagnosis.healthy) {
+    return { status: "ready", message: "installed and healthy" };
+  }
+  if (inputs.commandPath) {
+    return {
+      status: "missing",
+      message: `not active; PATH resolves 'codex' to ${inputs.commandPath}, not an OpenCodex shim. ${CODEX_TOKEN_ACTION}`,
+    };
+  }
+  return {
+    status: "missing",
+    message: `not installed and no 'codex' executable was found on PATH. ${CODEX_TOKEN_ACTION}`,
+  };
+}
+
+export function inspectCodexShimForConnect(
+  deps: CodexConnectShimInspectionDeps = {},
+): CodexConnectShimReadiness {
+  let diagnosis: Pick<CodexShimDiagnostic, "installed" | "healthy" | "summary">;
+  try {
+    diagnosis = (deps.diagnose ?? diagnoseCodexShim)();
+  } catch {
+    diagnosis = { installed: true, healthy: false, summary: "diagnostic state could not be read" };
+  }
+  let commandPath: string | null = null;
+  try {
+    commandPath = (deps.findOnPath ?? findCodexOnPath)();
+  } catch {
+    // The diagnosis above still gives the operator a repair path.
+  }
+  return codexConnectShimReadiness({ diagnosis, commandPath });
 }
 
 function externalProviderLabel(provider: string | null): string {

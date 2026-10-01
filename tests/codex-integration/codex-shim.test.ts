@@ -568,6 +568,47 @@ exit 126
     },
   );
 
+  test.skipIf(process.platform === "win32")(
+    "Unix fnm multishell install records only the durable node installation target",
+    () => {
+      const root = mkdtempSync(join(tmpdir(), "ocx-shim-install-fnm-"));
+      const home = join(root, "opencodex-home");
+      const multishellBin = join(root, "fnm_multishells", "619109", "bin");
+      const stableBin = join(root, "node-versions", "v24.20.0", "installation", "bin");
+      const stableCodex = join(stableBin, "codex");
+      const multishellCodex = join(multishellBin, "codex");
+      const oldPath = process.env.PATH;
+      const oldHome = process.env.OPENCODEX_HOME;
+      try {
+        mkdirSync(home, { recursive: true });
+        mkdirSync(multishellBin, { recursive: true });
+        mkdirSync(stableBin, { recursive: true });
+        writeFileSync(stableCodex, successfulLauncher("fnm-stable-codex"), "utf8");
+        chmodSync(stableCodex, 0o755);
+        symlinkSync(stableCodex, multishellCodex);
+        process.env.PATH = prependPath(multishellBin, oldPath);
+        process.env.OPENCODEX_HOME = home;
+
+        const installed = installCodexShim();
+        const state = readFileSync(join(home, "codex-shim.json"), "utf8");
+
+        expect(installed.installed).toBe(true);
+        expect(installed.message).toContain(stableCodex);
+        expect(installed.message).not.toContain("fnm_multishells");
+        expect(state).toContain(stableCodex);
+        expect(state).not.toContain("fnm_multishells");
+        expect(readFileSync(stableCodex, "utf8")).toContain(SHIM_MARKER);
+        expect(lstatSync(multishellCodex).isSymbolicLink()).toBe(true);
+      } finally {
+        if (oldPath === undefined) delete process.env.PATH;
+        else process.env.PATH = oldPath;
+        if (oldHome === undefined) delete process.env.OPENCODEX_HOME;
+        else process.env.OPENCODEX_HOME = oldHome;
+        removeTreeWithRetry(root);
+      }
+    },
+  );
+
   test("Unix install rejects a launcher that leaves a background descendant", () => {
     if (process.platform === "win32") return;
 
@@ -2210,6 +2251,58 @@ describe("WSL PATH interop guard", () => {
       ...fakeFs([`${dir}/codex`]),
     });
     expect(found).toBe(`${dir}/codex`);
+  });
+
+  test("fnm multishell discovery resolves to the durable node installation", () => {
+    const multishell = "/home/u/.local/share/fnm/fnm_multishells/619109/bin";
+    const stable = "/home/u/.local/share/fnm/node-versions/v24.20.0/installation/bin";
+    const transientCodex = `${multishell}/codex`;
+    const stableCodex = `${stable}/codex`;
+    const found = findCodexOnPath({
+      pathValue: multishell,
+      posixPaths: true,
+      exists: path => path === transientCodex,
+      isShimFile: () => false,
+      isDirectory: () => false,
+      realpath: path => path === transientCodex ? stableCodex : path,
+    });
+    expect(found).toBe(stableCodex);
+    expect(found).not.toContain("fnm_multishells");
+  });
+
+  test("Windows-style fnm multishell discovery also resolves the durable target", () => {
+    const multishell = "C:\\Users\\u\\AppData\\Local\\fnm_multishells\\619109\\bin";
+    const stable = "C:\\Users\\u\\AppData\\Local\\fnm\\node-versions\\v24.20.0\\installation\\bin";
+    const transientCodex = `${multishell}\\codex`;
+    const stableCodex = `${stable}\\codex`;
+    const found = findCodexOnPath({
+      pathValue: multishell,
+      posixPaths: false,
+      exists: path => path === transientCodex,
+      isShimFile: () => false,
+      isDirectory: () => false,
+      realpath: path => path === transientCodex ? stableCodex : path,
+    });
+    expect(found).toBe(stableCodex);
+    expect(found).not.toContain("fnm_multishells");
+  });
+
+  test("fnm multishell discovery refuses an unresolved or still-temporary target", () => {
+    const multishell = "/home/u/.local/share/fnm/fnm_multishells/619109/bin";
+    const transientCodex = `${multishell}/codex`;
+    const fallback = "/usr/local/bin/codex";
+    const found = findCodexOnPath({
+      pathValue: `${multishell}:/usr/local/bin`,
+      posixPaths: true,
+      exists: path => path === transientCodex || path === fallback,
+      isShimFile: () => false,
+      isDirectory: () => false,
+      realpath: path => path === transientCodex ? transientCodex : path,
+    });
+    expect(found).toBeNull();
+    expect(lastCodexDiscoveryError()).toContain("Refusing to install a shim");
+    expect(lastCodexDiscoveryError()).toContain("durable Node installation");
+    expect(lastCodexDiscoveryError()).not.toContain(fallback);
   });
 });
 

@@ -20,7 +20,8 @@ import { COLD_SPAWN_WARMUP_HOOK_BUDGET_MS, warmColdSpawn } from "../helpers/cold
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { repoRoot } from "../helpers/repo-root";
 import { INTERNAL_DEADLINE_MS, SPAWN_BUDGET_MS } from "../helpers/test-budget";
-import { connectCompletionReport } from "../../src/cli/connect";
+import { codexShimReadinessLine, connectCompletionReport } from "../../src/cli/connect";
+import { codexConnectShimReadiness } from "../../src/cli/codex-shim-readiness";
 import { dispatchCommand } from "../../src/cli/dispatch";
 import type { CliDispatchDeps } from "../../src/cli/dispatch";
 import { ClientCatalogIncompatibleError } from "../../src/client/catalog-compatibility";
@@ -623,6 +624,56 @@ describe("#4207 what ocx connect reports when the local CLI cannot use the catal
     expect(report.failure).toBeNull();
     expect(report.lines.join(" ")).toContain("nothing here launches Codex");
     expect(report.lines[0]).toContain("Connected to");
+  });
+});
+
+describe("Codex shim readiness on connect", () => {
+  test("a healthy shim is reported as ready", () => {
+    const readiness = codexConnectShimReadiness({
+      diagnosis: { installed: true, healthy: true, summary: "unused" },
+      commandPath: null,
+    });
+    expect(readiness).toEqual({ status: "ready", message: "installed and healthy" });
+    expect(codexShimReadinessLine(["codex"], () => readiness)).toBe("Codex autostart shim: installed and healthy");
+  });
+
+  test("a missing shim or user PATH wrapper gives a secret-free repair hint", () => {
+    const readiness = codexConnectShimReadiness({
+      diagnosis: { installed: false, healthy: false, summary: "Codex autostart shim is not installed." },
+      commandPath: "/home/u/.local/bin/codex-wrapper",
+    });
+    expect(readiness.status).toBe("missing");
+    expect(readiness.message).toContain("codex-wrapper");
+    expect(readiness.message).toContain("OPENCODEX_API_AUTH_TOKEN");
+    expect(readiness.message).toContain("Missing environment variable");
+    expect(readiness.message).toContain("ocx codex-shim install");
+    expect(readiness.message).not.toContain("ocx_data_");
+
+    const shadowed = codexConnectShimReadiness({
+      diagnosis: { installed: true, healthy: true, summary: "unused" },
+      commandPath: "/home/u/bin/codex-wrapper",
+    });
+    expect(shadowed.status).toBe("missing");
+    expect(shadowed.message).toContain("PATH resolves");
+  });
+
+  test("an installed but unhealthy shim is actionable and does not print a token", () => {
+    const readiness = codexConnectShimReadiness({
+      diagnosis: { installed: true, healthy: false, summary: "wrapper missing; original backup present" },
+      commandPath: null,
+    });
+    expect(readiness.status).toBe("unhealthy");
+    expect(readiness.message).toContain("wrapper missing");
+    expect(readiness.message).toContain("OPENCODEX_API_AUTH_TOKEN");
+    expect(readiness.message).toContain("ocx codex-shim install");
+    expect(readiness.message).not.toContain("secret-token");
+  });
+
+  test("Claude-only connect never inspects or reports Codex shim state", () => {
+    const line = codexShimReadinessLine(["claude"], () => {
+      throw new Error("Codex shim must not be inspected for Claude-only connect");
+    });
+    expect(line).toBeNull();
   });
 });
 
