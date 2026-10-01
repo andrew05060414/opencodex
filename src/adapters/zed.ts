@@ -5,7 +5,7 @@ import { createGoogleAdapter } from "./google";
 import { createOpenAIChatAdapter } from "./openai-chat";
 import { createResponsesPassthroughAdapter } from "./openai-responses";
 import type { AdapterEvent, OcxParsedRequest, OcxProviderConfig } from "../types";
-import type { TranslatorBudget } from "../lib/translator-budget";
+import { createTranslatorBudget, type TranslatorBudget } from "../lib/translator-budget";
 import { redactSecretString } from "../lib/redact";
 import {
   normalizeZedProvider,
@@ -173,7 +173,7 @@ export function createZedAdapter(provider: OcxProviderConfig): ProviderAdapter {
   let delegate: ZedDelegate | undefined;
   let credentials: ZedCredentials | undefined;
 
-  const buildRequest = async (parsed: OcxParsedRequest, incoming: IncomingMeta): Promise<AdapterRequest> => {
+  const buildRequest = async (parsed: OcxParsedRequest, incoming?: IncomingMeta): Promise<AdapterRequest> => {
     credentials = zedCredentials(provider, parsed);
     const threadId = parsed._clientThreadId ?? parsed._codexOwnThreadId ?? parsed.previousResponseId ?? randomUUID();
     const promptId = randomUUID();
@@ -181,14 +181,20 @@ export function createZedAdapter(provider: OcxProviderConfig): ProviderAdapter {
     try {
       catalog = await resolveZedModels(
         credentials,
-        incoming.providerFetch ? { fetchFn: incoming.providerFetch } : undefined,
+        incoming?.providerFetch ? { fetchFn: incoming.providerFetch } : undefined,
       );
     } catch {
       /* Model inference fallback below; a transient catalog outage must not block passthrough. */
     }
     const zedProvider = providerFromCatalog(catalog, parsed.modelId);
     const selected = createDelegate(provider, zedProvider);
-   const built = await selected.buildRequest(forceStreaming(parsed), incoming);
+   const safeIncoming: IncomingMeta = {
+     headers: incoming?.headers ?? new Headers(),
+     translatorBudget: incoming?.translatorBudget ?? createTranslatorBudget(),
+     ...(incoming?.providerFetch ? { providerFetch: incoming.providerFetch } : {}),
+     ...(incoming?.abortSignal ? { abortSignal: incoming.abortSignal } : {}),
+   };
+   const built = await selected.buildRequest(forceStreaming(parsed), safeIncoming);
    let providerRequest: unknown;
    try { providerRequest = JSON.parse(built.body) as unknown; } catch { throw new Error("Zed delegate produced an invalid request body"); }
    if (zedProvider === "google" && isRecord(providerRequest)) delete providerRequest.safetySettings;
@@ -199,6 +205,42 @@ export function createZedAdapter(provider: OcxProviderConfig): ProviderAdapter {
         }
         return m;
       });
+    }
+    if (zedProvider === "open_ai" && isRecord(providerRequest)) {
+      if (typeof providerRequest.input === "string") {
+        providerRequest.input = [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: providerRequest.input }],
+          },
+        ];
+      } else if (Array.isArray(providerRequest.input)) {
+        providerRequest.input = providerRequest.input.map((item: unknown) => {
+          if (isRecord(item)) {
+            const role = typeof item.role === "string" ? item.role : "user";
+            const type = typeof item.type === "string" ? item.type : "message";
+            if (typeof item.content === "string") {
+              return { ...item, type, role, content: [{ type: "input_text", text: item.content }] };
+            }
+            if (Array.isArray(item.content)) {
+              return {
+                ...item,
+                type,
+                role,
+                content: item.content.map((c: unknown) => {
+                  if (isRecord(c) && c.type === "text") {
+                    return { ...c, type: "input_text" };
+                  }
+                  return c;
+                }),
+              };
+            }
+            return { ...item, type, role };
+          }
+          return item;
+        });
+      }
     }
    if (!isRecord(providerRequest)) throw new Error("Zed delegate produced a non-object request body");
    delegate = { provider: zedProvider, adapter: selected };

@@ -182,4 +182,35 @@ describe("Zed Hosted AI provider", () => {
       content: [{ type: "text", text: "hello zed" }],
     });
   });
+  test("normalizes OpenAI string input to sequence blocks with input_text for Zed backend", async () => {
+    const responses = [
+      jsonResponse({ default_organization_id: "org-1" }),
+      jsonResponse({ token: "llm-token-1" }),
+      jsonResponse({ models: [{ id: "gpt-6.1-sol", provider: "open_ai" }] }),
+    ];
+    globalThis.fetch = (async () => {
+      const response = responses.shift();
+      if (!response) throw new Error("unexpected Zed catalog fetch");
+      return response;
+    }) as typeof globalThis.fetch;
+
+    const provider: OcxProviderConfig = {
+      adapter: "zed",
+      baseUrl: "https://cloud.zed.dev",
+      authMode: "oauth",
+      apiKey: "access-token",
+    };
+    const parsed = parseRequest({ model: "gpt-6.1-sol", input: "hello zed openai", stream: true });
+    parsed._zedAuthContext = { userId: "user-1" };
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    const request = await adapter.buildRequest(parsed);
+    const body = JSON.parse(request.body) as { provider: string; provider_request: { input: Array<{ type: string; role: string; content: unknown }> } };
+
+    expect(body.provider).toBe("open_ai");
+    expect(body.provider_request.input[0]).toEqual({
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "hello zed openai" }],
+    });
+  });
 });
