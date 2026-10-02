@@ -186,3 +186,19 @@ test("changing API target discards queued writes and ignores the old write's com
   expect(container.querySelector(".action-toast")).toBeNull();
   expect(row("a").disabled).toBe(false);
 });
+
+test("returning to an earlier API target does not resurrect its discarded optimistic draft", async () => {
+  await mount();
+  await click("a"); await click("b");
+  for (const apiBase of ["http://other", "http://localhost"]) {
+    await act(async () => {
+      root.render(<LanguageProvider><Models apiBase={apiBase} reportRestart={() => {}} /></LanguageProvider>);
+    });
+  }
+  expect(pressed("a")).toBe("true");
+  expect(pressed("b")).toBe("true");
+  expect(row("a").disabled).toBe(false);
+  await settle(Response.json({ error: "old failure" }, { status: 500 }));
+  expect(requests).toHaveLength(1);
+  expect(container.querySelector(".action-toast")).toBeNull();
+});

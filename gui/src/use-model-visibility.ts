@@ -13,11 +13,17 @@ type Options = {
 };
 
 const key = (provider: string, id: string, native: boolean) => JSON.stringify([provider, id, native]);
+const emptyOverrides: ReadonlyMap<string, boolean> = new Map();
 
 /** Immediate row feedback, ordered writes, and one authoritative read when the queue drains. */
 export function useModelVisibility(apiBase: string, options: Options) {
-  const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(new Map());
-  const [pending, setPending] = useState(false);
+  const [draft, setDraft] = useState<{ apiBase: string; overrides: ReadonlyMap<string, boolean>; pending: boolean }>({
+    apiBase, overrides: emptyOverrides, pending: false,
+  });
+  if (draft.apiBase !== apiBase) setDraft({ apiBase, overrides: emptyOverrides, pending: false });
+  // A new target never displays another server's optimistic draft, without an effect reset.
+  const overrides = draft.apiBase === apiBase ? draft.overrides : emptyOverrides;
+  const pending = draft.apiBase === apiBase && draft.pending;
   const callbacks = useRef(options);
   useLayoutEffect(() => { callbacks.current = options; });
   const flight = useRef<{
@@ -28,10 +34,6 @@ export function useModelVisibility(apiBase: string, options: Options) {
   useLayoutEffect(() => {
     const current = { active: true, running: false, queue: [] as Mutation[], readVersion: 0, bounded: null as ReturnType<typeof createBoundedFetch> | null };
     flight.current = current;
-    // A changed server owns a new queue; discard the previous server's optimistic draft.
-    // eslint-disable-next-line react-hooks/set-state-in-effect, react/react-compiler
-    setOverrides(new Map());
-    setPending(false);
     callbacks.current.onBusy(false);
     return () => {
       current.active = false;
@@ -76,8 +78,7 @@ export function useModelVisibility(apiBase: string, options: Options) {
       // A click during the read invalidates it and keeps the newer optimistic intent visible.
       if (current.queue.length || readVersion !== current.readVersion) continue;
       current.running = false;
-      setOverrides(new Map());
-      setPending(false);
+      setDraft({ apiBase, overrides: emptyOverrides, pending: false });
       callbacks.current.onBusy(false);
       callbacks.current.onSettled(error ?? (refreshed ? null : "models.networkError"));
       return;
@@ -90,14 +91,13 @@ export function useModelVisibility(apiBase: string, options: Options) {
     current.queue.push({ scope, provider, targets, enabled });
     current.readVersion++;
     callbacks.current.onQueued();
-    setOverrides(previous => {
-      const next = new Map(previous);
+    setDraft(previous => {
+      const next = new Map(previous.apiBase === apiBase ? previous.overrides : emptyOverrides);
       for (const target of targets) next.set(key(provider, target.id, target.native === true), enabled);
-      return next;
+      return { apiBase, overrides: next, pending: true };
     });
     if (!current.running) {
       current.running = true;
-      setPending(true);
       callbacks.current.onBusy(true);
       void drain(current);
     }
