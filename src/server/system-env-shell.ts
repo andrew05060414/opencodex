@@ -132,6 +132,10 @@ export function writeShellEnvFile(
   // value already exported in the user's shell wins.
   const toolSearch = claudeToolSearchEnv(config.claudeCode?.toolSearch);
   if (toolSearch !== undefined) lines.push(conditional("ENABLE_TOOL_SEARCH", toolSearch));
+  const token = localAdmissionToken(config);
+  if (token) {
+    lines.push(conditional("OPENCODEX_API_AUTH_TOKEN", token));
+  }
   const shellEnvPath = getShellEnvFilePath();
   recordOwnedConfigPath(getConfigDir(), shellEnvPath);
   mkdirSync(getConfigDir(), { recursive: true, mode: 0o700 });

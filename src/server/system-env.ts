@@ -34,6 +34,7 @@ const MANAGED_SYSTEM_ENV_NAMES = new Set<string>([
   "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
   "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
   "ENABLE_TOOL_SEARCH",
+  "OPENCODEX_API_AUTH_TOKEN",
 ]);
 
 interface SystemEnvTracking {
@@ -315,6 +316,11 @@ export async function injectSystemEnv(
     // instead of only terminal sessions. injectLever keeps a user-owned launchd value.
     const toolSearch = claudeToolSearchEnv(config.claudeCode?.toolSearch);
     if (toolSearch !== undefined) injectLever("ENABLE_TOOL_SEARCH", toolSearch);
+
+    const hostToken = localAdmissionToken(config);
+    if (hostToken) {
+      injectLever("OPENCODEX_API_AUTH_TOKEN", hostToken);
+    }
 
     // Shell-hook env file: works for new shells in already-running Terminal.app.
     writeShellEnvFile(port, config, modelEnv, auto, deps);

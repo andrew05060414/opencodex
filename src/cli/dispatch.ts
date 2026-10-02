@@ -305,10 +305,11 @@ const commandRunners: Record<string, CommandRunner> = {
     const { readClientConnectionState } = await import("../client/state");
     const clientState = readClientConnectionState();
     await reconcileClientJournalBeforeLifecycle(clientState);
+    if (clientState.kind === "connected") {
+      return 0;
+    }
     if (clientState.kind !== "disconnected") {
-      console.error(clientState.kind === "connected"
-        ? "Client mode does not start a local provider proxy; use 'ocx sync'."
-        : `Client state is ${clientState.kind}: ${clientState.reason}`);
+      console.error(`Client state is ${clientState.kind}: ${clientState.reason}`);
       return 1;
     }
     await deps.handleEnsure();
