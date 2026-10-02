@@ -3,6 +3,10 @@ title: Web Dashboard
 description: The opencodex GUI for proxy health, providers, models, delegation guidance, auth pools, usage, and logs.
 ---
 
+> 创建日期：未记录（2026-10-02 补记元信息）
+> 最后更新：2026-10-02
+> 版本：1.1
+
 opencodex ships a local web dashboard (a Vite/React app under `gui/`) served from the proxy. It is the
 shortest path to managing providers, Codex/ChatGPT accounts, catalog models, sidecars, sub-agent
 settings, and request traffic.
@@ -200,6 +204,11 @@ new or that every upstream measurement was refreshed.
 ## Model visibility
 
 The **Models** switches show final Codex visibility: a routed model is on only when its provider allowlist includes it (or no allowlist is set) and it is not disabled. Turning a model on reconciles both filters atomically; **All on** clears the provider allowlist so newly discovered models are also on.
+
+Switches respond immediately so you can keep changing models while saves run in the background in
+click order. Saved feedback appears after the queue finishes and the list is reconciled with the
+server. Failed saves restore the server's state when it can be read and show an error. Wait for that
+feedback before leaving Models or changing servers: unsent queued changes are discarded on departure.
 
 ### Managing models in a provider workspace
 
