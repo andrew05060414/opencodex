@@ -413,6 +413,16 @@ so an override can never shorten the budgets that prevent a duplicate proxy, and
 `src/service/orchestration.ts`) stays bounded. `tests/server/probe-timeout-env.test.ts` reads the
 constants in child processes.
 
+The npm and Bun updaters confirm the stop with the plain-ESM tri-state probe
+`src/update/proxy-liveness-probe.mjs` (shared with `ocx resolve`), decided by
+`src/update/stop-decision.mjs`. A refused dial is `dead`. A dial that is only dropped or times
+out, which is what a listener bound to a tailnet address produces once it is gone, falls back to
+one transient exclusive bind of the same host and port: success is `dead`, any failed bind
+(`EADDRINUSE`, `EADDRNOTAVAIL`) is `unknown` and still aborts the update. The probe's ceiling is
+its dial timeout plus a 1500 ms child-spawn limit, after which the answer is `unknown`. A
+successful bind records that nothing held the port at that instant; it does not claim the
+endpoint can never restart. Focused coverage is `tests/update/update-stop-classification.test.ts`.
+
 `src/update/install-detection.mjs` examines both lexical and resolved package paths. An enclosing mise installation owns its nested npm/aube package only when the adjacent `.mise.backend.toml` identifies the containing tool alias and the canonical `npm:@bitkyc08/opencodex` backend. That verified outer owner takes precedence over the inner npm layout. Two verified owners whose tool roots differ only by a symlinked ancestor (macOS `/var` -> `/private/var`) are compared by canonical directory and count as one install. An unreadable or contradictory ownership boundary on either path takes precedence over a verified owner on the other path, refusing mutation without inventing a tool name or recovery command. One boundary is not OpenCodex's at all: on Windows, npm -g under a mise-managed Node puts the package directly in `<mise>/installs/node/<version>/node_modules`, whose adjacent record is Node's own (`short = "node"`, `full = "core:node"`). That exact record with the package directly in the runtime's global `node_modules` is an npm install and falls through to npm detection; any other backend, alias or deeper layout stays fail-closed (`tests/update/update-mise-node-runtime.test.ts`). `ocx update`, dashboard update checks, and update workers expose `installer: "mise"`; checks remain read-only, while mutation is refused with `mise upgrade <verified-alias>` before any proxy stop, package write, or worker creation. The package-tree integrity guard remains active for mise packages, and the managed Linux service additionally follows its mise package launcher onto an upgraded version ([package-tree integrity fence](docs-and-release.md#package-tree-integrity-fence)).
 
 ## Restart handoff

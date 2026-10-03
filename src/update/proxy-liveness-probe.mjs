@@ -16,7 +16,14 @@ import { spawnSync } from "node:child_process";
  * stop. Fail-open was wrong here: a listener that accepts connections but withholds
  * `/healthz`, or a probe that times out, is exactly the state where replacing package
  * files is most dangerous, and "we could not tell" is not evidence the proxy is gone.
- * Only a refused connection or a definitive non-OpenCodex answer earns `"dead"`.
+ * A refused connection or a definitive non-OpenCodex answer earns `"dead"`. So does one
+ * more observation when the dial is neither answered nor refused (a timeout, or a dropped
+ * SYN as with a listener bound to a tailnet address): the child tries one transient
+ * exclusive bind of the same host and port, and a successful bind means nothing holds the
+ * port at that instant. A failed bind (`EADDRINUSE`, `EADDRNOTAVAIL`, any error) stays
+ * `"unknown"`, a held-but-silent port included. The whole probe is bounded by the child's
+ * own `timeoutMs` plus a 1500 ms spawn ceiling, after which it is `"unknown"`. A successful
+ * bind is a statement about that moment, not a promise that the endpoint cannot restart.
  */
 export function probeProxyLiveness(port, hostname = "127.0.0.1", timeoutMs = 1500) {
   // An unusable port is not an ambiguous probe: there is nothing to ask.
