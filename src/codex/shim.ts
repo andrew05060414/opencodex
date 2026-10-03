@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, delimiter, dirname, extname, join, posix } from "node:path";
+import { basename, delimiter, dirname, extname, join, posix, win32 } from "node:path";
 import { durableBunRuntime } from "../lib/bun-runtime";
 import type { BunRuntimeSource } from "../lib/bun-runtime";
 import { serviceApiTokenFilePath } from "../lib/service-secrets";
@@ -141,8 +141,10 @@ export function findCodexOnPath(deps: CodexPathScanDeps = {}): string | null {
   const isDir = deps.isDirectory ?? realIsDirectory;
   const wsl = deps.wsl ?? (process.platform === "linux" && isWslRuntime());
   const usePosix = deps.posixPaths ?? (wsl || process.platform !== "win32");
-  const joinPath = usePosix ? posix.join : join;
-  const pathSep = usePosix ? ":" : delimiter;
+  // The injected path flavour governs join and separator alike; host-native `join` and
+  // `delimiter` made a Windows-flavoured scan split `C:\...` on a Linux host.
+  const joinPath = usePosix ? posix.join : win32.join;
+  const pathSep = usePosix ? ":" : win32.delimiter;
   const automountRoot = deps.automountRoot ?? (wsl ? wslAutomountRoot() : "/mnt");
   // Windows npm prefixes ship codex.exe/codex.cmd next to the extensionless sh launcher.
   const interopNames = ["codex", "codex.exe", "codex.cmd", "codex.ps1"];
