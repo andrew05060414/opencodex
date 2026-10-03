@@ -209,13 +209,32 @@ describe("stop failure classification (#3008)", () => {
     }
   });
 
-  test("a dial that is dropped, not refused, falls through to the bind check", () => {
-    // A proxy bound to a Tailscale address is never refused when it is gone: the SYN is
-    // dropped and the dial only times out, so the probe asks whether the port can be bound.
-    // 192.0.2.1 (TEST-NET-1) is not a local address, so the bind fails as well and the
-    // answer must stay unknown rather than being read as a dead proxy. The positive
-    // "bindable means dead" branch needs a local address that drops SYNs, which a test
-    // cannot create portably; it was checked by hand against the real Tailscale address.
+  test("a silent dial to a port nobody holds any more is dead, not unknown", async () => {
+    // The Tailscale case in miniature: the dial is neither answered nor refused, so it can
+    // only time out, and the port is free by the time the probe asks to bind it. The
+    // fixture accepts the probe's connection, closes its listener, and keeps that one
+    // socket open and silent.
+    const listener = spawn(process.execPath, ["-e", [
+      "const net = require('node:net');",
+      "const server = net.createServer(socket => { server.close(); socket.on('error', () => {}); });",
+      "server.listen(0, '127.0.0.1', () => process.stdout.write(String(server.address().port)));",
+    ].join("\n")], { stdio: ["ignore", "pipe", "ignore"] });
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("listener did not report a port")), 10_000);
+      listener.stdout.once("data", chunk => { clearTimeout(timer); resolve(Number(String(chunk))); });
+      listener.once("error", error => { clearTimeout(timer); reject(error); });
+    });
+    try {
+      expect(probeProxyLiveness(port, "127.0.0.1", 400)).toBe("dead");
+    } finally {
+      listener.kill();
+      await new Promise<void>(resolve => listener.once("exit", () => resolve()));
+    }
+  });
+
+  test("a dial that cannot be bound either stays unknown", () => {
+    // 192.0.2.1 (TEST-NET-1) is not a local address: the dial fails or times out and the
+    // bind fails too, so nothing proves the proxy is gone.
     expect(probeProxyLiveness(10100, "192.0.2.1", 400)).toBe("unknown");
   });
 

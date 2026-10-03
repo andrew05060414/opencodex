@@ -73,6 +73,7 @@ export function probeProxyLiveness(port, hostname = "127.0.0.1", timeoutMs = 150
     "  if (bindStarted || settled) return;",
     "  bindStarted = true;",
     "  const server = require('node:net').createServer();",
+    "  server.on('connection', socket => socket.destroy());",
     "  server.once('error', () => settle('UNKNOWN'));",
     "  server.listen({ host, port: Number(port), exclusive: true }, () => server.close(() => settle('DEAD')));",
     "};",
