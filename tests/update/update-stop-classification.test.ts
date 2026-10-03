@@ -235,11 +235,16 @@ describe("stop failure classification (#3008)", () => {
   test("a hostname never gets the bind fallback, because the dial and the bind may resolve differently", async () => {
     // Same fixture as the silent-dial case, but addressed by name: the dial times out and
     // the port is bindable, yet a name can resolve to other addresses for the bind, so a
-    // free port proves nothing about the endpoint the dial reached.
+    // free port proves nothing about the endpoint the dial reached. The fixture listens
+    // dual-stack (`::`, falling back to `0.0.0.0` where IPv6 is unavailable) so the dial
+    // is silent whichever address `localhost` resolves to first, instead of being refused
+    // on `::1` and returning `dead` before the hostname rule is reached.
     const listener = spawn(process.execPath, ["-e", [
       "const net = require('node:net');",
       "const server = net.createServer(socket => { server.close(); socket.on('error', () => {}); });",
-      "server.listen(0, '127.0.0.1', () => process.stdout.write(String(server.address().port)));",
+      "const report = () => process.stdout.write(String(server.address().port));",
+      "server.once('error', () => { server.removeAllListeners('error'); server.listen(0, '0.0.0.0', report); });",
+      "server.listen({ port: 0, host: '::', ipv6Only: false }, report);",
     ].join("\n")], { stdio: ["ignore", "pipe", "ignore"] });
     const port = await new Promise<number>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("listener did not report a port")), 10_000);
