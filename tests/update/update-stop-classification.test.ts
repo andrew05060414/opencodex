@@ -209,6 +209,16 @@ describe("stop failure classification (#3008)", () => {
     }
   });
 
+  test("a dial that is dropped, not refused, falls through to the bind check", () => {
+    // A proxy bound to a Tailscale address is never refused when it is gone: the SYN is
+    // dropped and the dial only times out, so the probe asks whether the port can be bound.
+    // 192.0.2.1 (TEST-NET-1) is not a local address, so the bind fails as well and the
+    // answer must stay unknown rather than being read as a dead proxy. The positive
+    // "bindable means dead" branch needs a local address that drops SYNs, which a test
+    // cannot create portably; it was checked by hand against the real Tailscale address.
+    expect(probeProxyLiveness(10100, "192.0.2.1", 400)).toBe("unknown");
+  });
+
   test("the shared decision covers the whole post-stop matrix", () => {
     // This is THE predicate both updaters call, not a copy of it: src/update/index.ts and
     // bin/ocx.mjs each import decidePostStopUpdate. Testing a local reimplementation would

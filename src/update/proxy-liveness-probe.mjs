@@ -38,6 +38,8 @@ export function probeProxyLiveness(port, hostname = "127.0.0.1", timeoutMs = 150
   const script = [
     "const http = require('node:http');",
     "const [host, port, timeout] = process.argv.slice(1);",
+    "let settled = false;",
+    "const settle = word => { if (!settled) { settled = true; process.stdout.write(word); } };",
     "const req = http.get({ host, port: Number(port), path: '/healthz', timeout: Number(timeout) }, res => {",
     "  let body = '';",
     "  res.setEncoding('utf8');",
@@ -56,15 +58,29 @@ export function probeProxyLiveness(port, hostname = "127.0.0.1", timeoutMs = 150
     "            && typeof parsed.uptime === 'number'));",
     "      // Only a clean 200 decides anything. Any other status means the endpoint is",
     "      // answering but not telling us what it is, which is not evidence of absence.",
-    "      if (res.statusCode !== 200) process.stdout.write('UNKNOWN');",
-    "      else process.stdout.write(isOpencodex ? 'LIVE' : 'DEAD');",
-    "    } catch { process.stdout.write('UNKNOWN'); }",
+    "      if (res.statusCode !== 200) settle('UNKNOWN');",
+    "      else settle(isOpencodex ? 'LIVE' : 'DEAD');",
+    "    } catch { settle('UNKNOWN'); }",
     "  });",
     "});",
-    "req.on('timeout', () => { process.stdout.write('UNKNOWN'); req.destroy(); });",
-    "// ECONNREFUSED is the one error that proves nothing is listening. Everything else -",
-    "// reset, unreachable host, TLS confusion - leaves the question open.",
-    "req.on('error', err => process.stdout.write(err && err.code === 'ECONNREFUSED' ? 'DEAD' : 'UNKNOWN'));",
+    // A refused connection is the clean proof that nothing is listening. Everything else -
+    // reset, unreachable host, a silent drop - leaves the question open, with one more way
+    // to close it: a port nobody listens on can be bound, a held one cannot (EADDRINUSE).
+    // A proxy bound to a Tailscale address is the case that needs this: the stack drops
+    // the SYN instead of refusing it, so the dial only ever times out.
+    "let bindStarted = false;",
+    "const bindCheck = () => {",
+    "  if (bindStarted || settled) return;",
+    "  bindStarted = true;",
+    "  const server = require('node:net').createServer();",
+    "  server.once('error', () => settle('UNKNOWN'));",
+    "  server.listen({ host, port: Number(port), exclusive: true }, () => server.close(() => settle('DEAD')));",
+    "};",
+    "req.on('timeout', () => { req.destroy(); bindCheck(); });",
+    "req.on('error', err => {",
+    "  if (err && err.code === 'ECONNREFUSED') settle('DEAD');",
+    "  else bindCheck();",
+    "});",
   ].join("\n");
   try {
     const probe = spawnSync(
