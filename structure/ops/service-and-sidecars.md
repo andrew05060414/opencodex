@@ -417,8 +417,9 @@ The npm and Bun updaters confirm the stop with the plain-ESM tri-state probe
 `src/update/proxy-liveness-probe.mjs` (shared with `ocx resolve`), decided by
 `src/update/stop-decision.mjs`. A refused dial is `dead`. A dial that is only dropped or times
 out, which is what a listener bound to a tailnet address produces once it is gone, falls back to
-one transient exclusive bind of the same host and port: success is `dead`, any failed bind
-(`EADDRINUSE`, `EADDRNOTAVAIL`) is `unknown` and still aborts the update. The probe's ceiling is
+one transient exclusive bind of the same host and port, only when the host is a literal IP address
+(a name can resolve differently for the dial and the bind, so it stays `unknown`): success is `dead`,
+any failed bind (`EADDRINUSE`, `EADDRNOTAVAIL`) is `unknown` and still aborts the update. The probe's ceiling is
 its dial timeout plus a 1500 ms child-spawn limit, after which the answer is `unknown`. A
 successful bind records that nothing held the port at that instant; it does not claim the
 endpoint can never restart. Focused coverage is `tests/update/update-stop-classification.test.ts`.

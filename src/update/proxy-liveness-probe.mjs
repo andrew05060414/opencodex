@@ -20,7 +20,9 @@ import { spawnSync } from "node:child_process";
  * more observation when the dial is neither answered nor refused (a timeout, or a dropped
  * SYN as with a listener bound to a tailnet address): the child tries one transient
  * exclusive bind of the same host and port, and a successful bind means nothing holds the
- * port at that instant. A failed bind (`EADDRINUSE`, `EADDRNOTAVAIL`, any error) stays
+ * port at that instant. The fallback runs only for a literal IP address, because a name can
+ * resolve to different addresses for the dial and the bind. A failed bind (`EADDRINUSE`,
+ * `EADDRNOTAVAIL`, any error) stays
  * `"unknown"`, a held-but-silent port included. The whole probe is bounded by the child's
  * own `timeoutMs` plus a 1500 ms spawn ceiling, after which it is `"unknown"`. A successful
  * bind is a statement about that moment, not a promise that the endpoint cannot restart.
@@ -79,6 +81,10 @@ export function probeProxyLiveness(port, hostname = "127.0.0.1", timeoutMs = 150
     "const bindCheck = () => {",
     "  if (bindStarted || settled) return;",
     "  bindStarted = true;",
+    // A name can resolve to several addresses, and the dial and the bind resolve it on
+    // their own: a live proxy on one address would not stop a bind on another. Only a
+    // literal address names the same endpoint on both sides.
+    "  if (require('node:net').isIP(host) === 0) { settle('UNKNOWN'); return; }",
     "  const server = require('node:net').createServer();",
     "  server.on('connection', socket => socket.destroy());",
     "  server.once('error', () => settle('UNKNOWN'));",

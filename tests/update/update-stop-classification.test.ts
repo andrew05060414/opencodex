@@ -232,6 +232,28 @@ describe("stop failure classification (#3008)", () => {
     }
   });
 
+  test("a hostname never gets the bind fallback, because the dial and the bind may resolve differently", async () => {
+    // Same fixture as the silent-dial case, but addressed by name: the dial times out and
+    // the port is bindable, yet a name can resolve to other addresses for the bind, so a
+    // free port proves nothing about the endpoint the dial reached.
+    const listener = spawn(process.execPath, ["-e", [
+      "const net = require('node:net');",
+      "const server = net.createServer(socket => { server.close(); socket.on('error', () => {}); });",
+      "server.listen(0, '127.0.0.1', () => process.stdout.write(String(server.address().port)));",
+    ].join("\n")], { stdio: ["ignore", "pipe", "ignore"] });
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("listener did not report a port")), 10_000);
+      listener.stdout.once("data", chunk => { clearTimeout(timer); resolve(Number(String(chunk))); });
+      listener.once("error", error => { clearTimeout(timer); reject(error); });
+    });
+    try {
+      expect(probeProxyLiveness(port, "localhost", 400)).toBe("unknown");
+    } finally {
+      listener.kill();
+      await new Promise<void>(resolve => listener.once("exit", () => resolve()));
+    }
+  });
+
   test("a dial that cannot be bound either stays unknown", () => {
     // 192.0.2.1 (TEST-NET-1) is not a local address: the dial fails or times out and the
     // bind fails too, so nothing proves the proxy is gone.
