@@ -15,6 +15,7 @@ let root: Root;
 let requests: Array<{ enabled: boolean; provider: string; scope: string; targets: Array<{ id: string }> }>;
 let writes: Array<(response?: Response) => void>;
 let reads: number;
+let writeSignal: AbortSignal | null | undefined;
 let disabled: Set<string>;
 let heldRead: { promise: Promise<Response>; resolve(response: Response): void } | null;
 const models = () => ["a", "b"].map(id => ({ provider: "proxy", id, namespaced: `proxy/${id}`, disabled: disabled.has(id) }));
@@ -30,7 +31,7 @@ beforeEach(() => {
     sessionStorage: { configurable: true, value: win.sessionStorage }, IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
     setInterval: { configurable: true, value: () => 1 }, clearInterval: { configurable: true, value: () => {} },
   });
-  requests = []; writes = []; reads = 0; disabled = new Set(); heldRead = null;
+  requests = []; writes = []; reads = 0; writeSignal = undefined; disabled = new Set(); heldRead = null;
   win.localStorage.setItem("ocx-models-collapsed:v2", "[]");
   win.sessionStorage.setItem("ocx.models.catalog.v1:http://localhost", JSON.stringify({ models: models(), providers,
     selectedModels: {}, disabled: [], contextCaps: {}, contextCapValue: 350_000 }));
@@ -39,6 +40,7 @@ beforeEach(() => {
     if (path === "/api/model-visibility") {
       const body = JSON.parse(String(init?.body));
       requests.push(body);
+      writeSignal = init?.signal;
       return new Promise<Response>(resolve => writes.push(response => {
         if (!response || response.ok) for (const target of body.targets) {
           if (body.enabled) disabled.delete(target.id); else disabled.add(target.id);
@@ -181,6 +183,7 @@ test("changing API target discards queued writes and ignores the old write's com
   await act(async () => {
     root.render(<LanguageProvider><Models apiBase="http://other" reportRestart={() => {}} /></LanguageProvider>);
   });
+  expect(writeSignal?.aborted).toBe(true);
   await settle(Response.json({ error: "old target failure" }, { status: 500 }));
   expect(requests).toHaveLength(1);
   expect(container.querySelector(".action-toast")).toBeNull();
