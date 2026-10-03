@@ -194,7 +194,9 @@ export async function handleExportCommand(argv: string[], deps: ExportCommandDep
     // `--out` is the path that writes the selected client's native format.
     // Format metadata rides in the human lines below.
     printData(clientConfig, wantsJson, [
-      text.trimEnd(),
+      // `lines` entries print one console line each and are control-escaped, so
+      // the document goes in as individual lines rather than one multi-line blob.
+      ...text.trimEnd().split("\n"),
       "",
       ...(out !== undefined ? [`Wrote ${out}`] : []),
       `Destination: ${spec.destination(process.env)}`,

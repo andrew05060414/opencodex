@@ -2,6 +2,7 @@
   "version": 1,
   "root": "tests",
   "explicit": {
+    "claude-intercept-cleanup.test.ts": "claude-integration",
     "claude-intercept-on-demand.test.ts": "claude-integration",
     "main-account-hard-lock-thresholds.test.ts": "codex-integration",
     "main-account-external-usage.test.ts": "codex-integration",
@@ -354,6 +355,7 @@
     "claude-desktop-remote-hub.test.ts": "claude-integration",
     "claude-dotenv-provenance-transport.test.ts": "claude-integration",
     "claude-estimate-projection.test.ts": "claude-integration",
+    "claude-first-party-agent-sync.test.ts": "claude-integration",
     "claude-first-party-union.test.ts": "claude-integration",
     "claude-gateway-cache.test.ts": "claude-integration",
     "claude-inbound-cache-stabilize.test.ts": "claude-integration",
@@ -933,6 +935,7 @@
     "grok-reset-coupon-cli.test.ts": "providers/xai",
     "grok-reset-coupons.test.ts": "providers/xai",
     "grok-selection.test.ts": "providers/xai",
+    "grok-session-identity.test.ts": "providers/xai",
     "grok-status.test.ts": "providers/xai",
     "grok-sync.test.ts": "providers/xai",
     "grok-writer-boundary.test.ts": "providers/xai",
