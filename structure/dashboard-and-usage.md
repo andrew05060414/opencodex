@@ -29,14 +29,6 @@ only that the catalog is saved on the hub. `gui/src/api-targets.ts` carries the 
 timestamp does not prove that fetch contains a later hub save. Runtime activation remains explicitly
 unverified because process age and catalog-file age are not client acknowledgement.
 
-Models visibility switches update immediately while writes execute in click order in the background.
-Only visibility controls remain editable during that queue; preset and other settings writes retain
-their mutual exclusion. Once the queue drains, one authoritative catalog read reconciles the
-switches before saved feedback appears. Refused writes or failed reconciliation show error feedback;
-client integration refresh failures retain their separate warning. Stale reads cannot override newer
-intent. Changing the API target or unmounting the page aborts observations and drops unsent queued
-changes.
-
 `src/server/management/api-access.ts` publishes an `audio` projection through the
 existing `/api/keys` response in `src/server/management/oauth-account-routes.ts`.
 URLs derive from the same advertised inference base as text APIs, with HTTP(S)
