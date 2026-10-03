@@ -1,10 +1,8 @@
 # Dashboard Surfaces And Usage
 
-> 创建日期：未记录（2026-10-02 补记元信息）
-> 最后更新：2026-10-02
-> 版本：1.1
-
-Dashboard page contracts, usage accounting and request metrics, and the management settings that back individual dashboard surfaces. Serving, authentication boundaries, and `/api/*` ownership are in [GUI and management API](gui-and-management-api.md).
+Dashboard page contracts, usage accounting and request metrics, and the management settings that
+back individual dashboard surfaces. Serving, authentication boundaries, and `/api/*` ownership are
+in [GUI and management API](gui-and-management-api.md).
 
 ## UX boundary
 
@@ -25,9 +23,19 @@ placeholder contract. Every registered locale, including Vietnamese, supplies th
 locale-specific Compatibility Lab, log-guard, routing, vision, status-code, and quota-formatting
 maps remain total rather than silently falling back to English.
 
-The Models catalog names three distinct delivery states. A successful management mutation confirms only that the catalog is saved on the hub. `gui/src/api-targets.ts` carries the local machine's `catalogSyncedAt` into `gui/src/pages/Models.tsx` as the time this client last fetched a catalog; the timestamp does not prove that fetch contains a later hub save. Runtime activation remains explicitly unverified because process age and catalog-file age are not client acknowledgement.
+The Models catalog names three distinct delivery states. A successful management mutation confirms
+only that the catalog is saved on the hub. `gui/src/api-targets.ts` carries the local machine's
+`catalogSyncedAt` into `gui/src/pages/Models.tsx` as the time this client last fetched a catalog; the
+timestamp does not prove that fetch contains a later hub save. Runtime activation remains explicitly
+unverified because process age and catalog-file age are not client acknowledgement.
 
-Models visibility switches update immediately while writes execute in click order in the background. Only visibility controls remain editable during that queue; preset and other settings writes retain their mutual exclusion. Once the queue drains, one authoritative catalog read reconciles the switches before saved feedback appears. Refused writes or failed reconciliation show error feedback; client integration refresh failures retain their separate warning. Stale reads cannot override newer intent. Changing the API target or unmounting the page aborts observations and drops unsent queued changes.
+Models visibility switches update immediately while writes execute in click order in the background.
+Only visibility controls remain editable during that queue; preset and other settings writes retain
+their mutual exclusion. Once the queue drains, one authoritative catalog read reconciles the
+switches before saved feedback appears. Refused writes or failed reconciliation show error feedback;
+client integration refresh failures retain their separate warning. Stale reads cannot override newer
+intent. Changing the API target or unmounting the page aborts observations and drops unsent queued
+changes.
 
 `src/server/management/api-access.ts` publishes an `audio` projection through the
 existing `/api/keys` response in `src/server/management/oauth-account-routes.ts`.

@@ -3,10 +3,6 @@ title: Web 仪表盘
 description: 用于管理代理健康状态、provider、模型、委派指引、认证池、usage 和日志的 opencodex GUI。
 ---
 
-> 创建日期：未记录（2026-10-02 补记元信息）
-> 最后更新：2026-10-02
-> 版本：1.1
-
 opencodex 内置了一个由代理提供服务的本地 web 仪表盘（`gui/` 下的 Vite/React 应用）。你可以在
 这里快速管理 provider、Codex/ChatGPT 账号、目录模型、sidecar、子代理设置和请求流量。
 
