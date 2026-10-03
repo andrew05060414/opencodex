@@ -699,6 +699,11 @@ describe("Codex shim readiness on connect", () => {
     });
     expect(shadowed.status).toBe("missing");
     expect(shadowed.message).toContain("PATH resolves");
+    // An installed, healthy shim cannot be repaired by reinstalling: say so and carry the
+    // diagnostic summary instead of the generic "run install" advice.
+    expect(shadowed.message).toContain("Shim state: unused");
+    expect(shadowed.message).toContain("will not change PATH order");
+    expect(shadowed.message).not.toContain("to repair it");
   });
 
   test("an installed but unhealthy shim is actionable and does not print a token", () => {

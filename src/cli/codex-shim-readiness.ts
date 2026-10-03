@@ -36,9 +36,10 @@ export interface CodexConnectShimInspectionDeps {
   findOnPath?: () => CodexPathCandidate | null;
 }
 
-const CODEX_TOKEN_ACTION = "The connected Codex config uses OPENCODEX_API_AUTH_TOKEN; "
+const CODEX_TOKEN_NOTE = "The connected Codex config uses OPENCODEX_API_AUTH_TOKEN; "
   + "without a working shim or when a PATH wrapper replaces it, Codex may fail with "
-  + '\"Missing environment variable\". Run \'ocx codex-shim install\' to repair it.';
+  + '"Missing environment variable".';
+const CODEX_TOKEN_ACTION = `${CODEX_TOKEN_NOTE} Run 'ocx codex-shim install' to repair it.`;
 
 export function codexConnectShimReadiness(inputs: {
   diagnosis: Pick<CodexShimDiagnostic, "installed" | "healthy" | "summary">;
@@ -52,9 +53,13 @@ export function codexConnectShimReadiness(inputs: {
     };
   }
   if (inputs.diagnosis.healthy && inputs.commandPath && !inputs.commandIsShim) {
+    // The shim is installed and healthy, so reinstalling it cannot fix this: only PATH
+    // order (or the wrapper in front of it) can.
     return {
       status: "missing",
-      message: `not active; PATH resolves 'codex' to ${inputs.commandPath}, not an OpenCodex shim. ${CODEX_TOKEN_ACTION}`,
+      message: `not active; PATH resolves 'codex' to ${inputs.commandPath}, not an OpenCodex shim. `
+        + `Shim state: ${inputs.diagnosis.summary}. Put the directory of the tracked shim ahead of that command on PATH, `
+        + `or remove that wrapper; re-running 'ocx codex-shim install' will not change PATH order. ${CODEX_TOKEN_NOTE}`,
     };
   }
   if (inputs.diagnosis.installed && inputs.diagnosis.healthy) {
