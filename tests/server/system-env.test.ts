@@ -9,6 +9,8 @@ import {
   injectSystemEnv,
   installShellHook,
   revertSystemEnv,
+  injectClientSystemEnv,
+  revertClientSystemEnv,
 } from "../../src/server/system-env";
 import {
   getShellEnvFilePath as shellEnvFilePath,
@@ -643,4 +645,136 @@ test("system-env preserves the shell seam without a back-import", () => {
   const shellSource = fs.readFileSync(repoPath("src/server/system-env-shell.ts"), "utf8");
   expect(shellSource.split("\n").some(line => /from\s+["']\.\/system-env["']/.test(line))).toBe(false);
   expect(fs.readFileSync(repoPath("src/server/system-env.ts"), "utf8")).toContain("catalog_busy");
+});
+
+describe("client system environment injection (PX-659 B-1)", () => {
+  const mockToken = "mock_client_token_secret_123";
+
+  test("injectClientSystemEnv sets launchctl, writes client-env.sh and hooks ~/.zshenv on macOS", async () => {
+    const writes: Array<{ path: string; data: string; mode?: number }> = [];
+    writeSpy.mockImplementation(((...args: unknown[]) => {
+      writes.push({ path: String(args[0]), data: String(args[1]), mode: (args[2] as { mode?: number })?.mode });
+    }) as typeof fs.writeFileSync);
+
+    const result = injectClientSystemEnv(mockToken, { home: "/Users/test", configDir: "/Users/test/.opencodex" });
+    expect(result).toEqual({ injected: true });
+
+    // Verify launchctl command
+    const commands = launchctlCommands();
+    expect(commands).toContain(`launchctl setenv OPENCODEX_API_AUTH_TOKEN ${mockToken}`);
+
+    // Verify client-env.sh written with mode 0o600
+    const clientEnvWrite = writes.find(w => w.path.includes("client-env.sh"));
+    expect(clientEnvWrite).toBeDefined();
+    expect(clientEnvWrite!.mode).toBe(0o600);
+    expect(clientEnvWrite!.data).toContain(`export OPENCODEX_API_AUTH_TOKEN='${mockToken}'`);
+
+    // Verify ~/.zshenv hook installed with mode 0o644
+    const zshenvWrite = writes.find(w => w.path.includes(".zshenv"));
+    expect(zshenvWrite).toBeDefined();
+    expect(zshenvWrite!.data).toContain("# opencodex client-env hook");
+    expect(zshenvWrite!.data).toContain("source ~/.opencodex/client-env.sh");
+  });
+
+  test("injectClientSystemEnv resolves token from serviceApiTokenState when omitted", async () => {
+    const serviceSecrets = await import("../../src/lib/service-secrets");
+    const secretSpy = spyOn(serviceSecrets, "readServiceApiTokenState").mockReturnValue({
+      kind: "present",
+      token: "discovered_stored_token",
+      fingerprint: "abc",
+    });
+    try {
+      const result = injectClientSystemEnv(undefined, { home: "/Users/test", configDir: "/Users/test/.opencodex" });
+      expect(result).toEqual({ injected: true });
+      const commands = launchctlCommands();
+      expect(commands).toContain("launchctl setenv OPENCODEX_API_AUTH_TOKEN discovered_stored_token");
+    } finally {
+      secretSpy.mockRestore();
+    }
+  });
+
+  test("injectClientSystemEnv returns injected: false when no token is available", async () => {
+    const serviceSecrets = await import("../../src/lib/service-secrets");
+    const secretSpy = spyOn(serviceSecrets, "readServiceApiTokenState").mockReturnValue({ kind: "absent" });
+    try {
+      const result = injectClientSystemEnv(undefined, { home: "/Users/test", configDir: "/Users/test/.opencodex" });
+      expect(result).toEqual({ injected: false, reason: "no token" });
+      const commands = launchctlCommands();
+      expect(commands.some(c => c.includes("OPENCODEX_API_AUTH_TOKEN"))).toBe(false);
+    } finally {
+      secretSpy.mockRestore();
+    }
+  });
+
+  test("injectClientSystemEnv is a no-op outside macOS", () => {
+    setPlatform("linux");
+    const result = injectClientSystemEnv(mockToken, { home: "/home/test", configDir: "/home/test/.opencodex" });
+    expect(result).toEqual({ injected: false, reason: "not macOS" });
+    expect(launchctlCommands().length).toBe(0);
+  });
+
+  test("revertClientSystemEnv unsets launchctl, deletes client-env.sh, and removes ~/.zshenv hook", () => {
+    const unlinks: string[] = [];
+    unlinkSpy.mockImplementation(((path: unknown) => {
+      unlinks.push(String(path));
+    }) as typeof fs.unlinkSync);
+
+    const zshenvContent = "existing_env_var=1\n\n# opencodex client-env hook\n[ -f ~/.opencodex/client-env.sh ] && source ~/.opencodex/client-env.sh\n";
+    readSpy.mockImplementation(((path: unknown) => {
+      if (String(path).includes(".zshenv")) return zshenvContent;
+      throw new Error("ENOENT");
+    }) as typeof fs.readFileSync);
+    const writes: Array<{ path: string; data: string }> = [];
+    writeSpy.mockImplementation(((...args: unknown[]) => {
+      writes.push({ path: String(args[0]), data: String(args[1]) });
+    }) as typeof fs.writeFileSync);
+
+    const result = revertClientSystemEnv({ home: "/Users/test", configDir: "/Users/test/.opencodex" });
+    expect(result).toEqual({ reverted: true });
+
+    // Verify launchctl unsetenv
+    const commands = launchctlCommands();
+    expect(commands).toContain("launchctl unsetenv OPENCODEX_API_AUTH_TOKEN");
+
+    // Verify client-env.sh unlinked
+    expect(unlinks.some(p => p.includes("client-env.sh"))).toBe(true);
+
+    // Verify ~/.zshenv hook removed
+    const zshenvWrite = writes.find(w => w.path.includes(".zshenv"));
+    expect(zshenvWrite).toBeDefined();
+    expect(zshenvWrite!.data).not.toContain("# opencodex client-env hook");
+    expect(zshenvWrite!.data).toContain("existing_env_var=1");
+  });
+
+  test("revertClientSystemEnv is a no-op outside macOS", () => {
+    setPlatform("win32");
+    expect(revertClientSystemEnv()).toEqual({ reverted: false, reason: "not macOS" });
+    expect(launchctlCommands().length).toBe(0);
+  });
+
+  test("token is never leaked to console during inject or revert", () => {
+    const sensitiveToken = "super-secret-must-not-leak-token";
+    const logged: string[] = [];
+    const logSpy = spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    }) as typeof console.log);
+    const errSpy = spyOn(console, "error").mockImplementation(((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    }) as typeof console.error);
+    const warnSpy = spyOn(console, "warn").mockImplementation(((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    }) as typeof console.warn);
+
+    try {
+      injectClientSystemEnv(sensitiveToken, { home: "/Users/test", configDir: "/Users/test/.opencodex" });
+      revertClientSystemEnv({ home: "/Users/test", configDir: "/Users/test/.opencodex" });
+      for (const msg of logged) {
+        expect(msg).not.toContain(sensitiveToken);
+      }
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
 });

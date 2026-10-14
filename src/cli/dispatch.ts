@@ -306,6 +306,10 @@ const commandRunners: Record<string, CommandRunner> = {
     const clientState = readClientConnectionState();
     await reconcileClientJournalBeforeLifecycle(clientState);
     if (clientState.kind === "connected") {
+      try {
+        const { injectClientSystemEnv } = await import("../server/system-env");
+        injectClientSystemEnv();
+      } catch { /* best-effort */ }
       return 0;
     }
     if (clientState.kind !== "disconnected") {
@@ -408,6 +412,10 @@ const commandRunners: Record<string, CommandRunner> = {
       try {
         const { syncConnectedClient } = await import("../client/connect");
         const result = await syncConnectedClient({ restartCodex });
+        try {
+          const { injectClientSystemEnv } = await import("../server/system-env");
+          injectClientSystemEnv();
+        } catch { /* best-effort */ }
         console.log(result.stale
           ? "Hub unavailable; retained and applied the last-known-good remote catalog (stale)."
           : "Remote hub catalog synchronized.");
