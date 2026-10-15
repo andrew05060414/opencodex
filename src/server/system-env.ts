@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { getConfigDir } from "../config";
+import { getConfigDir, loadConfig } from "../config";
+import { readServiceApiTokenState } from "../lib/service-secrets";
 import { CLAUDE_TIER_LABEL_SLOTS, claudeTierDisplayName, claudeToolSearchEnv, resolveAutoContext, type AutoContextMode } from "../claude/context-windows";
 import { PROXY_MARKER } from "../claude/auth-detect";
 import { isProxyAdmissionSecret } from "./auth-cors";
@@ -12,9 +13,28 @@ import { probeHostname } from "./proxy-liveness";
 import { providerContextCap } from "../providers/context-cap";
 import { OPENAI_CODEX_PROVIDER_ID } from "../providers/openai-tiers";
 import { siblingOfLivePort } from "../codex/sibling-start";
-export { getShellEnvFilePath, installShellHook, uninstallShellHook, claudeCodeCliInstalled, reconcileShellHook } from "./system-env-shell";
+export {
+  getShellEnvFilePath,
+  installShellHook,
+  uninstallShellHook,
+  claudeCodeCliInstalled,
+  reconcileShellHook,
+  getClientShellEnvFilePath,
+  writeClientShellEnvFile,
+  removeClientShellEnvFile,
+  installClientShellHook,
+  uninstallClientShellHook,
+} from "./system-env-shell";
 export type { SystemEnvDeps } from "./system-env-shell";
-import { systemEnvMarkerMode, writeShellEnvFile, removeShellEnvFile } from "./system-env-shell";
+import {
+  systemEnvMarkerMode,
+  writeShellEnvFile,
+  removeShellEnvFile,
+  writeClientShellEnvFile,
+  removeClientShellEnvFile,
+  installClientShellHook,
+  uninstallClientShellHook,
+} from "./system-env-shell";
 import type { SystemEnvDeps } from "./system-env-shell";
 
 const SYSTEM_ENV_NAMES = [
@@ -37,6 +57,7 @@ const MANAGED_SYSTEM_ENV_NAMES = new Set<string>([
   "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
   "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
   "ENABLE_TOOL_SEARCH",
+  "OPENCODEX_API_AUTH_TOKEN",
 ]);
 
 interface SystemEnvTracking {
@@ -339,6 +360,10 @@ export async function injectSystemEnv(
     // instead of only terminal sessions. injectLever keeps a user-owned launchd value.
     const toolSearch = claudeToolSearchEnv(config.claudeCode?.toolSearch);
     if (toolSearch !== undefined) injectLever("ENABLE_TOOL_SEARCH", toolSearch);
+    const hostToken = localAdmissionToken(config);
+    if (hostToken) {
+      injectLever("OPENCODEX_API_AUTH_TOKEN", hostToken);
+    }
     // A lever injected on an earlier run that this config no longer produces (a cleared
     // smallFastModel, a removed tier slot, or the DISABLE_COMPACT older releases paired with
     // maxContextTokens) would otherwise stay in launchd until the proxy stops, and a
@@ -446,4 +471,77 @@ export async function cleanStaleSystemEnv(): Promise<CleanupResult> {
   const reverted = revertSystemEnv();
   if (!reverted.reverted) return { cleaned: false, reason: reverted.reason };
   return { cleaned: true };
+}
+
+export interface ClientSystemEnvDeps {
+  execFile?: typeof execFileSync;
+  home?: string;
+  configDir?: string;
+}
+
+export function injectClientSystemEnv(
+  token?: string,
+  deps: ClientSystemEnvDeps = {},
+): { injected: boolean; reason?: string } {
+  if (process.platform !== "darwin") return { injected: false, reason: "not macOS" };
+
+  let resolvedToken = token;
+  if (!resolvedToken) {
+    const state = readServiceApiTokenState();
+    if (state.kind === "present" && state.token) {
+      resolvedToken = state.token;
+    } else {
+      try {
+        const config = loadConfig();
+        const local = localAdmissionToken(config);
+        if (local) resolvedToken = local;
+      } catch { /* ignore */ }
+    }
+  }
+
+  if (!resolvedToken) {
+    return { injected: false, reason: "no token" };
+  }
+
+  const exec = deps.execFile ?? execFileSync;
+  try {
+    exec("/bin/launchctl", ["setenv", "OPENCODEX_API_AUTH_TOKEN", resolvedToken]);
+  } catch (error) {
+    return {
+      injected: false,
+      reason: `launchctl setenv failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  try {
+    writeClientShellEnvFile(resolvedToken, deps.configDir);
+    installClientShellHook(deps.home, deps.configDir);
+  } catch (error) {
+    try {
+      exec("/bin/launchctl", ["unsetenv", "OPENCODEX_API_AUTH_TOKEN"]);
+    } catch { /* best-effort */ }
+    return {
+      injected: false,
+      reason: `shell env injection failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  return { injected: true };
+}
+
+export function revertClientSystemEnv(
+  deps: ClientSystemEnvDeps = {},
+): { reverted: boolean; reason?: string } {
+  if (process.platform !== "darwin") return { reverted: false, reason: "not macOS" };
+
+  const exec = deps.execFile ?? execFileSync;
+  try {
+    exec("/bin/launchctl", ["unsetenv", "OPENCODEX_API_AUTH_TOKEN"]);
+  } catch {
+    // continue cleanup
+  }
+
+  removeClientShellEnvFile(deps.configDir);
+  uninstallClientShellHook(deps.home);
+  return { reverted: true };
 }

@@ -262,6 +262,35 @@ describe("dispatchCommand exit codes", () => {
     },
   );
 
+  test("ensure returns 0 when clientState is connected and triggers injectClientSystemEnv", async () => {
+    const state = await import("../../src/client/state");
+    const systemEnv = await import("../../src/server/system-env");
+    let injectCalled = false;
+    const injectSpy = spyOn(systemEnv, "injectClientSystemEnv").mockImplementation((() => {
+      injectCalled = true;
+      return { injected: true };
+    }) as typeof systemEnv.injectClientSystemEnv);
+    const stateSpy = spyOn(state, "readClientConnectionState").mockReturnValue({
+      kind: "connected",
+      value: { serverUrl: "https://hub.example.test", apiKeyId: "client-key-1" },
+    } as unknown as ReturnType<typeof state.readClientConnectionState>);
+    let handleEnsureCalled = false;
+    const deps = {
+      ...fakeDeps,
+      args: ["ensure"],
+      handleEnsure: async () => { handleEnsureCalled = true; },
+    };
+    try {
+      const code = await dispatchCommand({ kind: "command", command: "ensure", args: deps.args }, deps);
+      expect(code).toBe(0);
+      expect(handleEnsureCalled).toBe(false);
+      expect(injectCalled).toBe(true);
+    } finally {
+      stateSpy.mockRestore();
+      injectSpy.mockRestore();
+    }
+  });
+
   test("returns 0 for help forms", async () => {
     expect(await dispatchCommand({ kind: "help", command: "help", args: ["help"] }, fakeDeps)).toBe(0);
     expect(await dispatchCommand({ kind: "help", command: "--help", args: ["--help"] }, fakeDeps)).toBe(0);

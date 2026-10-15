@@ -326,6 +326,10 @@ function finalizeRotation(
       delete next.pendingOperation;
       commitClientConnection(next);
       removeOrphanTokenBackup();
+      try {
+        const { injectClientSystemEnv } = require("../server/system-env");
+        injectClientSystemEnv(token.token);
+      } catch { /* best-effort */ }
       // Outcome is an API result only, never a persisted client configuration field.
       return { ...next, rotationOutcome };
     });
@@ -755,6 +759,10 @@ export async function connectClient(
       commitClientConnection(connection);
       committed = true;
     }), deps.lifecycleLockDeps);
+    try {
+      const { injectClientSystemEnv } = await import("../server/system-env");
+      injectClientSystemEnv(issued!.key);
+    } catch { /* best-effort */ }
     // Recorded only when the injection that applied it ran (not with --no-sync).
     if (homeSettings?.kind === "fresh" && linkMetadata && injectionCommitted) {
       try {
@@ -873,6 +881,10 @@ export async function syncConnectedClient(
     // Cache invalidation acquires K itself (N -> K -> C); never call it while C is held.
     return invalidateCodexModelsCache({ allowWhenDesiredDisabled: true });
   }, deps.lifecycleLockDeps);
+  try {
+    const { injectClientSystemEnv } = await import("../server/system-env");
+    injectClientSystemEnv();
+  } catch { /* best-effort */ }
   return { catalogWritten: downloaded !== undefined, cacheSynced, injected, stale, ...(homeSettings ? { homeSettings } : {}) };
 }
 
@@ -1073,6 +1085,10 @@ export async function disconnectClient(
     }
     removeHubStateCache();
     requireDesktopResult(finishRemoteDesktopCleanup(held, receipt.owner));
+    try {
+      const { revertClientSystemEnv } = require("../server/system-env");
+      revertClientSystemEnv();
+    } catch { /* best-effort */ }
     if (receipt.phase !== "complete") advance("complete");
     return {
       restored: true, tokenRemoved: tokenRemoval === "removed",

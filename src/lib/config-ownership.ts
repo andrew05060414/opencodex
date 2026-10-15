@@ -43,6 +43,7 @@ const INITIAL_OWNED_PATHS = [
   "admin-api-token",
   "catalog-backup.json",
   "claude-env.sh",
+  "client-env.sh",
   "codex-accounts.json",
   "codex-runtime-clamp.json",
   "codex-runtime.json",

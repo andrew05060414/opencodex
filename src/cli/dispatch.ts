@@ -358,12 +358,16 @@ const commandRunners: Record<string, CommandRunner> = {
     const { readClientConnectionState } = await import("../client/state");
     const clientState = readClientConnectionState();
     await reconcileClientJournalBeforeLifecycle(clientState);
+    if (clientState.kind === "connected") {
+      try {
+        const { injectClientSystemEnv } = await import("../server/system-env");
+        injectClientSystemEnv();
+      } catch { /* best-effort */ }
+      return 0;
+    }
     if (clientState.kind !== "disconnected") {
-      console.error(clientState.kind === "connected"
-        ? "Client mode does not start a local provider proxy; use 'ocx sync'."
-        : `Client state is ${clientState.kind}: ${clientState.reason}`);
-      // A validated client delegates inference to its hub; no local startup is needed.
-      return clientState.kind === "connected" ? 0 : 1;
+      console.error(`Client state is ${clientState.kind}: ${clientState.reason}`);
+      return 1;
     }
     await deps.handleEnsure();
     return Number(process.exitCode ?? 0);
@@ -407,6 +411,10 @@ const commandRunners: Record<string, CommandRunner> = {
       try {
         const { syncConnectedClient } = await import("../client/connect");
         const result = await syncConnectedClient({ restartCodex });
+        try {
+          const { injectClientSystemEnv } = await import("../server/system-env");
+          injectClientSystemEnv();
+        } catch { /* best-effort */ }
         const link = clientState.value.transport === "link";
         console.log(result.stale
           ? `${link ? "Home" : "Hub"} unavailable; retained and applied the last-known-good remote catalog (stale).`
