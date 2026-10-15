@@ -252,6 +252,37 @@ describe("client link connection contracts", () => {
     });
   });
 
+  test("link connectClient triggers injectClientSystemEnv with resolved link token", async () => {
+    await withLinkHome(async home => {
+      const systemEnv = await import("../../src/server/system-env");
+      let injectedToken: string | undefined = "sentinel";
+      let injectCalled = false;
+      const injectSpy = spyOn(systemEnv, "injectClientSystemEnv").mockImplementation(((token?: string) => {
+        injectCalled = true;
+        injectedToken = token;
+        return { injected: true };
+      }) as typeof systemEnv.injectClientSystemEnv);
+
+      try {
+        const connection = await connectClient(linkOptions(), {
+          fetchImpl: async input => String(input).endsWith("/readyz")
+            ? Response.json({
+              service: "opencodex", version: "0.0.0", uptime: 1, pid: 1, port: 34567,
+              status: "ready", protocol: 1, minimumClientProtocol: 1,
+              managementUrl: "http://127.0.0.1:34567",
+            })
+            : Response.json({ models: [] }),
+          lifecycleLockDeps: { lockPath: join(home, "lifecycle.sqlite") },
+        });
+        expect(connection.transport).toBe("link");
+        expect(injectCalled).toBe(true);
+        expect(injectedToken).toBeUndefined();
+      } finally {
+        injectSpy.mockRestore();
+      }
+    });
+  });
+
   test("does not echo malformed link keys from stdin", async () => {
     const input = new EventEmitter() as EventEmitter & { readableEnded?: boolean };
     input.readableEnded = false;

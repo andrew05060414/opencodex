@@ -761,7 +761,7 @@ export async function connectClient(
     }), deps.lifecycleLockDeps);
     try {
       const { injectClientSystemEnv } = await import("../server/system-env");
-      injectClientSystemEnv(issued!.key);
+      injectClientSystemEnv(issued?.key);
     } catch { /* best-effort */ }
     // Recorded only when the injection that applied it ran (not with --no-sync).
     if (homeSettings?.kind === "fresh" && linkMetadata && injectionCommitted) {
