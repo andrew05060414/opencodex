@@ -1210,27 +1210,28 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             (compiled.body as { contents: unknown[] }).contents,
           );
         }
-        // Vertex AI: project/location endpoint with GCP ADC, or x-goog-api-key fast path.
+        // API keys support project/location endpoints as well as projectless express mode.
+        // Keep explicit regions: express mode can route to a region missing newer models.
         const apiKey = resolveVertexApiKey(provider.apiKey);
-        if (apiKey) {
+        const project = provider.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+        if (apiKey && !project) {
           const url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${parsed.modelId}:${method}${streamParam}`;
           headers["x-goog-api-key"] = apiKey;
           return { url, method: "POST", headers, body: JSON.stringify(compiled.body) };
         }
-        const project = provider.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
         if (!project) throw new Error("Vertex AI requires a project id (provider.project or GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT).");
-        const location = provider.location || process.env.GOOGLE_CLOUD_LOCATION;
+        const location = provider.location || process.env.GOOGLE_CLOUD_LOCATION || (apiKey ? "global" : undefined);
         if (!location) throw new Error("Vertex AI requires a location (provider.location or GOOGLE_CLOUD_LOCATION).");
         const locationError = googleVertexLocationConfigError(location);
         if (locationError) throw new Error(locationError);
         const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
-        const url = `https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${parsed.modelId}:${method}${streamParam}`;
-        // The marker account travels per-request as an argument (never process-global state): a
-        // module-level "active marker" written at routing time would race across concurrent
-        // requests for different providers and could resolve one call with another's credential.
-        const markerAccount = gcpCredentialMarkerAccount(provider.apiKey);
-        const token = await getVertexAccessToken({ markerAccount });
-        headers["Authorization"] = `Bearer ${token}`;
+        const url = `https://${host}/v1/projects/${encodeURIComponent(project)}/locations/${location}/publishers/google/models/${parsed.modelId}:${method}${streamParam}`;
+        if (apiKey) headers["x-goog-api-key"] = apiKey;
+        else {
+          // Resolve each marker per request; never share a process-global active account.
+          const markerAccount = gcpCredentialMarkerAccount(provider.apiKey);
+          headers["Authorization"] = `Bearer ${await getVertexAccessToken({ markerAccount })}`;
+        }
         return { url, method: "POST", headers, body: JSON.stringify(compiled.body) };
       }
 

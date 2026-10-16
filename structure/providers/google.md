@@ -1,5 +1,18 @@
 # Google Provider
 
+Created: 2026-10-16 | Updated: 2026-10-16 | Version: 1.0 (Vertex endpoint note)
+
+## Vertex API-key endpoint selection
+
+API keys use the explicit project/location endpoint when a project is configured, with
+`global` as the API-key default location. This preserves model availability for models such as
+Gemini 4 Argon that are unavailable in the region selected implicitly by express mode.
+Without a project, API keys retain the projectless express-mode endpoint. ADC continues to
+require a project and location and resolves service-account markers per request. Both project
+paths validate the location before constructing an authority; keys stay in `x-goog-api-key`.
+`tests/adapters/google/gcp-adc.test.ts` covers explicit and environment project/location,
+express-mode compatibility, invalid-location rejection, and the existing ADC behavior.
+
 ## Vertex credential markers
 
 `src/lib/gcp-adc.ts` resolves an explicit `gcp-sa:<account>` through the OS credential store.

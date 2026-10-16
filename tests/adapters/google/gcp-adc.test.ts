@@ -136,6 +136,31 @@ describe("google adapter vertex mode", () => {
     expect(oauthCalls).toBe(0);
   });
 
+  test("vertex API key honors an explicit project and global location without ADC", async () => {
+    const provider = { adapter: "google", baseUrl: "https://aiplatform.googleapis.com", googleMode: "vertex", apiKey: "fixture-key", project: "fixture-project", location: "global" } as OcxProviderConfig;
+    const req = await createGoogleAdapter(provider).buildRequest(parsed("gemini-4-argon"));
+    expect(req.url).toBe("https://aiplatform.googleapis.com/v1/projects/fixture-project/locations/global/publishers/google/models/gemini-4-argon:streamGenerateContent?alt=sse");
+    expect(req.headers["x-goog-api-key"]).toBe("fixture-key");
+    expect(req.headers.Authorization).toBeUndefined();
+    expect(oauthCalls).toBe(0);
+  });
+
+  test("vertex API key honors environment project and location without ADC", async () => {
+    setEnv("GOOGLE_CLOUD_PROJECT", "fixture-project");
+    setEnv("GOOGLE_CLOUD_LOCATION", "eu");
+    const provider = { adapter: "google", baseUrl: "https://aiplatform.googleapis.com", googleMode: "vertex", apiKey: "fixture-key" } as OcxProviderConfig;
+    const req = await createGoogleAdapter(provider).buildRequest(parsed("gemini-4-argon"));
+    expect(req.url).toBe("https://eu-aiplatform.googleapis.com/v1/projects/fixture-project/locations/eu/publishers/google/models/gemini-4-argon:streamGenerateContent?alt=sse");
+    expect(req.headers["x-goog-api-key"]).toBe("fixture-key");
+    expect(oauthCalls).toBe(0);
+  });
+
+  test("vertex API key validates project endpoint locations before sending credentials", async () => {
+    const provider = { adapter: "google", baseUrl: "https://aiplatform.googleapis.com", googleMode: "vertex", apiKey: "fixture-key", project: "fixture-project", location: "attacker.example/capture" } as OcxProviderConfig;
+    await expect(createGoogleAdapter(provider).buildRequest(parsed())).rejects.toThrow("Vertex AI location must be a single lowercase Google Cloud location label");
+    expect(oauthCalls).toBe(0);
+  });
+
   test("vertex + ADC -> regional host + Authorization Bearer", async () => {
     setEnv("GOOGLE_APPLICATION_CREDENTIALS", saPath);
     const provider = { adapter: "google", baseUrl: "https://x", googleMode: "vertex", project: "proj-1", location: "us-central1" } as OcxProviderConfig;
