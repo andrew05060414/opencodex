@@ -36,7 +36,7 @@ import {
   observeAntigravityReplay,
 } from "./google-antigravity-replay";
 import { canonicalAntigravityUsageModel, resolveAntigravityEffortWireModel } from "../providers/antigravity-models";
-import { googleVertexLocationConfigError } from "../providers/google-vertex-location";
+import { selectVertexEndpoint, vertexInferenceUrl, vertexReplayModelKey } from "./google-vertex-endpoint";
 import { forgetThoughtSignatureForReplay, lookupReplayThoughtSignature } from "../responses/thought-signature-replay";
 import {
   isTranslatorBudgetExceededError,
@@ -1192,9 +1192,10 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
         const compiled = compileGoogleWireBody(body, toolSchemaProfile, toolSchemaPolicy);
         reportToolSchemaLoss(compiled.toolSchemaLossReport);
         restoreGoogleToolName = compiled.restoreToolName;
-        const vertexProject = provider.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || "api-key";
-        const vertexLocation = provider.location || process.env.GOOGLE_CLOUD_LOCATION || "global";
-        vertexReplayModel = `vertex:${vertexProject}:${vertexLocation}:${parsed.modelId}`;
+        const apiKey = resolveVertexApiKey(provider.apiKey);
+        const vertexEndpoint = selectVertexEndpoint(provider, Boolean(apiKey));
+        const url = vertexInferenceUrl(vertexEndpoint, parsed.modelId, method, streamParam);
+        vertexReplayModel = vertexReplayModelKey(vertexEndpoint, parsed.modelId);
         vertexReplaySession = vertexReplaySessionId(parsed);
         // Compile names before replay so the cache matches the exact provider-visible
         // functionCall identity. This is the same bounded TTL/LRU store used by CCA, with the
@@ -1210,22 +1211,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             (compiled.body as { contents: unknown[] }).contents,
           );
         }
-        // API keys support project/location endpoints as well as projectless express mode.
-        // Keep explicit regions: express mode can route to a region missing newer models.
-        const apiKey = resolveVertexApiKey(provider.apiKey);
-        const project = provider.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
-        if (apiKey && !project) {
-          const url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${parsed.modelId}:${method}${streamParam}`;
-          headers["x-goog-api-key"] = apiKey;
-          return { url, method: "POST", headers, body: JSON.stringify(compiled.body) };
-        }
-        if (!project) throw new Error("Vertex AI requires a project id (provider.project or GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT).");
-        const location = provider.location || process.env.GOOGLE_CLOUD_LOCATION || (apiKey ? "global" : undefined);
-        if (!location) throw new Error("Vertex AI requires a location (provider.location or GOOGLE_CLOUD_LOCATION).");
-        const locationError = googleVertexLocationConfigError(location);
-        if (locationError) throw new Error(locationError);
-        const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
-        const url = `https://${host}/v1/projects/${encodeURIComponent(project)}/locations/${location}/publishers/google/models/${parsed.modelId}:${method}${streamParam}`;
+        // Endpoint, location and model path were validated above, before any credential is attached.
         if (apiKey) headers["x-goog-api-key"] = apiKey;
         else {
           // Resolve each marker per request; never share a process-global active account.
