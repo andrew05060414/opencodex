@@ -30,11 +30,15 @@ export function selectVertexEndpoint(
   return { kind: "project", project, location };
 }
 
-/** Replay namespace for thought-signature continuation; mirrors the endpoint actually used. */
+/**
+ * Replay namespace for thought-signature continuation; mirrors the endpoint actually used.
+ * The endpoint kind is part of the key and the project is encoded, so no configured project
+ * (for example one literally named "api-key" or containing ":") can share express mode's space.
+ */
 export function vertexReplayModelKey(selection: VertexEndpointSelection, modelId: string): string {
   return selection.kind === "express"
-    ? `vertex:api-key:global:${modelId}`
-    : `vertex:${selection.project}:${selection.location}:${modelId}`;
+    ? `vertex:express:${modelId}`
+    : `vertex:project:${encodeURIComponent(selection.project)}:${selection.location}:${modelId}`;
 }
 
 const VERTEX_MODEL_PATH_REJECT = /[/?#\\%]/;

@@ -174,6 +174,16 @@ describe("Vertex thought-signature continuation (#1254)", () => {
     expect(replayedFunctionCall(sameProject.body as string).thoughtSignature).toBe(SIGNATURE);
   });
 
+  test("express mode and a project literally named api-key keep separate replay namespaces", async () => {
+    const firstAdapter = createGoogleAdapter(provider);
+    await firstAdapter.buildRequest(firstTurn(false));
+    await firstAdapter.parseResponse!(new Response(JSON.stringify(vertexResponseBody())));
+
+    const projectEndpoint = await createGoogleAdapter({ ...provider, project: "api-key", location: "global" }).buildRequest(continuation());
+    expect(projectEndpoint.url).toContain("/v1/projects/api-key/locations/global/");
+    expect(replayedFunctionCall(projectEndpoint.body as string).thoughtSignature).toBe("skip_thought_signature_validator");
+  });
+
   test("Vertex signatures cannot enter the Antigravity replay namespace", async () => {
     const first = firstTurn(false);
     const adapter = createGoogleAdapter(provider);
