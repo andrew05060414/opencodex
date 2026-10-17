@@ -19,11 +19,13 @@ export function selectVertexEndpoint(
   hasApiKey: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): VertexEndpointSelection {
+  // A blank or whitespace-only project is unset: it must not select a /projects/%20/ endpoint.
+  const configuredProject = provider.project?.trim() || undefined;
   if (hasApiKey) {
-    if (!provider.project) return { kind: "express" };
-    return { kind: "project", project: provider.project, location: provider.location || "global" };
+    if (!configuredProject) return { kind: "express" };
+    return { kind: "project", project: configuredProject, location: provider.location || "global" };
   }
-  const project = provider.project || env.GOOGLE_CLOUD_PROJECT || env.GCLOUD_PROJECT;
+  const project = configuredProject || env.GOOGLE_CLOUD_PROJECT || env.GCLOUD_PROJECT;
   if (!project) throw new Error("Vertex AI requires a project id (provider.project or GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT).");
   const location = provider.location || env.GOOGLE_CLOUD_LOCATION;
   if (!location) throw new Error("Vertex AI requires a location (provider.location or GOOGLE_CLOUD_LOCATION).");

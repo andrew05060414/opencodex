@@ -166,6 +166,17 @@ describe("google adapter vertex mode", () => {
     expect(oauthCalls).toBe(0);
   });
 
+  test("a blank provider project is unset for API keys and ADC", async () => {
+    const keyed = { adapter: "google", baseUrl: "https://aiplatform.googleapis.com", googleMode: "vertex", apiKey: "fixture-key", project: "   " } as OcxProviderConfig;
+    const req = await createGoogleAdapter(keyed).buildRequest(parsed("gemini-4-argon"));
+    expect(req.url).toBe("https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-4-argon:streamGenerateContent?alt=sse");
+    setEnv("GOOGLE_APPLICATION_CREDENTIALS", saPath);
+    setEnv("GOOGLE_CLOUD_PROJECT", "env-proj");
+    const adc = { adapter: "google", baseUrl: "https://x", googleMode: "vertex", project: " ", location: "global" } as OcxProviderConfig;
+    const adcReq = await createGoogleAdapter(adc).buildRequest(parsed());
+    expect(adcReq.url).toBe("https://aiplatform.googleapis.com/v1/projects/env-proj/locations/global/publishers/google/models/gemini-3-pro:streamGenerateContent?alt=sse");
+  });
+
   test("vertex API key project endpoint defaults to global and ignores ambient location", async () => {
     setEnv("GOOGLE_CLOUD_LOCATION", "us-central1");
     const provider = { adapter: "google", baseUrl: "https://aiplatform.googleapis.com", googleMode: "vertex", apiKey: "fixture-key", project: "fixture-project" } as OcxProviderConfig;
