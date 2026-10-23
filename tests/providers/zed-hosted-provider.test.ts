@@ -358,6 +358,120 @@ describe("Zed OpenAI tool selection after filtering", () => {
   });
 });
 
+describe("Zed OpenAI tool relay", () => {
+  const provider: OcxProviderConfig = {
+    adapter: "zed",
+    baseUrl: "https://cloud.zed.dev",
+    authMode: "oauth",
+    apiKey: "access-token",
+  };
+
+  function catalogFetch(): void {
+    const responses = [
+      jsonResponse({ default_organization_id: "org-1" }),
+      jsonResponse({ token: "llm-token-1" }),
+      jsonResponse({ models: [{ id: "gpt-6.1-sol", provider: "open_ai" }] }),
+    ];
+    globalThis.fetch = (async () => {
+      const response = responses.shift();
+      if (!response) throw new Error("unexpected Zed catalog fetch");
+      return response;
+    }) as typeof globalThis.fetch;
+  }
+
+  test("promotes the current turn's additional_tools and drops replayed wrappers", async () => {
+    catalogFetch();
+    const already = { type: "function", name: "already", parameters: { type: "object", properties: {} } };
+    const parsed = parseRequest({
+      model: "gpt-6.1-sol",
+      input: [
+        { type: "additional_tools", tools: [{ type: "function", name: "old_tool", parameters: { type: "object", properties: {} } }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "earlier" }] },
+        { type: "additional_tools", tools: [
+          { type: "function", name: "shell", parameters: { type: "object", properties: {} } },
+          { type: "web_search" },
+          already,
+        ] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "now" }] },
+      ],
+      tools: [already],
+      stream: true,
+    });
+    parsed._zedAuthContext = { userId: "user-1" };
+    parsed._replayPrefixLen = 2;
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    const request = await adapter.buildRequest(parsed);
+    const body = JSON.parse(request.body).provider_request;
+    expect(body.input.map((item: { type: string }) => item.type)).toEqual(["message", "message"]);
+    expect(JSON.stringify(body.input)).not.toContain("old_tool");
+    expect(JSON.stringify(body.input)).not.toContain("additional_tools");
+    expect(body.tools).toEqual([
+      already,
+      { type: "function", name: "shell", parameters: { type: "object", properties: {} } },
+    ]);
+  });
+
+  async function relay(frames: unknown[]): Promise<unknown[]> {
+    catalogFetch();
+    const parsed = parseRequest({ model: "gpt-6.1-sol", input: "hello", stream: true });
+    parsed._zedAuthContext = { userId: "user-1" };
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    await adapter.buildRequest(parsed);
+    const ndjson = frames.map(frame => JSON.stringify(frame)).join("\n") + "\n";
+    const events = [];
+    for await (const event of adapter.parseStream(new Response(ndjson))) events.push(event);
+    return events;
+  }
+
+  test("relays commentary text, function-call deltas, and usage across the synthetic completion", async () => {
+    const events = await relay([
+      { event: { type: "response.output_item.added", item: { id: "msg_1", type: "message", role: "assistant", phase: "commentary", content: [] } } },
+      { event: { type: "response.output_text.delta", item_id: "msg_1", delta: "Looking." } },
+      { event: { type: "response.output_item.added", item: { id: "fc_1", type: "function_call", call_id: "call_1", name: "shell", arguments: "" } } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: "{\"cmd\":" } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: "\"ls\"}" } },
+      { event: { type: "response.function_call_arguments.done", item_id: "fc_1", arguments: "{\"cmd\":\"ls\"}" } },
+      { event: { type: "response.completed", response: {
+        output: [
+          { type: "message", id: "msg_1", phase: "commentary", content: [{ type: "output_text", text: "Looking." }] },
+          { type: "function_call", id: "fc_1", call_id: "call_1", name: "shell", arguments: "{\"cmd\":\"ls\"}" },
+        ],
+        usage: { input_tokens: 11, output_tokens: 6 },
+      } } },
+      { status: "stream_ended" },
+    ]);
+    expect(events).toEqual([
+      { type: "text_delta", text: "Looking.", phase: "commentary" },
+      { type: "tool_call_start", id: "call_1", name: "shell" },
+      { type: "tool_call_delta", arguments: "{\"cmd\":" },
+      { type: "tool_call_delta", arguments: "\"ls\"}" },
+      { type: "tool_call_end" },
+      { type: "done", usage: { inputTokens: 11, outputTokens: 6 } },
+    ]);
+  });
+
+  test("relays a custom tool that arrives only in the completed output without repeating text", async () => {
+    const events = await relay([
+      { event: { type: "response.output_text.delta", delta: "hi" } },
+      { event: { type: "response.completed", response: {
+        output: [
+          { type: "message", id: "msg_1", phase: "commentary", content: [{ type: "output_text", text: "hi" }] },
+          { type: "custom_tool_call", id: "ctc_1", call_id: "call_c", name: "apply_patch", input: "patch body" },
+        ],
+        usage: { input_tokens: 3, output_tokens: 2 },
+      } } },
+      { status: "stream_ended" },
+    ]);
+    expect(events).toEqual([
+      { type: "text_delta", text: "hi" },
+      { type: "tool_call_start", id: "call_c", name: "apply_patch" },
+      { type: "tool_call_delta", arguments: "patch body" },
+      { type: "tool_call_end" },
+      { type: "done", usage: { inputTokens: 3, outputTokens: 2 } },
+    ]);
+  });
+});
+
 describe("Zed inference send accounting", () => {
   async function fixture(limit: number, full = false) {
     const catalog = [jsonResponse({ default_organization_id: "org-1" }),
