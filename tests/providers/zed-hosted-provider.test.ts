@@ -470,6 +470,58 @@ describe("Zed OpenAI tool relay", () => {
       { type: "done", usage: { inputTokens: 3, outputTokens: 2 } },
     ]);
   });
+
+  test("does not repeat an earlier message when completed replays every output item", async () => {
+    const events = await relay([
+      { event: { type: "response.output_text.delta", item_id: "msg_1", delta: "A" } },
+      { event: { type: "response.output_text.delta", item_id: "msg_2", delta: "B" } },
+      { event: { type: "response.completed", response: {
+        output: [
+          { type: "message", id: "msg_1", content: [{ type: "output_text", text: "A" }] },
+          { type: "message", id: "msg_2", content: [{ type: "output_text", text: "B" }] },
+        ],
+        usage: { input_tokens: 1, output_tokens: 2 },
+      } } },
+      { status: "stream_ended" },
+    ]);
+    expect(events).toEqual([
+      { type: "text_delta", text: "A" },
+      { type: "text_delta", text: "B" },
+      { type: "done", usage: { inputTokens: 1, outputTokens: 2 } },
+    ]);
+  });
+
+  test("still emits each completed message when nothing was streamed", async () => {
+    const events = await relay([
+      { event: { type: "response.completed", response: {
+        output: [
+          { type: "message", id: "msg_1", content: [{ type: "output_text", text: "A" }] },
+          { type: "message", id: "msg_2", content: [{ type: "output_text", text: "B" }] },
+        ],
+      } } },
+      { status: "stream_ended" },
+    ]);
+    expect(events).toEqual([
+      { type: "text_delta", text: "A" },
+      { type: "text_delta", text: "B" },
+      { type: "done" },
+    ]);
+  });
+
+  test("keeps usage on an incomplete Zed OpenAI response", async () => {
+    const events = await relay([
+      { event: { type: "response.output_text.delta", item_id: "msg_1", delta: "partial" } },
+      { event: { type: "response.incomplete", response: {
+        incomplete_details: { reason: "max_output_tokens" },
+        usage: { input_tokens: 4, output_tokens: 9 },
+      } } },
+      { status: "stream_ended" },
+    ]);
+    expect(events).toEqual([
+      { type: "text_delta", text: "partial" },
+      { type: "incomplete", reason: "max_output_tokens", usage: { inputTokens: 4, outputTokens: 9 } },
+    ]);
+  });
 });
 
 describe("Zed inference send accounting", () => {

@@ -133,7 +133,8 @@ export async function* translateZedOpenAiStream(
 
   const calls = new Map<string, CallState>();
   const phases = new Map<string, OcxMessagePhase>();
-  let streamedText = "";
+  const textByItem = new Map<string, string>();
+  let unscopedText = "";
   let sawThinking = false;
   let sawRawReasoning = false;
   let usage: OcxUsage | undefined;
@@ -197,21 +198,43 @@ export async function* translateZedOpenAiStream(
     return state;
   }
 
-  function* emitNewText(text: string, phase?: OcxMessagePhase): Generator<AdapterEvent> {
+  function noteText(itemId: string | undefined, text: string): void {
+    if (itemId) textByItem.set(itemId, text);
+    else unscopedText = text;
+  }
+
+  function* emitNewText(text: string, phase?: OcxMessagePhase, itemId?: string): Generator<AdapterEvent> {
     if (!text) return;
-    if (!streamedText) {
-      streamedText = text;
+    // A completed response repeats every message. Deltas from different messages must not
+    // be concatenated before that comparison, or the earlier message matches neither the
+    // whole string nor its prefix and is appended a second time.
+    let previous = itemId !== undefined && textByItem.has(itemId) ? textByItem.get(itemId) ?? "" : "";
+    if (!previous && unscopedText) {
+      if (text === unscopedText || text.startsWith(unscopedText)) {
+        previous = unscopedText;
+        unscopedText = "";
+      } else if (unscopedText.startsWith(text)) {
+        unscopedText = unscopedText.slice(text.length);
+        noteText(itemId, text);
+        return;
+      }
+    }
+    if (!previous) {
+      noteText(itemId, text);
       yield { type: "text_delta", text, ...(phase ? { phase } : {}) };
       return;
     }
-    if (text === streamedText || streamedText.endsWith(text)) return;
-    if (text.startsWith(streamedText)) {
-      const tail = text.slice(streamedText.length);
-      streamedText = text;
-      if (tail) yield { type: "text_delta", text: tail };
+    if (text === previous || previous.endsWith(text)) {
+      noteText(itemId, previous);
       return;
     }
-    streamedText += text;
+    if (text.startsWith(previous)) {
+      const tail = text.slice(previous.length);
+      noteText(itemId, text);
+      if (tail) yield { type: "text_delta", text: tail, ...(phase ? { phase } : {}) };
+      return;
+    }
+    noteText(itemId, previous + text);
     yield { type: "text_delta", text, ...(phase ? { phase } : {}) };
   }
 
@@ -254,7 +277,7 @@ export async function* translateZedOpenAiStream(
     if (item.type === "message") {
       const phase = phaseOf(item);
       if (typeof item.id === "string" && phase) phases.set(item.id, phase);
-      if (done) yield* emitNewText(messageText(item), phase);
+      if (done) yield* emitNewText(messageText(item), phase, typeof item.id === "string" ? item.id : undefined);
       return;
     }
     if (item.type === "function_call" || item.type === "custom_tool_call") {
@@ -273,7 +296,10 @@ export async function* translateZedOpenAiStream(
     if (payload.type === "response.incomplete") {
       terminal = true;
       for (const state of calls.values()) yield* finishCall(state);
-      yield { type: "incomplete", reason: incompleteReason(payload) };
+      const response = isRecord(payload.response) ? payload.response : undefined;
+      const nextUsage = usageFromResponse(response) ?? usage;
+      if (nextUsage) usage = nextUsage;
+      yield { type: "incomplete", reason: incompleteReason(payload), ...(usage ? { usage } : {}) };
       return;
     }
     if (payload.type === "response.output_item.added" || payload.type === "response.output_item.done") {
@@ -283,7 +309,8 @@ export async function* translateZedOpenAiStream(
     if (payload.type === "response.output_text.delta" && typeof payload.delta === "string" && payload.delta) {
       const itemId = typeof payload.item_id === "string" ? payload.item_id : undefined;
       const phase = itemId ? phases.get(itemId) : undefined;
-      streamedText += payload.delta;
+      if (itemId) textByItem.set(itemId, (textByItem.get(itemId) ?? "") + payload.delta);
+      else unscopedText += payload.delta;
       yield { type: "text_delta", text: payload.delta, ...(phase ? { phase } : {}) };
       return;
     }
