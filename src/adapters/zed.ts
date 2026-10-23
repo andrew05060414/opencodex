@@ -5,6 +5,7 @@ import type { AnthropicCacheRetention } from "./anthropic/cache-retention";
 import { createGoogleAdapter } from "./google";
 import { createOpenAIChatAdapter } from "./openai-chat";
 import { createResponsesPassthroughAdapter } from "./openai-responses";
+import { liftZedAdditionalTools, translateZedOpenAiStream } from "./zed-openai-stream";
 import { createAdapterPhysicalSend } from "./physical-send";
 import type { AdapterEvent, OcxParsedRequest, OcxProviderConfig } from "../types";
 import { createTranslatorBudget, releaseTranslatedEvent, retainTranslatedEvent, type TranslatorBudget } from "../lib/translator-budget";
@@ -314,6 +315,12 @@ export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: A
           : item,
       );
     }
+    if (zedProvider === "open_ai") {
+      // Codex carries this turn's client tools in a private additional_tools input item.
+      // Zed rejects that variant, so promote the current turn and drop every wrapper
+      // before the built-in tool filter runs.
+      liftZedAdditionalTools(providerRequest, parsed._replayPrefixLen ?? 0);
+    }
     if (zedProvider === "open_ai" && Array.isArray(providerRequest.tools)) {
       // Zed's Responses decoder supports function/custom tools, not Codex's built-in web_search.
       const supported = (tool: unknown) => isRecord(tool) && (tool.type === "function" || tool.type === "custom");
@@ -410,7 +417,11 @@ export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: A
         headers: { "Content-Type": "text/event-stream" },
       });
       try {
-        yield* delegate.adapter.parseStream(translated, budget);
+        // The Responses passthrough parser only keeps compaction text. Zed is not a
+        // passthrough route, so function and custom calls have to be translated or
+        // Codex ends the turn on the first sentence.
+        if (delegate.provider === "open_ai") yield* translateZedOpenAiStream(translated.body, budget);
+        else yield* delegate.adapter.parseStream(translated, budget);
       } finally {
         // Some delegates only unlock their reader when a collector stops early.
         try { await translated.body?.cancel(); } catch { /* already closed/errored */ }
