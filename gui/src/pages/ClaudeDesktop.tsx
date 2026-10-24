@@ -1,4 +1,4 @@
-import ClaudeInterceptStart from "../components/ClaudeInterceptStart";
+﻿import ClaudeInterceptStart from "../components/ClaudeInterceptStart";
 import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { LANE_PAGE, defaultCollapsedFamilies, laneView, rowStartsOpen } from "./claude-desktop-lane";
 import { makeCollapseStore, toggleInSet } from "./collapse-store";
@@ -10,6 +10,7 @@ import { readSessionListCacheEntry, writeSessionListCacheEntry } from "../sessio
 import { useDataSurface } from "../data-surface";
 import { DataSurfaceSkeleton } from "../components/data-surface";
 import ClaudeFirstPartyBindings from "../components/ClaudeFirstPartyBindings";
+import { ClaudeWorkflowSettings } from "../components/ClaudeWorkflowSettings";
 import ClaudeDesktopPicker, { type DesktopPickerStatus } from "../components/ClaudeDesktopPicker";
 import {
   FAMILIES,
@@ -682,6 +683,8 @@ export default function ClaudeDesktop({
           }}
         />
       )}
+
+      <ClaudeWorkflowSettings apiBase={apiBase} />
 
       {data.models.length === 0 && (
         <EmptyState title={t("claudeDesktop.emptyTitle")}>{t("claudeDesktop.emptyHint")}</EmptyState>
