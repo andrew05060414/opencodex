@@ -51,6 +51,7 @@ export const PROVIDER_MODEL_RENAME_ROLES = {
   apiKeyTransport: "none",
   apiKeyPool: "none",
   apiKeyPoolStrategy: "none",
+  accountAutoPause: "none",
   apiKeySelectionRevision: "none",
   _apiKeyAttempt: "none",
   defaultModel: "scalar",
@@ -152,6 +153,7 @@ export const PROVIDER_MODEL_RENAME_ROLES = {
   desktopExecutor: "none",
   unsafeAllowNativeLocalExec: "none",
   nativeLocalExec: "none",
+  messagePhaseInference: "none",
   tlsProfile: "none",
 } as const satisfies Record<keyof OcxProviderConfig, ModelRenameRole>;
 
