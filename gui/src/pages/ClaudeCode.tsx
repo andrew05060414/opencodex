@@ -1,4 +1,5 @@
-import ClaudeInterceptStart from "../components/ClaudeInterceptStart";
+﻿import ClaudeInterceptStart from "../components/ClaudeInterceptStart";
+import { ClaudeWorkflowSettings } from "../components/ClaudeWorkflowSettings";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useClaudeConnection } from "./use-claude-connection";
 import { Notice, Switch } from "../ui";
@@ -451,6 +452,8 @@ export default function ClaudeCode({ apiBase, active = true }: { apiBase: string
         const key = notice && firstPartyNoticeKeys[notice];
         return key ? <Notice tone="warn">{t(key)}</Notice> : null;
       })()}
+
+      <ClaudeWorkflowSettings apiBase={apiBase} />
 
       <CcwSection title={t("claude.quickstart")}>
         <ClaudeCodeQuickstartSection manualEnv={buildManualEnv(state)} />
