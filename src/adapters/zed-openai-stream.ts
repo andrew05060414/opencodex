@@ -63,12 +63,23 @@ interface CallState {
   name: string;
   args: string;
   pendingFull?: string;
+  argsBytes: number;
+  fullBytes: number;
+  lastCodeUnit: number;
   emitted: number;
   started: boolean;
   ended: boolean;
   closed: boolean;
   /** True only after this call's own done or completed item, not after EOF. */
   allowFull: boolean;
+}
+
+/** UTF-8 bytes a fragment adds to an existing string, without re-measuring the whole buffer. */
+function appendedUtf8Bytes(previousBytes: number, lastCodeUnit: number, fragment: string): number {
+  if (!fragment) return previousBytes;
+  const first = fragment.charCodeAt(0);
+  const joinsPair = lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff && first >= 0xdc00 && first <= 0xdfff;
+  return previousBytes + Buffer.byteLength(fragment, "utf8") - (joinsPair ? 2 : 0);
 }
 
 function phaseOf(item: Record<string, unknown>): OcxMessagePhase | undefined {
@@ -144,7 +155,9 @@ export async function* translateZedOpenAiStream(
   const calls = new Map<string, CallState>();
   const phases = new Map<string, OcxMessagePhase>();
   const textByItem = new Map<string, string>();
+  const textBytesByItem = new Map<string, number>();
   let unscopedText = "";
+  let unscopedTextBytes = 0;
   let sawThinking = false;
   let sawRawReasoning = false;
   let usage: OcxUsage | undefined;
@@ -167,6 +180,7 @@ export async function* translateZedOpenAiStream(
       if (!next.name) {
         if (!next.closed) return;
         next.ended = true;
+        releaseCall(next);
         continue;
       }
       if (!next.started) {
@@ -182,17 +196,62 @@ export async function* translateZedOpenAiStream(
       if (!next.closed) return;
       next.ended = true;
       yield { type: "tool_call_end" };
+      releaseCall(next);
     }
   }
 
   function* appendArgs(state: CallState, fragment: string): Generator<AdapterEvent> {
     if (!fragment || state.ended) return;
+    const nextBytes = appendedUtf8Bytes(state.argsBytes, state.lastCodeUnit, fragment);
+    budget.chargeRetained(nextBytes - state.argsBytes, { kind: "tool_args", callId: state.key });
     state.args += fragment;
+    state.argsBytes = nextBytes;
+    state.lastCodeUnit = fragment.charCodeAt(fragment.length - 1);
     yield* pump();
   }
 
   function rememberFull(state: CallState, full: unknown): void {
-    if (typeof full === "string" && full.length > 0) state.pendingFull = full;
+    // A closed call's buffers were already released; charging again would outlive their owner.
+    if (state.ended || typeof full !== "string" || full.length === 0 || full === state.pendingFull) return;
+    const nextBytes = Buffer.byteLength(full, "utf8");
+    if (nextBytes > state.fullBytes) {
+      budget.chargeRetained(nextBytes - state.fullBytes, { kind: "tool_args", callId: state.key });
+    } else if (nextBytes < state.fullBytes) {
+      budget.releaseRetained(state.fullBytes - nextBytes, { kind: "tool_args", callId: state.key });
+    }
+    state.pendingFull = full;
+    state.fullBytes = nextBytes;
+  }
+
+  /**
+   * A finished call's buffers are dead. Closing the budget call releases exactly the bytes this
+   * call still holds, including the part already emitted, so a turn cannot keep growing.
+   */
+  function releaseCall(state: CallState): void {
+    budget.closeCall(state.key);
+    state.args = "";
+    state.argsBytes = 0;
+    state.pendingFull = undefined;
+    state.fullBytes = 0;
+    state.emitted = 0;
+    state.lastCodeUnit = 0;
+  }
+
+  /**
+   * Release everything this generator still holds. A cancelled consumer or a thrown read never
+   * reaches the flush path, so the buffers must not outlive the request.
+   */
+  function releaseStreamBuffers(): void {
+    for (const state of calls.values()) budget.closeCall(state.key);
+    calls.clear();
+    for (const bytes of textBytesByItem.values()) {
+      budget.releaseRetained(bytes, { kind: "retained_collectors" });
+    }
+    textBytesByItem.clear();
+    textByItem.clear();
+    budget.releaseRetained(unscopedTextBytes, { kind: "retained_collectors" });
+    unscopedTextBytes = 0;
+    unscopedText = "";
   }
 
   function* closeCall(state: CallState, allowFull: boolean): Generator<AdapterEvent> {
@@ -232,9 +291,21 @@ export async function* translateZedOpenAiStream(
       state = {
         // A delta names only the item. Keep the call id the added item already carried instead of
         // replacing it with the item id, which would mislabel a deferred start.
-        key, callId: callId || key, name, args: "", emitted: 0, started: false, ended: false, closed: false, allowFull: false,
+        key,
+        callId: callId || key,
+        name,
+        args: "",
+        argsBytes: 0,
+        fullBytes: 0,
+        lastCodeUnit: 0,
+        emitted: 0,
+        started: false,
+        ended: false,
+        closed: false,
+        allowFull: false,
       };
       calls.set(key, state);
+      budget.openCall(state.key);
       return state;
     }
     if (callId) state.callId = callId;
@@ -242,9 +313,25 @@ export async function* translateZedOpenAiStream(
     return state;
   }
 
+  /**
+   * Text is kept only to suppress a completed replay. Every replacement is charged to the
+   * request budget and the superseded bytes released, so a long turn cannot accumulate text
+   * outside the per-turn ceiling.
+   */
   function noteText(itemId: string | undefined, text: string): void {
-    if (itemId) textByItem.set(itemId, text);
-    else unscopedText = text;
+    const nextBytes = Buffer.byteLength(text, "utf8");
+    if (itemId) {
+      const previousBytes = textBytesByItem.get(itemId) ?? 0;
+      if (nextBytes > previousBytes) budget.chargeRetained(nextBytes - previousBytes, { kind: "retained_collectors" });
+      else if (nextBytes < previousBytes) budget.releaseRetained(previousBytes - nextBytes, { kind: "retained_collectors" });
+      textByItem.set(itemId, text);
+      textBytesByItem.set(itemId, nextBytes);
+      return;
+    }
+    if (nextBytes > unscopedTextBytes) budget.chargeRetained(nextBytes - unscopedTextBytes, { kind: "retained_collectors" });
+    else if (nextBytes < unscopedTextBytes) budget.releaseRetained(unscopedTextBytes - nextBytes, { kind: "retained_collectors" });
+    unscopedText = text;
+    unscopedTextBytes = nextBytes;
   }
 
   function* emitNewText(text: string, phase?: OcxMessagePhase, itemId?: string): Generator<AdapterEvent> {
@@ -256,9 +343,9 @@ export async function* translateZedOpenAiStream(
     if (!previous && unscopedText) {
       if (text === unscopedText || text.startsWith(unscopedText)) {
         previous = unscopedText;
-        unscopedText = "";
+        noteText(undefined, "");
       } else if (unscopedText.startsWith(text)) {
-        unscopedText = unscopedText.slice(text.length);
+        noteText(undefined, unscopedText.slice(text.length));
         noteText(itemId, text);
         return;
       }
@@ -280,6 +367,12 @@ export async function* translateZedOpenAiStream(
     }
     noteText(itemId, previous + text);
     yield { type: "text_delta", text, ...(phase ? { phase } : {}) };
+  }
+
+  /** Streamed deltas accumulate per item; the charge follows the accumulated size. */
+  function appendText(itemId: string | undefined, delta: string): void {
+    if (itemId) noteText(itemId, (textByItem.get(itemId) ?? "") + delta);
+    else noteText(undefined, unscopedText + delta);
   }
 
   function* observeToolItem(item: Record<string, unknown>, done: boolean): Generator<AdapterEvent> {
@@ -353,8 +446,7 @@ export async function* translateZedOpenAiStream(
     if (payload.type === "response.output_text.delta" && typeof payload.delta === "string" && payload.delta) {
       const itemId = typeof payload.item_id === "string" ? payload.item_id : undefined;
       const phase = itemId ? phases.get(itemId) : undefined;
-      if (itemId) textByItem.set(itemId, (textByItem.get(itemId) ?? "") + payload.delta);
-      else unscopedText += payload.delta;
+      appendText(itemId, payload.delta);
       yield { type: "text_delta", text: payload.delta, ...(phase ? { phase } : {}) };
       return;
     }
@@ -418,6 +510,7 @@ export async function* translateZedOpenAiStream(
     yield done;
   } finally {
     if (!ciphertextTransferred) budget.releaseRetained(compactionEncryptedContentBytes, { kind: "retained_collectors" });
+    releaseStreamBuffers();
   }
 }
 

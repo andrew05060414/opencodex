@@ -6,6 +6,7 @@ import { constants, createHash, createPublicKey, publicEncrypt } from "node:cryp
 import { createZedAdapter, zedEventStream, type ZedProvider } from "../../src/adapters/zed";
 import { translateZedOpenAiStream } from "../../src/adapters/zed-openai-stream";
 import { createTranslatorBudget } from "../../src/lib/translator-budget";
+import { releaseCompactionCiphertextLease } from "../../src/responses/compaction";
 import { setIcaclsRunnerForTests, resetHardenedStateForTests } from "../../src/lib/windows-secret-acl";
 import { getValidAccessTokenSnapshot } from "../../src/oauth";
 import { saveCredential } from "../../src/oauth/store";
@@ -651,6 +652,148 @@ describe("Zed OpenAI tool relay", () => {
       { type: "tool_call_end" },
       { type: "done" },
     ]);
+  });
+
+  function sse(frames: unknown[]): string {
+    return frames.map(frame => "data: " + JSON.stringify(frame) + "\n\n").join("");
+  }
+
+  const compactionFrame = { type: "response.completed", response: {
+    output: [{ type: "compaction", encrypted_content: "fixture-ciphertext" }],
+  } };
+
+  test("carries a completed compaction ciphertext on done and transfers its lease", async () => {
+    const budget = createTranslatorBudget();
+    const events: { type: string; compactionEncryptedContent?: string }[] = [];
+    try {
+      for await (const event of translateZedOpenAiStream(new Response(sse([compactionFrame])).body, budget)) {
+        events.push(event as { type: string; compactionEncryptedContent?: string });
+      }
+      const done = events.at(-1)!;
+      expect(done.type).toBe("done");
+      expect(done.compactionEncryptedContent).toBe("fixture-ciphertext");
+      expect(budget.snapshot().currentBytes).toBe(Buffer.byteLength("fixture-ciphertext"));
+      releaseCompactionCiphertextLease(done, budget);
+      expect(budget.snapshot().currentBytes).toBe(0);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  test("a failure after retention releases the ciphertext without a done owner", async () => {
+    const budget = createTranslatorBudget();
+    try {
+      const events = [];
+      for await (const event of translateZedOpenAiStream(
+        new Response(sse([compactionFrame, { type: "response.failed", response: { error: { message: "boom" } } }])).body,
+        budget,
+      )) events.push(event);
+      expect(events).toEqual([{ type: "error", message: "boom" }]);
+      expect(budget.snapshot().currentBytes).toBe(0);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  test("an incomplete response after retention releases the ciphertext", async () => {
+    const budget = createTranslatorBudget();
+    try {
+      const events = [];
+      for await (const event of translateZedOpenAiStream(
+        new Response(sse([compactionFrame, { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } }])).body,
+        budget,
+      )) events.push(event);
+      expect(events).toEqual([{ type: "incomplete", reason: "max_output_tokens" }]);
+      expect(budget.snapshot().currentBytes).toBe(0);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  test("a consumer that stops before done releases the retained ciphertext", async () => {
+    const budget = createTranslatorBudget();
+    try {
+      const iterator = translateZedOpenAiStream(
+        new Response(sse([compactionFrame, { type: "response.output_text.delta", delta: "x" }])).body,
+        budget,
+      );
+      expect(await iterator.next()).toEqual({ done: false, value: { type: "text_delta", text: "x" } });
+      // The decoder also holds the chunk it is suspended in, so only the lower bound is stable.
+      expect(budget.snapshot().currentBytes).toBeGreaterThanOrEqual(Buffer.byteLength("fixture-ciphertext"));
+      await iterator.return(undefined);
+      expect(budget.snapshot().currentBytes).toBe(0);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  test("charged stream buffers are released when the turn ends", async () => {
+    const budget = createTranslatorBudget();
+    try {
+      const events = [];
+      for await (const event of translateZedOpenAiStream(new Response(sse([
+        { type: "response.output_text.delta", item_id: "msg_1", delta: "hello" },
+        { type: "response.output_item.added", item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" } },
+        { type: "response.function_call_arguments.delta", item_id: "fc_a", delta: "{\"x\":1}" },
+        { type: "response.function_call_arguments.done", item_id: "fc_a", arguments: "{\"x\":1}" },
+      ])).body, budget)) events.push(event);
+      expect(events).toHaveLength(5);
+      expect(budget.snapshot().currentBytes).toBe(0);
+      expect(budget.snapshot().activeCalls).toBe(0);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  test("accumulated streamed text counts against the turn ceiling", async () => {
+    const budget = createTranslatorBudget({ maxTurnBytes: 600 });
+    const frames = Array.from({ length: 14 }, () => ({ type: "response.output_text.delta", item_id: "msg_1", delta: "x".repeat(50) }));
+    const encoder = new TextEncoder();
+    let index = 0;
+    // One frame per chunk keeps each transient chunk charge small, so only the accumulated
+    // text can exceed the ceiling.
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (index >= frames.length) { controller.close(); return; }
+        controller.enqueue(encoder.encode("data: " + JSON.stringify(frames[index++]) + "\n\n"));
+      },
+    });
+    try {
+      const iterator = translateZedOpenAiStream(body, budget);
+      const seen = [];
+      await expect((async () => {
+        for await (const event of iterator) seen.push(event);
+      })()).rejects.toMatchObject({ code: "translation_buffer_limit" });
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.length).toBeLessThan(frames.length);
+      expect(budget.snapshot().currentBytes).toBe(0);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  test("a completed item replay does not re-charge a closed call's arguments", async () => {
+    const budget = createTranslatorBudget();
+    try {
+      const events = [];
+      for await (const event of translateZedOpenAiStream(new Response(sse([
+        { type: "response.output_item.added", item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" } },
+        { type: "response.function_call_arguments.delta", item_id: "fc_a", delta: "{\"x\":1}" },
+        { type: "response.function_call_arguments.done", item_id: "fc_a", arguments: "{\"x\":1}" },
+        { type: "response.completed", response: { output: [
+          { type: "function_call", id: "fc_a", call_id: "call_a", name: "a", arguments: "{\"x\":1}" },
+        ] } },
+      ])).body, budget)) events.push(event);
+      expect(events).toEqual([
+        { type: "tool_call_start", id: "call_a", name: "a" },
+        { type: "tool_call_delta", arguments: "{\"x\":1}" },
+        { type: "tool_call_end" },
+        { type: "done" },
+      ]);
+      expect(budget.snapshot()).toMatchObject({ currentBytes: 0, activeCalls: 0 });
+    } finally {
+      budget.dispose();
+    }
   });
 });
 
