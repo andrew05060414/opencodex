@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { CODEX_ACCOUNT_BOUND_CATALOG_KIND } from "../../src/codex/catalog/account-models";
 import { nativeContextLimits, type NativeContextLimitsInput } from "../../src/codex/catalog/metadata";
 import { applyNativeOpenAiContextOverride, ensureStrictCatalogFields, type RawEntry } from "../../src/codex/catalog/parsing";
+import { DEFAULT_AUTO_COMPACT_TOKEN_LIMIT } from "../../src/providers/auto-compact-budget";
 
 function nativeRow(slug = "gpt-6-astra"): RawEntry {
   return { slug, context_window: 272_000, max_context_window: 872_000 };
@@ -49,7 +50,12 @@ describe("#7075 native advertised maximum is independent of the default window",
     expect(row.context_window).toBe(window);
     expect(row.max_context_window).toBe(maximum);
     expect(row.auto_compact_token_limit).toBe(
-      typeof limits === "object" && limits?.modelAutoCompactTokenLimits ? 100_000 : Math.floor(window * 0.9),
+      // The global default ceiling is a soft budget: with no per-model budget configured,
+      // compaction runs at 90% of the window until that exceeds the default, then at the
+      // default. A window narrower than the ceiling therefore still reads as its own 90%.
+      typeof limits === "object" && limits?.modelAutoCompactTokenLimits
+        ? 100_000
+        : Math.min(Math.floor(window * 0.9), DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
     );
   });
 
