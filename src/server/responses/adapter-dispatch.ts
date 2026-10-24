@@ -80,6 +80,7 @@ import {
   quarantineKiroSuspendedAccount,
   failoverAccountSnapshot,
   rotateAntigravityAccountOnAuthRefusal,
+  rotateAntigravityAccountOnModelNotFound,
 } from "../../oauth/generic-account-failover";
 import {
   attemptOpaqueBlobRecovery,
@@ -112,7 +113,7 @@ import { createCodexAuthDispatchGuard, releaseCodexAuthContextProbeLease, unwrap
 import { isCanonicalOpenAiForwardProvider } from "../../providers/openai-tiers";
 import { mapCodexAuthContextErrorToResponse } from "./codex-auth-error";
 import { chargeWorkflowSends } from "../../lib/workflow-budget";
-import { isAntigravityValidationRefusal } from "./antigravity-validation-refusal";
+import { isAntigravityModelNotFoundRefusal, isAntigravityValidationRefusal } from "./antigravity-validation-refusal";
 import { unboundPoolSpendRefusalResponse } from "../workflow-refusal";
 import { AdmissionModelDeniedError, admissionModelDeniedResponse } from "../admission-model-scope";
 
@@ -873,17 +874,11 @@ export async function prepareAdapterExchange(
       return rebuildAndRefetch("opaque-blob-rejection");
     };
   if (!upstreamResponse.ok) {
-    const rotateAntigravityAuth = async (
+    const rotateAntigravityToAccount = async (
       failedResponse: Response,
       recovery: AttemptRecoveryKind,
+      nextId: string,
     ): Promise<Response | null> => {
-      const sent = transportState.replayOAuthCredentialSnapshot ?? transportState.sentOAuthSnapshot;
-      if (!antigravityPoolActivated || !sent
-        || transportState.genericFailovers >= transportState.genericFailoverLimit) return null;
-      const nextId = rotateAntigravityAccountOnAuthRefusal(
-        antigravityPoolActivated, sent.accountId, sent.generation, route.modelId,
-      );
-      if (!nextId) return null;
       const adapterOwnsDispatch = transportState.activeAdapter.fetchResponse !== undefined;
       const hop = reserveCredentialHop("auth-recovery",
         `${route.providerName}|${route.modelId}|antigravity-auth`,
@@ -920,6 +915,33 @@ export async function prepareAdapterExchange(
         sendBudgetState.pendingHopPermit = undefined;
         hop.permit?.release();
       }
+    };
+
+    const rotateAntigravityAuth = async (
+      failedResponse: Response,
+      recovery: AttemptRecoveryKind,
+    ): Promise<Response | null> => {
+      const sent = transportState.replayOAuthCredentialSnapshot ?? transportState.sentOAuthSnapshot;
+      if (!antigravityPoolActivated || !sent
+        || transportState.genericFailovers >= transportState.genericFailoverLimit) return null;
+      const nextId = rotateAntigravityAccountOnAuthRefusal(
+        antigravityPoolActivated, sent.accountId, sent.generation, route.modelId,
+      );
+      if (!nextId) return null;
+      return rotateAntigravityToAccount(failedResponse, recovery, nextId);
+    };
+
+    const rotateAntigravityModelNotFound = async (
+      failedResponse: Response,
+    ): Promise<Response | null> => {
+      const sent = transportState.replayOAuthCredentialSnapshot ?? transportState.sentOAuthSnapshot;
+      if (!antigravityPoolActivated || !sent
+        || transportState.genericFailovers >= transportState.genericFailoverLimit) return null;
+      const nextId = rotateAntigravityAccountOnModelNotFound(
+        antigravityPoolActivated, sent.accountId, route.modelId,
+      );
+      if (!nextId) return null;
+      return rotateAntigravityToAccount(failedResponse, "oauth-account-403", nextId);
     };
    // Keep recovery kinds in sync with the native Responses `passthroughRecovery:` loop above.
    recovery: for (;;) {
@@ -1078,6 +1100,16 @@ export async function prepareAdapterExchange(
         && await isAntigravityValidationRefusal(upstreamResponse, options.abortSignal)) {
         antigravityAuthRotationAttempted = true;
         const rotated = await rotateAntigravityAuth(upstreamResponse, "oauth-account-403");
+        if (rotated) { upstreamResponse = rotated; continue recovery; }
+      }
+
+      if (route.providerName === "google-antigravity" && upstreamResponse.status === 404
+        && transportState.activeAdapter.name === "google"
+        && antigravityPoolActivated
+        && !isNonReplayableResponse(upstreamResponse)
+        && transportState.genericFailovers < transportState.genericFailoverLimit
+        && await isAntigravityModelNotFoundRefusal(upstreamResponse, options.abortSignal)) {
+        const rotated = await rotateAntigravityModelNotFound(upstreamResponse);
         if (rotated) { upstreamResponse = rotated; continue recovery; }
       }
 

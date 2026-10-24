@@ -32,3 +32,21 @@ async function inspectValidationRefusal(response: Response, signal: AbortSignal 
     return false;
   }
 }
+
+/** Whether an upstream 404 is Google CCA denying access to a model for this account. */
+export async function isAntigravityModelNotFoundRefusal(response: Response, signal?: AbortSignal): Promise<boolean> {
+  if (response.status !== 404 || signal?.aborted) return false;
+  try {
+    const body = await readBoundedResponseBody(response.clone(), {
+      maxBytes: 4096,
+      totalTimeoutMs: 2000,
+      firstByteTimeoutMs: 1000,
+      inactivityTimeoutMs: 1000,
+      signal,
+    });
+    return !signal?.aborted && body.displaySafe && !body.truncated && !body.timedOut && !body.oversized
+      && /Requested entity was not found/i.test(body.text);
+  } catch {
+    return false;
+  }
+}

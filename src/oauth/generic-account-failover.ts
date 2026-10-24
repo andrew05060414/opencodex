@@ -42,7 +42,7 @@ import type { KiroRefusalKind } from "../adapters/kiro-refusal";
 import { kiroAccountEvidence } from "../providers/kiro-usage";
 import { kiroEvidenceIdentity } from "../providers/kiro-account-state-disk";
 import { kiroAccountSupportsModel } from "../providers/kiro-model-catalog";
-import { antigravityAccountSupportsModel } from "../providers/antigravity-account-roster";
+import { antigravityAccountSupportsModel, recordAntigravityModelDenial } from "../providers/antigravity-account-roster";
 import { ACCOUNT_QUOTA_TTL_MS } from "../providers/quota-wire";
 import { sweepExpiredOnWrite } from "../lib/state-store-sweeper";
 import { subscribeOAuthAccountPauseChanges } from "../lib/account-selection-events";
@@ -349,6 +349,29 @@ export function rotateAntigravityAccountOnAuthRefusal(
   const start = order.indexOf(failedAccountId);
   const ring = start >= 0 ? [...order.slice(start + 1), ...order.slice(0, start)] : order;
   return ring.find(id => id !== failedAccountId && eligible.has(id)) ?? null;
+}
+
+/** Select an alternate Antigravity account when Google CCA rejects a model with 404. */
+export function rotateAntigravityAccountOnModelNotFound(
+  poolActivated: boolean,
+  failedAccountId: string,
+  requestedModelId: string | null | undefined,
+  now = Date.now(),
+): string | null {
+  if (!poolActivated || !requestedModelId) return null;
+  recordAntigravityModelDenial("google-antigravity", failedAccountId, requestedModelId, now);
+  const set = getAccountSet("google-antigravity");
+  if (!set || set.accounts.length < 2) return null;
+  const family = classifyModelFamilyForQuota("google-antigravity", requestedModelId);
+  const eligibleIds = eligibleIdsIn(set, "google-antigravity", now, family);
+  const candidates = eligibleIds.filter(id => accountListsModel("google-antigravity", id, requestedModelId) !== false);
+  if (candidates.length === 0) return null;
+  const positive = candidates.filter(id => accountListsModel("google-antigravity", id, requestedModelId) === true);
+  const pool = positive.length > 0 ? positive : candidates;
+  const order = set.accounts.map(row => row.id);
+  const start = order.indexOf(failedAccountId);
+  const ring = start >= 0 ? [...order.slice(start + 1), ...order.slice(0, start)] : order;
+  return ring.find(id => id !== failedAccountId && pool.includes(id)) ?? null;
 }
 
 /** Generic pool strategies the kernel can actually run. `quota` IS the pre-kernel path. */
@@ -674,9 +697,12 @@ export function preferredInitialAccount(
     && !!active && !!requestedModelId
     && accountListsModel(providerName, active, requestedModelId) === false;
   const listingSibling = activeLacks
-    ? modelEligible.find(id => id !== active && (providerName === "kiro"
-      ? kiroModelListingHasRoom(config, id, requestedModelId!)
-      : accountListsModel(providerName, id, requestedModelId!) === true))
+    ? (modelEligible.find(id => id !== active && (providerName === "kiro"
+        ? kiroModelListingHasRoom(config, id, requestedModelId!)
+        : accountListsModel(providerName, id, requestedModelId!) === true))
+       ?? (providerName === "google-antigravity"
+           ? modelEligible.find(id => id !== active && accountListsModel(providerName, id, requestedModelId!) === undefined)
+           : undefined))
     : undefined;
   if (listingSibling) return listingSibling;
 

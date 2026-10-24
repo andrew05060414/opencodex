@@ -390,7 +390,7 @@ describe("fetchProviderQuotaReports", () => {
     ]);
     expect(byProvider["google-antigravity"]?.quota.customWindows).toEqual([
       { label: "Gem", percent: 36, resetAt: Date.parse("2026-07-05T14:00:00Z") },
-      { label: "Cla", percent: 79, resetAt: Date.parse("2026-07-05T15:00:00Z") },
+      { label: "Claude / GPT", percent: 79, resetAt: Date.parse("2026-07-05T15:00:00Z") },
       { label: "gemini-3.6-flash-medium", modelId: "gemini-3.6-flash-medium", percent: 36, resetAt: Date.parse("2026-07-05T14:00:00Z") },
       { label: "claude-sonnet-4.6 · sonnet", modelId: "claude-sonnet-4.6", percent: 79, resetAt: Date.parse("2026-07-05T15:00:00Z") },
       { label: "autocomplete", modelId: "autocomplete", percent: 99, resetAt: Date.parse("2026-07-05T16:00:00Z") },
@@ -930,7 +930,7 @@ describe("fetchProviderQuotaReports", () => {
     const report = await fetchProviderQuotaReports(config, true);
     expect(report.reports[0]?.quota.customWindows).toEqual([
       { label: "Gem", percent: 100, resetAt: Date.parse(resetTime) },
-      { label: "Cla", percent: 0, resetAt: Date.parse(resetTime) },
+      { label: "Claude / GPT", percent: 0, resetAt: Date.parse(resetTime) },
     ]);
     expect(pickComboTarget(config, "quota-scope")?.target).toMatchObject({ provider: "google-antigravity", model: "claude-sonnet-4.6" });
   });
@@ -3220,8 +3220,8 @@ describe("fetchProviderQuotaReports", () => {
     expect(report.quota.customWindows).toEqual([
       { label: "Gem", percent: 25, resetAt: Date.parse("2026-09-04T12:25:41Z") },
       { label: "Gem (Weekly)", percent: 12, resetAt: Date.parse("2026-09-11T02:25:41Z") },
-      { label: "Cla", percent: 0, resetAt: Date.parse("2026-09-04T12:54:45Z") },
-      { label: "Cla (Weekly)", percent: 5, resetAt: Date.parse("2026-09-04T10:57:22Z") },
+      { label: "Claude / GPT", percent: 0, resetAt: Date.parse("2026-09-04T12:54:45Z") },
+      { label: "Claude / GPT (Weekly)", percent: 5, resetAt: Date.parse("2026-09-04T10:57:22Z") },
     ]);
     expect(seen[0]?.url).toBe("https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary");
     expect(seen[0]?.auth).toBe("Bearer agy-summary-access");
@@ -3308,8 +3308,8 @@ describe("fetchProviderQuotaReports", () => {
     expect(report.quota.customWindows).toEqual([
       { label: "Gem", percent: 40, resetAt: Date.parse("2026-09-04T08:00:00Z") },
       { label: "Gem (Weekly)", percent: 30, resetAt: Date.parse("2026-09-11T00:00:00Z") },
-      { label: "Cla", percent: 10, resetAt: Date.parse("2026-09-04T09:00:00Z") },
-      { label: "Cla (Weekly)", percent: 15, resetAt: Date.parse("2026-09-11T09:00:00Z") },
+      { label: "Claude / GPT", percent: 10, resetAt: Date.parse("2026-09-04T09:00:00Z") },
+      { label: "Claude / GPT (Weekly)", percent: 15, resetAt: Date.parse("2026-09-11T09:00:00Z") },
     ]);
   });
 

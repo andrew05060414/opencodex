@@ -1,4 +1,4 @@
-import { antigravityUserAgent } from "../../adapters/client-fingerprint";
+import { antigravityCliUserAgent, antigravityUserAgent } from "../../adapters/client-fingerprint";
 import { DestinationDnsResolutionError } from "../../lib/destination-policy";
 import { PinnedHttpError, type PinnedHttpErrorCode } from "../../lib/pinned-http";
 import { ProviderOutboundPolicyError, providerOutboundPost, providerRedirectError, type ProviderOutboundDependencies } from "../../lib/provider-outbound";
@@ -45,12 +45,12 @@ function quotaInfoEntries(modelInfo: Record<string, unknown>): Record<string, un
   return entries;
 }
 
-function classifyAntigravityFamily(modelId: string, modelInfo: Record<string, unknown>, quotaInfo: Record<string, unknown>): "Gem" | "Cla" | null {
+function classifyAntigravityFamily(modelId: string, modelInfo: Record<string, unknown>, quotaInfo: Record<string, unknown>): "Gem" | "Claude / GPT" | null {
   const displayName = typeof modelInfo.displayName === "string" ? modelInfo.displayName : "";
   const tier = typeof quotaInfo.tier === "string" ? quotaInfo.tier : "";
   const haystack = `${modelId} ${displayName} ${tier}`.toLowerCase();
   if (haystack.includes("gemini")) return "Gem";
-  if (haystack.includes("claude") || haystack.includes("opus") || haystack.includes("sonnet") || haystack.includes("gpt-oss") || haystack.includes("gpt_oss")) return "Cla";
+  if (haystack.includes("claude") || haystack.includes("opus") || haystack.includes("sonnet") || haystack.includes("gpt-oss") || haystack.includes("gpt_oss")) return "Claude / GPT";
   return null;
 }
 
@@ -65,14 +65,14 @@ function antigravityUsedPercent(quotaInfo: Record<string, unknown>): number | un
   return normalizePercent(100 - remaining);
 }
 
-/** Gem/Cla windows from a `fetchAvailableModels` body; shared by the provider and account probes. */
+/** Gem/Claude windows from a `fetchAvailableModels` body; shared by the provider and account probes. */
 function antigravityWindowsFromModels(body: Record<string, unknown> | null): ProviderQuotaWindow[] {
   const models = asRecord(body?.models);
   if (!models) return [];
 
   const windows = new Map<string, ProviderQuotaWindow>();
   const modelWindows: ProviderQuotaWindow[] = [];
-  const labels = new Set(["Gem", "Cla"]);
+  const labels = new Set(["Gem", "Claude / GPT"]);
   for (const [modelId, rawModelInfo] of Object.entries(models)) {
     const modelInfo = asRecord(rawModelInfo);
     if (!modelInfo) continue;
@@ -108,7 +108,7 @@ function antigravityWindowsFromModels(body: Record<string, unknown> | null): Pro
     }
   }
 
-  const customWindows = ["Gem", "Cla"].flatMap(label => {
+  const customWindows = ["Gem", "Claude / GPT"].flatMap(label => {
     const window = windows.get(label);
     return window ? [window] : [];
   });
@@ -129,7 +129,8 @@ function parseAntigravityQuotaSummary(body: Record<string, unknown> | null): Pro
     const group = asRecord(rawGroup);
     if (!group) continue;
     const groupName = `${typeof group.displayName === "string" ? group.displayName : ""} ${typeof group.description === "string" ? group.description : ""}`.toLowerCase();
-    const isGemini = groupName.includes("gemini");
+    const isArgon = groupName.includes("argon");
+    const isGemini = !isArgon && groupName.includes("gemini");
     const isClaude = groupName.includes("claude") || groupName.includes("3p") || groupName.includes("gpt");
 
     const buckets = Array.isArray(group.buckets) ? (group.buckets as unknown[]) : [];
@@ -144,13 +145,18 @@ function parseAntigravityQuotaSummary(body: Record<string, unknown> | null): Pro
       const isWeekly = windowStr.includes("week");
       const is5h = windowStr.includes("5h") || windowStr.includes("five");
 
-      if (isGemini) {
+      if (isArgon) {
+        const label = is5h ? "Argon" : isWeekly ? "Argon (Weekly)" : "Argon";
+        if (label && !customWindowsMap.has(label)) {
+          customWindowsMap.set(label, { label, percent, ...(resetAt !== undefined ? { resetAt } : {}) });
+        }
+      } else if (isGemini) {
         const label = is5h ? "Gem" : isWeekly ? "Gem (Weekly)" : "";
         if (label && !customWindowsMap.has(label)) {
           customWindowsMap.set(label, { label, percent, ...(resetAt !== undefined ? { resetAt } : {}) });
         }
       } else if (isClaude) {
-        const label = is5h ? "Cla" : isWeekly ? "Cla (Weekly)" : "";
+        const label = is5h ? "Claude / GPT" : isWeekly ? "Claude / GPT (Weekly)" : "";
         if (label && !customWindowsMap.has(label)) {
           customWindowsMap.set(label, { label, percent, ...(resetAt !== undefined ? { resetAt } : {}) });
         }
@@ -164,7 +170,7 @@ function parseAntigravityQuotaSummary(body: Record<string, unknown> | null): Pro
     }
   }
 
-  const PREFERRED_ORDER = ["Gem", "Gem (Weekly)", "Cla", "Cla (Weekly)"];
+  const PREFERRED_ORDER = ["Gem", "Gem (Weekly)", "Claude / GPT", "Claude / GPT (Weekly)", "Argon (Weekly)"];
   const customWindows = Array.from(customWindowsMap.values()).sort((a, b) => {
     const ia = PREFERRED_ORDER.indexOf(a.label);
     const ib = PREFERRED_ORDER.indexOf(b.label);
@@ -274,7 +280,7 @@ function antigravityUnavailableFailure(
 }
 
 export async function probeAntigravityUsageQuota(accessToken: string, projectId: string): Promise<AntigravityQuotaProbeResult> {
-  const fetchQuota = (url: string, userAgent = antigravityUserAgent()) => providerOutboundPost("google-antigravity", { baseUrl: ANTIGRAVITY_ACCOUNT_QUOTA_BASE }, url, {
+  const fetchQuota = (url: string, userAgent = (url === ANTIGRAVITY_QUOTA_SUMMARY_URL ? antigravityCliUserAgent() : antigravityUserAgent())) => providerOutboundPost("google-antigravity", { baseUrl: ANTIGRAVITY_ACCOUNT_QUOTA_BASE }, url, {
     headers: {
       Accept: "application/json", "Content-Type": "application/json",
       "User-Agent": userAgent, Authorization: `Bearer ${accessToken}`,

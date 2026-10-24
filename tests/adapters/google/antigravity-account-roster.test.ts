@@ -4,14 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gatherRoutedModels as gatherRoutedModelsDirect } from "../../../src/codex/catalog";
 import { clearModelCache } from "../../../src/codex/model-cache";
-import { preferKiroModelSupport, preferredInitialAccount } from "../../../src/oauth/generic-account-failover";
+import {
+  preferKiroModelSupport,
+  preferredInitialAccount,
+  rotateAntigravityAccountOnModelNotFound,
+} from "../../../src/oauth/generic-account-failover";
 import {
   ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS,
   antigravityAccountRosterModelIds,
   antigravityAccountSupportsModel,
   clearAntigravityAccountRosters,
   recordAntigravityAccountRoster,
+  recordAntigravityModelDenial,
 } from "../../../src/providers/antigravity-account-roster";
+import { isAntigravityModelNotFoundRefusal } from "../../../src/server/responses/antigravity-validation-refusal";
 import {
   ANTIGRAVITY_MODELS,
   ANTIGRAVITY_MODEL_EFFORTS,
@@ -174,5 +180,77 @@ describe("account selection prefers an account whose roster lists the model", ()
     recordBoth();
     const config = { providers: { [PROVIDER]: provider({ oauthAccountFailover: { enabled: true } }) } } as unknown as OcxConfig;
     expect(preferredInitialAccount(config, PROVIDER, Date.now(), "claude-opus-5-5")).toBe("acct-55");
+  });
+
+  test("with proactive failover on, a model request leaves an active lacking account for an unknown sibling (Issue #7500)", () => {
+    homeWithAccounts(["acct-46", "acct-unknown"], "acct-46");
+    // acct-46 has roster omitting claude-opus-5-5, acct-unknown has NO roster yet (undefined)
+    recordAntigravityAccountRoster(PROVIDER, "acct-46", parseAntigravityAvailableModels(ROSTER_46)!);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-46", "claude-opus-5-5")).toBe(false);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-unknown", "claude-opus-5-5")).toBeUndefined();
+
+    const config = { providers: { [PROVIDER]: provider({ oauthAccountFailover: { enabled: true } }) } } as unknown as OcxConfig;
+    // Must fall back to acct-unknown rather than staying on acct-46 which guarantees a 404
+    expect(preferredInitialAccount(config, PROVIDER, Date.now(), "claude-opus-5-5")).toBe("acct-unknown");
+  });
+});
+
+describe("upstream 404 model denial and reactive failover", () => {
+  test("recordAntigravityModelDenial marks account as lacking model and its wire variants", () => {
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-probe", "gemini-4-argon")).toBeUndefined();
+    recordAntigravityModelDenial(PROVIDER, "acct-probe", "gemini-4-argon");
+    // Wire model and base model are both recognized as unsupported
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-probe", "gemini-4-argon")).toBe(false);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-probe", "gemini-4-argon-high")).toBe(false);
+    // Unrelated models on the account remain unknown
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-probe", "gemini-3.8-flash")).toBeUndefined();
+  });
+
+  test("model denial expires after ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS", () => {
+    const start = 1_000_000;
+    recordAntigravityModelDenial(PROVIDER, "acct-exp", "gemini-4-argon", start);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-exp", "gemini-4-argon", start + 1000)).toBe(false);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-exp", "gemini-4-argon", start + ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS + 1)).toBeUndefined();
+  });
+
+  test("a fresh discovery roster clears prior model denials for that account", () => {
+    recordAntigravityModelDenial(PROVIDER, "acct-refresh", "claude-opus-5-5");
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-refresh", "claude-opus-5-5")).toBe(false);
+    recordAntigravityAccountRoster(PROVIDER, "acct-refresh", parseAntigravityAvailableModels(ROSTER_55)!);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-refresh", "claude-opus-5-5")).toBe(true);
+  });
+
+  test("rotateAntigravityAccountOnModelNotFound records denial and selects next eligible candidate", () => {
+    homeWithAccounts(["acct-a", "acct-b", "acct-c"], "acct-a");
+    // acct-a receives 404 for gemini-4-argon
+    const next = rotateAntigravityAccountOnModelNotFound(true, "acct-a", "gemini-4-argon");
+    expect(next).toBe("acct-b");
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-a", "gemini-4-argon")).toBe(false);
+
+    // If acct-b also 404s, it advances to acct-c
+    const next2 = rotateAntigravityAccountOnModelNotFound(true, "acct-b", "gemini-4-argon");
+    expect(next2).toBe("acct-c");
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-b", "gemini-4-argon")).toBe(false);
+
+    // If acct-c also 404s, all accounts are denied; ring wraps but nobody is eligible
+    const next3 = rotateAntigravityAccountOnModelNotFound(true, "acct-c", "gemini-4-argon");
+    expect(next3).toBeNull();
+  });
+
+  test("isAntigravityModelNotFoundRefusal correctly identifies Google CCA 404 entity not found", async () => {
+    const cca404 = new Response(JSON.stringify({
+      error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" },
+    }), { status: 404 });
+    expect(await isAntigravityModelNotFoundRefusal(cca404)).toBe(true);
+
+    const generic404 = new Response(JSON.stringify({
+      error: { code: 404, message: "Page not found", status: "NOT_FOUND" },
+    }), { status: 404 });
+    expect(await isAntigravityModelNotFoundRefusal(generic404)).toBe(false);
+
+    const cca403 = new Response(JSON.stringify({
+      error: { code: 403, message: "Permission denied", status: "PERMISSION_DENIED" },
+    }), { status: 403 });
+    expect(await isAntigravityModelNotFoundRefusal(cca403)).toBe(false);
   });
 });

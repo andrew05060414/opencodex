@@ -6,6 +6,7 @@ import { getCachedProviderAccountQuota, setCachedProviderAccountQuotaForTests } 
 import { sweepExpiredProviderAccountQuotaRows } from "../../src/providers/quota/account-cache";
 import { ACCOUNT_QUOTA_TTL_MS } from "../../src/providers/quota-wire";
 import { providerWindowObservations } from "../../src/quota/window-mapping";
+import { antigravityCliUserAgent } from "../../src/adapters/client-fingerprint";
 import {
   probeAntigravityUsageQuota,
   setAntigravityAccountQuotaTransportForTests,
@@ -62,7 +63,7 @@ describe("Antigravity model quota evidence", () => {
 
     expect(result.quota.customWindows?.slice(0, 2)).toEqual([
       { label: "Gem", percent: 36, resetAt: Date.parse("2026-11-01T12:00:00Z") },
-      { label: "Cla", percent: 79, resetAt: Date.parse("2026-11-02T12:00:00Z") },
+      { label: "Claude / GPT", percent: 79, resetAt: Date.parse("2026-11-02T12:00:00Z") },
     ]);
     expect(result.quota.customWindows).toContainEqual({
       label: "gemini-3.8-flash-high", modelId: "gemini-3.8-flash-high", percent: 36,
@@ -109,7 +110,7 @@ describe("Antigravity model quota evidence", () => {
     if (result.kind !== "available") return;
     expect(result.quota.customWindows?.filter(window => window.modelId !== undefined)).toHaveLength(256);
     expect(result.quota.customWindows?.filter(window => window.modelId === undefined)).toEqual([
-      { label: "Gem", percent: 20 }, { label: "Cla", percent: 40 },
+      { label: "Gem", percent: 20 }, { label: "Claude / GPT", percent: 40 },
     ]);
   });
 
@@ -185,5 +186,61 @@ describe("Antigravity model quota evidence", () => {
     expect(result.quota.customWindows?.filter(window => window.modelId !== undefined)).toHaveLength(256);
     // One pool reset must notify once for its family, not once per diagnostic model row.
     expect(providerWindowObservations(result.quota).map(observation => observation.window)).toEqual(["custom:Gem"]);
+  });
+
+  test("summary probe sends CLI User-Agent to surface Gemini 4 Argon quota group", async () => {
+    const seenUAs: string[] = [];
+    setAntigravityAccountQuotaTransportForTests({
+      resolveAddresses: async () => ({
+        hostname: "daily-cloudcode-pa.googleapis.com",
+        addresses: [{ address: "142.250.0.1", family: 4 }],
+        privateNetwork: false,
+      }),
+      pinnedPost: async (url, _pinned, _body, _signal, requestOptions) => {
+        const ua = new Headers(requestOptions?.headers).get("user-agent") ?? "";
+        seenUAs.push(ua);
+        if (url.endsWith("retrieveUserQuotaSummary")) {
+          return new Response(JSON.stringify({
+            groups: [
+              {
+                displayName: "Gemini Models",
+                buckets: [
+                  { window: "5h", remainingFraction: 0.8, resetTime: "2026-11-01T05:00:00Z" },
+                  { window: "weekly", remainingFraction: 0.9, resetTime: "2026-11-07T05:00:00Z" },
+                ],
+              },
+              {
+                displayName: "Claude and GPT models",
+                buckets: [
+                  { window: "5h", remainingFraction: 0.7, resetTime: "2026-11-01T06:00:00Z" },
+                  { window: "weekly", remainingFraction: 0.85, resetTime: "2026-11-07T06:00:00Z" },
+                ],
+              },
+              {
+                displayName: "Gemini 4 Argon",
+                description: "Argon separate quota",
+                buckets: [
+                  { bucketId: "gemini-argon-wtu-weekly", window: "weekly", remainingFraction: 0.4, resetTime: "2026-11-07T07:00:00Z" },
+                ],
+              },
+            ],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(null, { status: 404 });
+      },
+    });
+
+    const result = await probeAntigravityUsageQuota("synthetic-token", "synthetic-project");
+    expect(result.kind).toBe("available");
+    if (result.kind !== "available") return;
+    expect(seenUAs[0]).toBe(antigravityCliUserAgent());
+    expect(result.source).toBe("google-antigravity:retrieveUserQuotaSummary");
+    expect(result.quota.customWindows).toEqual([
+      { label: "Gem", percent: 20, resetAt: Date.parse("2026-11-01T05:00:00Z") },
+      { label: "Gem (Weekly)", percent: 10, resetAt: Date.parse("2026-11-07T05:00:00Z") },
+      { label: "Claude / GPT", percent: 30, resetAt: Date.parse("2026-11-01T06:00:00Z") },
+      { label: "Claude / GPT (Weekly)", percent: 15, resetAt: Date.parse("2026-11-07T06:00:00Z") },
+      { label: "Argon (Weekly)", percent: 60, resetAt: Date.parse("2026-11-07T07:00:00Z") },
+    ]);
   });
 });
