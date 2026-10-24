@@ -217,7 +217,11 @@ export function createComboProtocolLanes(input: {
         provider: targetRoute.provider,
         modelId: targetRoute.modelId,
       });
-      if (initialDecision) {
+      // `client` keeps the decision's target but not its tier, so the ordinary combo effort
+      // policy applies instead of the decision's effort.
+      const decisionOwnsEffort = initialDecision !== undefined
+        && getCombo(config, comboId)?.jevEffortMode !== "client";
+      if (decisionOwnsEffort) {
         // A validated JEV choice owns only this first dispatch, including explicit no-effort.
         // Do not run ordinary force defaults for null: they require a non-null default.
         delete body.service_tier;
