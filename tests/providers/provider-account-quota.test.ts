@@ -739,8 +739,8 @@ describe("google-antigravity per-account quota (#1082)", () => {
     const [idA, idB] = [idFor("a@example.com"), idFor("b@example.com")];
     expect(Object.keys(byId).sort()).toEqual([idA, idB].sort());
     const windows = (id: string) => byId[id]!.quota!.customWindows!.filter(w => w.modelId === undefined).map(w => `${w.label}=${w.percent}`);
-    expect(windows(idA)).toEqual(["Gem=14", "Gem (Weekly)=14", "Cla=62", "Cla (Weekly)=62"]);
-    expect(windows(idB)).toEqual(["Gem=3", "Gem (Weekly)=3", "Cla=9", "Cla (Weekly)=9"]);
+    expect(windows(idA)).toEqual(["Gem=14", "Gem (Weekly)=14", "Claude / GPT=62", "Claude / GPT (Weekly)=62"]);
+    expect(windows(idB)).toEqual(["Gem=3", "Gem (Weekly)=3", "Claude / GPT=9", "Claude / GPT (Weekly)=9"]);
     expect(byId[idA]!.quota!.customWindows![0]!.resetAt).toBeDefined();
     expect(seen.map(s => `${s.auth}|${s.project}`).sort()).toEqual(["Bearer agy-first|proj-first", "Bearer agy-second|proj-second"]);
     for (const s of seen) {
@@ -773,8 +773,8 @@ describe("google-antigravity per-account quota (#1082)", () => {
     const byId = Object.fromEntries(rows.map(row => [row.accountId, row]));
     const [idA, idB] = [idFor("a@example.com"), idFor("b@example.com")];
     const windows = (id: string) => byId[id]!.quota!.customWindows!.filter(w => w.modelId === undefined).map(w => `${w.label}=${w.percent}`);
-    expect(windows(idA)).toEqual(["Gem=14", "Cla=62"]);
-    expect(windows(idB)).toEqual(["Gem=3", "Cla=9"]);
+    expect(windows(idA)).toEqual(["Gem=14", "Claude / GPT=62"]);
+    expect(windows(idB)).toEqual(["Gem=3", "Claude / GPT=9"]);
     expect(byId[idA]!.quota!.customWindows![0]!.resetAt).toBeDefined();
   });
 
@@ -1009,7 +1009,7 @@ describe("google-antigravity per-account quota (#1082)", () => {
           },
         });
         expect(await fetchProviderAccountQuotas("google-antigravity")).toEqual([{ accountId: idFor("a@example.com"), quota: null, unavailable: true, quotaFailure: status < 400 ? "redirect_blocked" : "access_denied" }]);
-        expect(posted).toEqual(fallback ? [summaryUrl, modelsUrl] : status === 403 ? [summaryUrl, summaryUrl] : [summaryUrl]);
+        expect(posted).toEqual(fallback ? [summaryUrl, modelsUrl] : status === 403 ? [summaryUrl, summaryUrl, summaryUrl] : [summaryUrl]);
         expect(plainFetchCalls).toBe(0);
       });
     }
@@ -1140,7 +1140,7 @@ describe("google-antigravity Fake-IP TUN quota probes without HTTP proxy (#3781)
       expect(rows[0]!.accountId).toBe(idFor("a@example.com"));
       expect(rows[0]!.unavailable).toBeUndefined();
       expect(rows[0]!.quotaFailure).toBeUndefined();
-      expect(rows[0]!.quota?.customWindows?.filter(w => w.modelId === undefined).map(w => `${w.label}=${w.percent}`)).toEqual(fallback ? ["Gem=14", "Cla=62"] : ["Gem=14", "Gem (Weekly)=14", "Cla=62", "Cla (Weekly)=62"]);
+      expect(rows[0]!.quota?.customWindows?.filter(w => w.modelId === undefined).map(w => `${w.label}=${w.percent}`)).toEqual(fallback ? ["Gem=14", "Claude / GPT=62"] : ["Gem=14", "Gem (Weekly)=14", "Claude / GPT=62", "Claude / GPT (Weekly)=62"]);
       expect(plainFetchCalls).toBe(0);
     });
   }

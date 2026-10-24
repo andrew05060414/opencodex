@@ -22,6 +22,9 @@ import { ANTIGRAVITY_MODEL_ALIASES, canonicalAntigravityUsageModel, type Antigra
 /** A roster older than this is treated as unknown; entitlements change with plan and rollout. */
 export const ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS = 6 * 60 * 60 * 1000;
 
+/** A model denial is remembered for one day; a fresh roster clears it sooner. */
+export const ANTIGRAVITY_MODEL_DENIAL_TTL_MS = 24 * 60 * 60 * 1000;
+
 interface AccountRoster {
   readonly ids: ReadonlySet<string>;
   readonly modelIds: readonly string[];
@@ -29,9 +32,33 @@ interface AccountRoster {
 }
 
 const rosters = new Map<string, AccountRoster>();
+const modelDenials = new Map<string, Map<string, number>>();
 
 function rosterKey(providerName: string, accountId: string): string {
   return `${getConfigDir()}\0${providerName}\0${accountId}`;
+}
+
+/** Record one account's denial for a model (e.g. from upstream HTTP 404 "Requested entity was not found"). */
+export function recordAntigravityModelDenial(
+  providerName: string,
+  accountId: string,
+  modelId: string,
+  now = Date.now(),
+): void {
+  if (!providerName || !accountId) return;
+  const id = modelId?.trim();
+  if (!id) return;
+  const key = rosterKey(providerName, accountId);
+  let accountDenials = modelDenials.get(key);
+  if (!accountDenials) {
+    accountDenials = new Map<string, number>();
+    modelDenials.set(key, accountDenials);
+  }
+  accountDenials.set(id, now);
+  const canonical = canonicalAntigravityUsageModel(id);
+  accountDenials.set(canonical, now);
+  const alias = Object.hasOwn(ANTIGRAVITY_MODEL_ALIASES, id) ? ANTIGRAVITY_MODEL_ALIASES[id] : undefined;
+  if (alias) accountDenials.set(alias, now);
 }
 
 /** Record one account's discovered roster: picker ids, representative wire ids, and tier wire ids. */
@@ -48,7 +75,9 @@ export function recordAntigravityAccountRoster(
     ids.add(model.wireModelId);
     for (const wire of Object.values(model.effortWireModelIds ?? {})) if (wire) ids.add(wire);
   }
-  rosters.set(rosterKey(providerName, accountId), {
+  const key = rosterKey(providerName, accountId);
+  modelDenials.delete(key);
+  rosters.set(key, {
     ids,
     modelIds: models.map(model => model.id),
     observedAt: now,
@@ -73,7 +102,8 @@ export function antigravityAccountRosterModelIds(
 /**
  * Whether one account's roster lists `modelId`: `true` / `false` from its last discovery,
  * `undefined` when that account has no fresh roster. A picker id, one of its tier wire ids, or a
- * compatibility alias of either all count as listed.
+ * compatibility alias of either all count as listed. Denials recorded from upstream 404 responses
+ * immediately answer `false`.
  */
 export function antigravityAccountSupportsModel(
   providerName: string,
@@ -81,22 +111,41 @@ export function antigravityAccountSupportsModel(
   modelId: string,
   now = Date.now(),
 ): boolean | undefined {
-  const roster = freshRoster(providerName, accountId, now);
-  if (!roster) return undefined;
   const id = modelId.trim();
   if (!id) return undefined;
-  if (roster.ids.has(id)) return true;
   const canonical = canonicalAntigravityUsageModel(id);
-  if (roster.ids.has(canonical)) return true;
   const alias = Object.hasOwn(ANTIGRAVITY_MODEL_ALIASES, id) ? ANTIGRAVITY_MODEL_ALIASES[id] : undefined;
+
+  const key = rosterKey(providerName, accountId);
+  const accountDenials = modelDenials.get(key);
+  if (accountDenials) {
+    for (const candidate of [id, canonical, alias]) {
+      if (!candidate) continue;
+      const deniedAt = accountDenials.get(candidate);
+      if (deniedAt !== undefined) {
+        if (now - deniedAt <= ANTIGRAVITY_MODEL_DENIAL_TTL_MS) {
+          return false;
+        }
+        accountDenials.delete(candidate);
+      }
+    }
+  }
+
+  const roster = freshRoster(providerName, accountId, now);
+  if (!roster) return undefined;
+  if (roster.ids.has(id)) return true;
+  if (roster.ids.has(canonical)) return true;
   return alias !== undefined && roster.ids.has(alias);
 }
 
-/** Forget rosters (one account, or all). For account removal and tests. */
+/** Forget rosters and denials (one account, or all). For account removal and tests. */
 export function clearAntigravityAccountRosters(providerName?: string, accountId?: string): void {
   if (providerName && accountId) {
-    rosters.delete(rosterKey(providerName, accountId));
+    const key = rosterKey(providerName, accountId);
+    rosters.delete(key);
+    modelDenials.delete(key);
     return;
   }
   rosters.clear();
+  modelDenials.clear();
 }

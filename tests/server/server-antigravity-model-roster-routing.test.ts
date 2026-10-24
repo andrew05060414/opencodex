@@ -155,3 +155,27 @@ test("a recovery rebind onto a newly selected omitting account is abandoned, not
   expect(result.status).not.toBe(200);
   expect(sends).not.toContain(bearer(1));
 });
+
+test("an upstream 404 model denial rotates to a sibling and continues recovery", async () => {
+  // No roster is seeded, so the first send reaches the active account and only the 404 itself
+  // proves that this account cannot serve the model.
+  let first = true;
+  onSend = async auth => {
+    if (!first) return undefined;
+    first = false;
+    expect(auth).toBe(bearer(0));
+    return Response.json({ error: { code: 404, status: "NOT_FOUND", message: "Requested entity was not found." } }, { status: 404 });
+  };
+  const result = await turn(config(true));
+  expect(result.status).toBe(200);
+  expect(sends).toEqual([bearer(0), bearer(1)]);
+});
+
+test("a 404 with no usable sibling names the model no stored account can serve", async () => {
+  onSend = async () => Response.json(
+    { error: { code: 404, status: "NOT_FOUND", message: "Requested entity was not found." } }, { status: 404 });
+  const result = await turn(config(true));
+  expect(result.status).toBe(404);
+  expect(result.body.error?.message).toContain(`No stored Google Antigravity account can serve the model "${model}"`);
+  expect(sends).toEqual([bearer(0), bearer(1), bearer(2)]);
+});

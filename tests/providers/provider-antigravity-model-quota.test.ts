@@ -11,6 +11,7 @@ import { getCachedProviderAccountQuota, setCachedProviderAccountQuotaForTests } 
 import { sweepExpiredProviderAccountQuotaRows } from "../../src/providers/quota/account-cache";
 import { ACCOUNT_QUOTA_TTL_MS } from "../../src/providers/quota-wire";
 import { providerWindowObservations } from "../../src/quota/window-mapping";
+import { antigravityCliUserAgent } from "../../src/adapters/client-fingerprint";
 import {
   probeAntigravityUsageQuota,
   setAntigravityAccountQuotaTransportForTests,
@@ -67,7 +68,7 @@ describe("Antigravity model quota evidence", () => {
 
     expect(result.quota.customWindows?.slice(0, 2)).toEqual([
       { label: "Gem", percent: 36, resetAt: Date.parse("2026-11-01T12:00:00Z") },
-      { label: "Cla", percent: 79, resetAt: Date.parse("2026-11-02T12:00:00Z") },
+      { label: "Claude / GPT", percent: 79, resetAt: Date.parse("2026-11-02T12:00:00Z") },
     ]);
     expect(result.quota.customWindows).toContainEqual({
       label: "gemini-3.8-flash-high", modelId: "gemini-3.8-flash-high", percent: 36,
@@ -114,7 +115,7 @@ describe("Antigravity model quota evidence", () => {
     if (result.kind !== "available") return;
     expect(result.quota.customWindows?.filter(window => window.modelId !== undefined)).toHaveLength(256);
     expect(result.quota.customWindows?.filter(window => window.modelId === undefined)).toEqual([
-      { label: "Gem", percent: 20 }, { label: "Cla", percent: 40 },
+      { label: "Gem", percent: 20 }, { label: "Claude / GPT", percent: 40 },
     ]);
   });
 
@@ -191,6 +192,62 @@ describe("Antigravity model quota evidence", () => {
     // One pool reset must notify once for its family, not once per diagnostic model row.
     expect(providerWindowObservations(result.quota).map(observation => observation.window)).toEqual(["custom:Gem"]);
   });
+
+  test("summary probe sends CLI User-Agent to surface Gemini 4 Argon quota group", async () => {
+    const seenUAs: string[] = [];
+    setAntigravityAccountQuotaTransportForTests({
+      resolveAddresses: async () => ({
+        hostname: "daily-cloudcode-pa.googleapis.com",
+        addresses: [{ address: "142.250.0.1", family: 4 }],
+        privateNetwork: false,
+      }),
+      pinnedPost: async (url, _pinned, _body, _signal, requestOptions) => {
+        const ua = new Headers(requestOptions?.headers).get("user-agent") ?? "";
+        seenUAs.push(ua);
+        if (url.endsWith("retrieveUserQuotaSummary")) {
+          return new Response(JSON.stringify({
+            groups: [
+              {
+                displayName: "Gemini Models",
+                buckets: [
+                  { window: "5h", remainingFraction: 0.8, resetTime: "2026-11-01T05:00:00Z" },
+                  { window: "weekly", remainingFraction: 0.9, resetTime: "2026-11-07T05:00:00Z" },
+                ],
+              },
+              {
+                displayName: "Claude and GPT models",
+                buckets: [
+                  { window: "5h", remainingFraction: 0.7, resetTime: "2026-11-01T06:00:00Z" },
+                  { window: "weekly", remainingFraction: 0.85, resetTime: "2026-11-07T06:00:00Z" },
+                ],
+              },
+              {
+                displayName: "Gemini 4 Argon",
+                description: "Argon separate quota",
+                buckets: [
+                  { bucketId: "gemini-argon-wtu-weekly", window: "weekly", remainingFraction: 0.4, resetTime: "2026-11-07T07:00:00Z" },
+                ],
+              },
+            ],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(null, { status: 404 });
+      },
+    });
+
+    const result = await probeAntigravityUsageQuota("synthetic-token", "synthetic-project");
+    expect(result.kind).toBe("available");
+    if (result.kind !== "available") return;
+    expect(seenUAs[0]).toBe(antigravityCliUserAgent());
+    expect(result.source).toBe("google-antigravity:retrieveUserQuotaSummary");
+    expect(result.quota.customWindows).toEqual([
+      { label: "Gem", percent: 20, resetAt: Date.parse("2026-11-01T05:00:00Z") },
+      { label: "Gem (Weekly)", percent: 10, resetAt: Date.parse("2026-11-07T05:00:00Z") },
+      { label: "Claude / GPT", percent: 30, resetAt: Date.parse("2026-11-01T06:00:00Z") },
+      { label: "Claude / GPT (Weekly)", percent: 15, resetAt: Date.parse("2026-11-07T06:00:00Z") },
+      { label: "Argon (Weekly)", modelId: "gemini-4-argon", percent: 60, resetAt: Date.parse("2026-11-07T07:00:00Z") },
+    ]);
+  });
 });
 
 describe("Antigravity Argon quota summary (#7272)", () => {
@@ -248,7 +305,7 @@ describe("Antigravity Argon quota summary (#7272)", () => {
     ["Argon group first", [argonGroup, geminiGroup, claudeGroup]],
   ])("keeps Gem (Weekly) and a separate Argon window: %s", async (_name, groups) => {
     const windows = await summaryWindows(groups);
-    expect(label(windows)).toEqual(["Gem=25", "Gem (Weekly)=12", "Cla (Weekly)=5", "Argon (Weekly)=25@gemini-4-argon"]);
+    expect(label(windows)).toEqual(["Gem=25", "Gem (Weekly)=12", "Claude / GPT (Weekly)=5", "Argon (Weekly)=25@gemini-4-argon"]);
     expect(windows.at(-1)).toEqual({ label: "Argon (Weekly)", modelId: "gemini-4-argon", percent: 25, resetAt: Date.parse(argonReset) });
     // The summary already carries Argon; no model-list request is needed.
     expect(modelRequests).toBe(0);
@@ -282,7 +339,7 @@ describe("Antigravity Argon quota summary (#7272)", () => {
         { bucketId: "weekly-1", window: "weekly", remainingFraction: 0.3 },
       ] },
       { displayName: "Claude and GPT models", buckets: [{ bucketId: "gemini-5h", window: "5h", remainingFraction: 0.9 }] },
-    ]))).toEqual(["Gem=10", "Gem (Weekly)=50", "Cla (Weekly)=60", "Argon (Weekly)=70@gemini-4-argon"]);
+    ]))).toEqual(["Gem=10", "Gem (Weekly)=50", "Claude / GPT (Weekly)=60", "Argon (Weekly)=70@gemini-4-argon"]);
 
     // Token boundaries: an unknown group with an "argonaut" bucket keeps its own label.
     expect(label(await summaryWindows([
@@ -329,7 +386,7 @@ describe("Antigravity Argon quota summary (#7272)", () => {
         .toBe(accountResetTimestamp("google-antigravity", "second", model, Date.parse("2026-10-17T00:00:00Z")));
     }
     expect(providerWindowObservations(quota).map(observation => observation.window))
-      .toEqual(["custom:Gem", "custom:Gem (Weekly)", "custom:Cla (Weekly)"]);
+      .toEqual(["custom:Gem", "custom:Gem (Weekly)", "custom:Claude / GPT (Weekly)"]);
 
     // Family-less reset time: with no Gem weekly window, an Argon weekly row must not stand in for it.
     setCachedProviderAccountQuotaForTests("google-antigravity", "first", {
