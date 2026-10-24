@@ -781,15 +781,15 @@ export function preferredInitialAccount(
   const activeLacks = (providerName === "kiro" || providerName === "google-antigravity")
     && !!active && !!requestedModelId
     && activeListed === false;
-  const listingSibling = (providerName === "kiro" || providerName === "google-antigravity") && !!active && !!requestedModelId
-    ? (activeListed !== true
-        ? modelEligible.find(id => id !== active && (providerName === "kiro"
-            ? kiroModelListingHasRoom(config, id, requestedModelId!)
-            : accountListsModel(providerName, id, requestedModelId!) === true))
+  // Only a PROVEN omission moves the request: an account with no cached roster stays usable,
+  // which is why the widened search here is the reactively-denied sibling, not any unknown one.
+  const listingSibling = activeLacks
+    ? modelEligible.find(id => id !== active && (providerName === "kiro"
+        ? kiroModelListingHasRoom(config, id, requestedModelId!)
+        : accountListsModel(providerName, id, requestedModelId!) === true))
+      ?? (providerName === "google-antigravity"
+        ? modelEligible.find(id => id !== active && accountListsModel(providerName, id, requestedModelId!) === undefined)
         : undefined)
-      ?? (activeLacks && providerName === "google-antigravity"
-          ? modelEligible.find(id => id !== active && accountListsModel(providerName, id, requestedModelId!) === undefined)
-          : undefined)
     : undefined;
   if (listingSibling) return listingSibling;
 

@@ -22,6 +22,9 @@ import { ANTIGRAVITY_MODEL_ALIASES, canonicalAntigravityUsageModel, type Antigra
 /** A roster older than this is treated as unknown; entitlements change with plan and rollout. */
 export const ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS = 6 * 60 * 60 * 1000;
 
+/** A model denial is remembered for one day; a fresh roster clears it sooner. */
+export const ANTIGRAVITY_MODEL_DENIAL_TTL_MS = 24 * 60 * 60 * 1000;
+
 interface AccountRoster {
   readonly ids: ReadonlySet<string>;
   readonly modelIds: readonly string[];
@@ -120,7 +123,7 @@ export function antigravityAccountSupportsModel(
       if (!candidate) continue;
       const deniedAt = accountDenials.get(candidate);
       if (deniedAt !== undefined) {
-        if (now - deniedAt <= ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS) {
+        if (now - deniedAt <= ANTIGRAVITY_MODEL_DENIAL_TTL_MS) {
           return false;
         }
         accountDenials.delete(candidate);

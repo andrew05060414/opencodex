@@ -206,7 +206,7 @@ describe("account selection prefers an account whose roster lists the model", ()
     expect(preferredInitialAccount(config, PROVIDER, Date.now(), "claude-opus-5-5")).toBe("acct-unknown");
   });
 
-  test("with proactive failover on, a model request leaves an unseeded active account for a known listing sibling", () => {
+  test("with proactive failover on, an unseeded active account is not moved by preference alone", () => {
     homeWithAccounts(["acct-unknown", "acct-55"], "acct-unknown");
     // acct-unknown has NO roster yet (undefined), acct-55 has roster listing claude-opus-5-5 (true)
     recordAntigravityAccountRoster(PROVIDER, "acct-55", parseAntigravityAvailableModels(ROSTER_55)!);
@@ -214,8 +214,9 @@ describe("account selection prefers an account whose roster lists the model", ()
     expect(antigravityAccountSupportsModel(PROVIDER, "acct-55", "claude-opus-5-5")).toBe(true);
 
     const config = { providers: { [PROVIDER]: provider({ oauthAccountFailover: { enabled: true } }) } } as unknown as OcxConfig;
-    // Must switch to acct-55 since it is proven to support the model, rather than risking 404 on unseeded active account
-    expect(preferredInitialAccount(config, PROVIDER, Date.now(), "claude-opus-5-5")).toBe("acct-55");
+    // Absence of a roster is unknown, never "no": preference alone must not abandon the selected
+    // account. Only a proven omission, or a reactive 404 denial, may move the request.
+    expect(preferredInitialAccount(config, PROVIDER, Date.now(), "claude-opus-5-5")).toBeNull();
   });
 });
 
