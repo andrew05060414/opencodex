@@ -186,6 +186,7 @@ export function deriveComboCatalogModel(
     id,
     owned_by: COMBO_NAMESPACE,
     contextWindow,
+    ...(limitingMembers.some(member => member.contextWindowDefaulted) ? { contextWindowDefaulted: true } : {}),
     maxInputTokens,
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     autoCompactTokenLimit,

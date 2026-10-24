@@ -585,6 +585,8 @@ export function gatherFlightKey(config: OcxConfig): string {
       im: cm.inputModalities ?? null,
     })),
     caps: config.providerContextCaps ?? null,
+    unknownContextWindow: config.unknownContextWindow ?? 200_000,
+    autoCompactTokenLimit: config.autoCompactTokenLimit ?? 600_000,
   });
   const digest = createHash("sha256").update(assembly).digest("hex").slice(0, 16);
   return `${digest}#${config.modelCacheTtlMs ?? DEFAULT_MODEL_CACHE_TTL_MS}`;

@@ -1106,3 +1106,29 @@ describe("manual compaction settings", () => {
     }
   });
 });
+
+
+test("global catalog defaults save together and refresh once", async () => {
+  const config = baseConfig();
+  let refreshes = 0;
+  const response = await putSettings(config, { unknownContextWindow: 240_000, autoCompactTokenLimit: 550_000 }, {
+    saveConfigPreservingClaudeCode: saveConfig,
+    createManagementConvergeCodex: catalogConvergenceFactory(() => { refreshes++; }),
+  });
+  expect(response?.status).toBe(200);
+  expect(loadConfig()).toMatchObject({ unknownContextWindow: 240_000, autoCompactTokenLimit: 550_000 });
+  expect(refreshes).toBe(1);
+  for (const invalid of [0, -1, 1.5, "200000", null]) {
+    expect((await putSettings(config, { unknownContextWindow: invalid }))?.status).toBe(400);
+  }
+  expect(config.unknownContextWindow).toBe(240_000);
+});
+
+test("global catalog defaults roll back if persistence fails", async () => {
+  const config = baseConfig();
+  await expect(putSettings(config, { unknownContextWindow: 250_000, autoCompactTokenLimit: 500_000 }, {
+    saveConfigPreservingClaudeCode: () => { throw new Error("fixture save failure"); },
+  })).rejects.toThrow("fixture save failure");
+  expect(config.unknownContextWindow).toBeUndefined();
+  expect(config.autoCompactTokenLimit).toBeUndefined();
+});

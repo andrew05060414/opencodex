@@ -961,6 +961,10 @@ export interface OcxConfig {
   providerContextCapValues?: Record<string, number>;
   /** Global Codex-visible context cap value (tokens). Falls back to DEFAULT_PROVIDER_CONTEXT_CAP. */
   contextCapValue?: number;
+  /** Fallback only when a routed model has no known window. Default 200,000. */
+  unknownContextWindow?: number;
+  /** Global soft compaction ceiling, bounded by model windows and per-model budgets. Default 600,000. */
+  autoCompactTokenLimit?: number;
   /** Bind hostname. Default "127.0.0.1" (loopback only). Set "0.0.0.0" to expose on all interfaces. */
   hostname?: string;
   /**

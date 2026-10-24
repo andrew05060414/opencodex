@@ -1227,7 +1227,7 @@ describe("combo catalog capability intersection", () => {
       };
       const rows = await gatherRoutedModels(config);
       expect(rows.find(row => row.provider === "combo" && row.id === "astra")).toMatchObject({
-        contextWindow: expected, maxInputTokens: expected, autoCompactTokenLimit: expected * 0.9,
+        contextWindow: expected, maxInputTokens: expected, autoCompactTokenLimit: Math.min(600_000, expected * 0.9),
       });
       config.providers.unknown!.modelContextWindows = { "unknown-model": 100_000 };
       config.providers.unknown!.modelMaxInputTokens = { "unknown-model": 80_000 };
@@ -1531,7 +1531,7 @@ describe("combo catalog capability intersection", () => {
       { provider: "a", model: "m1" },
       new Map([["a/m1", complete]]),
       providers,
-    )).toBe(complete);
+    )).toMatchObject({ contextWindow: 99_000, reasoningEfforts: ["low", "medium", "high"] });
     // Complete members still honor an operator-configured context cap.
     expect(resolveComboCatalogMember(
       { provider: "a", model: "m1" },
@@ -1551,7 +1551,7 @@ describe("combo catalog capability intersection", () => {
       new Map([["a", { adapter: "openai-chat", baseUrl: "https://a.example/v1", disabled: true }]]),
     )).toBeUndefined();
     // Thin live rows with max_input_tokens but no contextWindow prefer that limit
-    // over inventing the 128k fallback.
+    // over inventing the 200k fallback.
     expect(resolveComboCatalogMember(
       { provider: "a", model: "thin" },
       new Map([["a/thin", { provider: "a", id: "thin", maxInputTokens: 8_192 }]]),
@@ -1568,11 +1568,11 @@ describe("combo catalog capability intersection", () => {
     )).toMatchObject({
       provider: "a",
       id: "ghost",
-      contextWindow: 128_000,
-      maxInputTokens: 128_000,
+      contextWindow: 200_000,
+      maxInputTokens: 200_000,
       inputModalities: ["text"],
     });
-    // Provider contextCap below the 128k fallback fills the unknown window.
+    // Provider contextCap below the 200k fallback fills the unknown window.
     expect(resolveComboCatalogMember(
       { provider: "a", model: "ghost" },
       new Map(),
@@ -2558,12 +2558,12 @@ describe("configured CatalogModel displayName -> catalog display_name", () => {
     });
     const contextless = models.find(row => row.provider === "custom-budget" && row.id === "contextless");
     expect(contextless).toMatchObject({ maxInputTokens: 60_000 });
-    expect(contextless).not.toHaveProperty("autoCompactTokenLimit");
+    expect(contextless?.autoCompactTokenLimit).toBe(10_000);
     expect(buildCatalogEntries(nativeTemplate(), [], models)
       .find(entry => entry.slug === "custom-budget/contextless")).toMatchObject({
-      context_window: 128_000,
-      max_context_window: 128_000,
-      auto_compact_token_limit: 60_000,
+      context_window: 200_000,
+      max_context_window: 200_000,
+      auto_compact_token_limit: 10_000,
     });
   });
 
@@ -3477,10 +3477,10 @@ describe("Codex catalog routed normalization", () => {
     const routed = entries.find(e => e.slug === "local/qwen3-coder");
 
     // A routed model is not the native template: without known metadata the
-    // entry falls back to the conservative 128k triple.
-    expect(routed?.context_window).toBe(128_000);
-    expect(routed?.max_context_window).toBe(128_000);
-    expect(routed?.auto_compact_token_limit).toBe(115_200);
+    // entry falls back to the conservative 200k triple.
+    expect(routed?.context_window).toBe(200_000);
+    expect(routed?.max_context_window).toBe(200_000);
+    expect(routed?.auto_compact_token_limit).toBe(180_000);
   });
 
   test("retired gpt-5.4 no longer has a 1M native context override", () => {
@@ -3938,7 +3938,7 @@ describe("Codex catalog routed normalization", () => {
       display_name: "Daybreak Blue",
       context_window: 922_000,
       max_context_window: 922_000,
-      auto_compact_token_limit: 829_800,
+      auto_compact_token_limit: 600_000,
       comp_hash: "3000",
       tool_mode: "code_mode_only",
       use_responses_lite: true,
@@ -4168,7 +4168,7 @@ describe("Codex catalog routed normalization", () => {
     expect(model?.codexForwardNativeCapabilityAlias).toBeUndefined();
     const row = buildCatalogEntries(nativeTemplate(), [], models)
       .find(entry => entry.slug === `openai/${NATIVE_DAYBREAK_BLUE_MODEL}`);
-    expect(row?.context_window).toBe(128_000);
+    expect(row?.context_window).toBe(200_000);
     expect(row?.use_responses_lite).toBeUndefined();
     // Not a Daybreak-inheritance signal: `supports_search_tool` is the ordinary routed default for
     // every non-Cursor row since fcbef381e restored deferred tool discovery. The inheritance
@@ -4345,9 +4345,9 @@ describe("Codex catalog routed normalization", () => {
     ]);
     const routed = entries.find(e => e.slug === "local/qwen3-coder");
 
-    expect(routed?.context_window).toBe(128_000);
-    expect(routed?.max_context_window).toBe(128_000);
-    expect(routed?.auto_compact_token_limit).toBe(115_200);
+    expect(routed?.context_window).toBe(200_000);
+    expect(routed?.max_context_window).toBe(200_000);
+    expect(routed?.auto_compact_token_limit).toBe(180_000);
   });
 
   test("buildCatalogEntries preserves native bare GPT template fields", () => {
@@ -5857,9 +5857,9 @@ describe("Codex catalog routed normalization", () => {
     ]);
     const routed = entries.find(e => e.slug === "local/qwen3-coder");
 
-    expect(routed?.context_window).toBe(128_000);
-    expect(routed?.max_context_window).toBe(128_000);
-    expect(routed?.auto_compact_token_limit).toBe(115_200);
+    expect(routed?.context_window).toBe(200_000);
+    expect(routed?.max_context_window).toBe(200_000);
+    expect(routed?.auto_compact_token_limit).toBe(180_000);
     expect(routed?.input_modalities).toEqual(["text"]);
     expect(routed?.supports_reasoning_summaries).toBe(false);
     expect(routed?.default_reasoning_summary).toBe("none");
@@ -5924,14 +5924,14 @@ describe("Codex catalog routed normalization", () => {
 
   test("a routed model never inherits the native template's context window (#992)", () => {
     // /models returns only the id: the routed entry must fall to the
-    // conservative 128k triple, never the native template's larger window.
+    // conservative 200k triple, never the native template's larger window.
     const entries = buildCatalogEntries({ context_window: 372_000 }, [], [
       { provider: "relay", id: "relay-model" },
     ]);
     const routed = entries.find(e => e.slug === "relay/relay-model");
-    expect(routed?.context_window).toBe(128_000);
-    expect(routed?.max_context_window).toBe(128_000);
-    expect(routed?.auto_compact_token_limit).toBe(115_200);
+    expect(routed?.context_window).toBe(200_000);
+    expect(routed?.max_context_window).toBe(200_000);
+    expect(routed?.auto_compact_token_limit).toBe(180_000);
   });
 
   test("a provider context cap fills an unknown routed window (#992)", () => {
@@ -6326,7 +6326,7 @@ describe("Codex catalog routed normalization", () => {
     expect(routed?.input_modalities).toEqual(["text", "image"]);
   });
 
-  test("an unknown window ignores the configured soft budget instead of treating 128k as policy evidence", async () => {
+  test("an unknown window honors the configured soft budget without asserting upstream capacity", async () => {
     globalThis.fetch = (async () => new Response("{}", { status: 503 })) as typeof fetch;
     const models = await gatherRoutedModels({
       port: 10100,
@@ -6342,14 +6342,14 @@ describe("Codex catalog routed normalization", () => {
       },
     });
     const model = models.find(row => row.provider === "unknown-soft" && row.id === "model");
-    expect(model).not.toHaveProperty("autoCompactTokenLimit");
+    expect(model?.autoCompactTokenLimit).toBe(10_000);
 
     const emitted = buildCatalogEntries(nativeTemplate(), [], models)
       .find(entry => entry.slug === "unknown-soft/model");
     expect(emitted).toMatchObject({
-      context_window: 128_000,
-      max_context_window: 128_000,
-      auto_compact_token_limit: 115_200,
+      context_window: 200_000,
+      max_context_window: 200_000,
+      auto_compact_token_limit: 10_000,
     });
   });
 
@@ -6464,9 +6464,9 @@ describe("Codex catalog routed normalization", () => {
     const routed = buildCatalogEntries(nativeTemplate(), [], models)
       .find(e => e.slug === "sub2api/gpt-5.6-luna");
 
-    expect(routed?.context_window).toBe(128_000);
-    expect(routed?.max_context_window).toBe(128_000);
-    expect(routed?.auto_compact_token_limit).toBe(115_200);
+    expect(routed?.context_window).toBe(200_000);
+    expect(routed?.max_context_window).toBe(200_000);
+    expect(routed?.auto_compact_token_limit).toBe(180_000);
   });
 
   test("an id-only model with an enabled context cap uses that cap as the window", async () => {
@@ -6564,9 +6564,9 @@ describe("Codex catalog routed normalization", () => {
     expect(models.find(model => model.id === "copilot-wide-model")?.contextWindow).toBe(1_000_000);
     expect(routed?.context_window).toBe(1_000_000);
     expect(routed?.max_context_window).toBe(1_000_000);
-    expect(routed?.auto_compact_token_limit).toBe(900_000);
+    expect(routed?.auto_compact_token_limit).toBe(600_000);
     expect(models.find(model => model.id === "copilot-existing-metadata")?.contextWindow).toBe(256_000);
-    expect(models.find(model => model.id === "copilot-invalid-window")?.contextWindow).toBeUndefined();
+    expect(models.find(model => model.id === "copilot-invalid-window")).toMatchObject({ contextWindow: 200_000, contextWindowDefaulted: true });
   });
 
   test("liveModels false preserves configured catalog metadata without live fetch", async () => {
@@ -6850,7 +6850,7 @@ describe("OpenAI API trusted catalog augmentation", () => {
     });
     const entries = buildCatalogEntries(nativeTemplate(), [], models);
     expect(entries.find(row => row.slug === "openai-apikey/gpt-6-astra")).toMatchObject({
-      context_window: 1_050_000, auto_compact_token_limit: 922_000,
+      context_window: 1_050_000, auto_compact_token_limit: 600_000,
       additional_speed_tiers: ["fast"],
       // Routed catalogs advertise OCX's synthetic Ultra; the API wire ladder above stops at max.
       supported_reasoning_levels: ["low", "medium", "high", "xhigh", "max", "ultra"].map(effort => expect.objectContaining({ effort })),

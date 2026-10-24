@@ -33,7 +33,6 @@ import {
 import type { OcxConfig, OcxProviderConfig } from "../../types";
 import { modelInList } from "../../types";
 import { CODEX_REASONING_LEVELS, codexEffortRank, configuredReasoningEfforts, modelRecordValue, sanitizeCodexReasoningEfforts } from "../../reasoning-effort";
-import { isModelVisionSidecarConsumer } from "../../vision/eligibility";
 import { getModelMetadata, getModelMetadataCaseInsensitive, listModelMetadata, resolveMetadataProvider, type ModelMetadata } from "../../generated/model-metadata";
 import { enrichProviderFromRegistry, shouldCaseFoldMetadataModelId } from "../../providers/derive";
 import {
@@ -128,7 +127,6 @@ export function configuredComboTargetModelsByProvider(
  * rows still catalog. An enabled Context cap is the operator-facing window,
  * not a clamp on this placeholder.
  */
-const COMBO_MEMBER_CONTEXT_FALLBACK = 128_000;
 
 interface ComboCatalogMemberFallback {
   readonly contextWindow?: number;
@@ -208,7 +206,7 @@ function vendorMetadataComboFallback(target: { provider: string; model: string }
  * provider config so combos remain catalogued when targets are configured but
  * discovery metadata is incomplete. Disabled providers stay unresolved.
  * When hints still omit contextWindow, prefer known maxInputTokens, else the
- * enabled Context cap, else COMBO_MEMBER_CONTEXT_FALLBACK so a live row
+ * enabled Context cap, else the configured unknown-window default so a live row
  * without ctx does not drop the whole combo from the public catalog.
  */
 export function resolveComboCatalogMember(
@@ -220,6 +218,7 @@ export function resolveComboCatalogMember(
   metadataModelIdCaseFold?: boolean,
   metadataConfigDir?: string,
   visionSidecarEnabled = true,
+  unknownContextWindow = 200_000,
 ): CatalogModel | undefined {
   const existing = memberByKey.get(targetKey(target));
   const prov = providers.get(target.provider);
@@ -229,9 +228,9 @@ export function resolveComboCatalogMember(
   if (prov?.disabled === true) return undefined;
 
   /** Preserve custom modality overrides while filling missing provider metadata. */
-  const withProviderHints = (model: CatalogModel): CatalogModel => {
+  const withProviderHints = (model: CatalogModel, applyCap = true): CatalogModel => {
     const hinted = prov
-      ? applyProviderConfigHints(target.provider, prov, model, contextCap, metadataModelIdCaseFold, undefined, metadataConfigDir, visionSidecarEnabled)
+      ? applyProviderConfigHints(target.provider, prov, model, applyCap ? contextCap : undefined, metadataModelIdCaseFold, undefined, metadataConfigDir, visionSidecarEnabled)
       : model;
     return model.catalogKind === CODEX_CUSTOM_MODEL_CATALOG_KIND && model.inputModalities !== undefined
       ? withVisionSidecarInput({ ...hinted, inputModalities: [...model.inputModalities] }, prov, visionSidecarEnabled)
@@ -286,9 +285,7 @@ export function resolveComboCatalogMember(
     // Live discovery can explicitly say text-only even when configured routing
     // supplies a vision sidecar. Apply the same provider hints used for thin
     // rows before deriving a combo from this complete row.
-    const hinted = prov && isModelVisionSidecarConsumer(prov, existing.id)
-      ? withProviderHints(existing)
-      : existing;
+    const hinted = withProviderHints(existing, false);
     const capped = applyProviderContextCap(hinted.contextWindow, contextCap);
     if (capped === undefined || capped === existing.contextWindow) {
       return withFallbackMetadata(hinted);
@@ -323,12 +320,12 @@ export function resolveComboCatalogMember(
   // would otherwise shrink the advertised window to the input limit.
   const fallbackMaxInput = existing || prov ? fallback?.maxInputTokens : undefined;
   // Real discovery/config values win. A native alias is the next fallback tier.
-  // The generic 128k/text synthesis from #1305 remains the final fallback.
+  // The generic unknown-window synthesis from #1305 remains the final fallback.
   const fallbackContext = existing || prov ? fallback?.contextWindow : undefined;
   const uncappedContext = hintedContext
     ?? knownMaxInput
     ?? fallbackContext
-    ?? (existing || prov ? resolveUnknownRoutedContextWindow(contextCap) : undefined);
+    ?? (existing || prov ? resolveUnknownRoutedContextWindow(contextCap, unknownContextWindow) : undefined);
   if (uncappedContext === undefined) return undefined;
   // 真发现值才压低。resolveUnknownRoutedContextWindow 已经把 cap 当成窗口填进去了，不能再 min 一次。
   const usedDiscoveredWindow = hintedContext !== undefined || knownMaxInput !== undefined || fallbackContext !== undefined;
@@ -363,7 +360,7 @@ export function resolveComboCatalogMember(
     fallback?.autoCompactTokenLimit,
     configuredAutoCompactTokenLimit(prov, target.model),
   ].filter((value): value is number => typeof value === "number" && value > 0);
-  // A generic 128k synthesis is a catalog compatibility fallback, not evidence
+  // A generic unknown-window synthesis is a catalog compatibility fallback, not evidence
   // that a configured soft policy has an authoritative window to clamp against.
   const hasAuthoritativeAutoCompactBasis = hintedContext !== undefined
     || fallbackContext !== undefined
@@ -377,6 +374,7 @@ export function resolveComboCatalogMember(
     inputModalities,
     ...(reasoningEfforts !== undefined ? { reasoningEfforts } : {}),
     contextWindow,
+    ...(!usedDiscoveredWindow && contextCap === undefined ? { contextWindowDefaulted: true } : {}),
     maxInputTokens,
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...(autoCompactTokenLimit !== undefined ? { autoCompactTokenLimit } : {}),

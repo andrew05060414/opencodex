@@ -46,7 +46,7 @@ import type { FastPolicyAuthority } from "../../providers/fastwire";
 import { effectiveGoogleMode, getProviderRegistryEntry, providerMatchesRegistryTransport, registryEntryForProviderDestination } from "../../providers/registry";
 import { parseAntigravityAvailableModels, registerAntigravityDiscoveredWireModels } from "../../providers/antigravity-models";
 import { applyProviderContextCap, providerContextCap, resolveUnknownRoutedContextWindow } from "../../providers/context-cap";
-import { clampAutoCompactTokenLimit } from "../../providers/auto-compact-budget";
+import { DEFAULT_AUTO_COMPACT_TOKEN_LIMIT, clampAutoCompactTokenLimit } from "../../providers/auto-compact-budget";
 import { effectiveModelAliases } from "../../providers/default-aliases";
 import { routedSlug, slugEquals, slugEquivalenceKey, slugsEquivalent } from "../../providers/slug-codec";
 import { CODEX_GPT5_IDENTITY_LINE } from "../../adapters/identity";
@@ -329,6 +329,8 @@ async function gatherRoutedModelsUncached(
   const localProviderAuthOutcomes = capture.providerAuthOutcomes;
   const resolveAuth = capture.authResolver;
   const ttlMs = config.modelCacheTtlMs ?? DEFAULT_MODEL_CACHE_TTL_MS;
+  const unknownContextWindow = config.unknownContextWindow ?? 200_000;
+  const autoCompactTokenLimit = config.autoCompactTokenLimit ?? DEFAULT_AUTO_COMPACT_TOKEN_LIMIT;
   const visionSidecarEnabled = config.visionSidecar?.enabled !== false;
   // Persisted provider entries can predate newer registry fields (noVisionModels,
   // modelInputModalities, ...). The ROUTER merges registry seeds at request time
@@ -523,6 +525,7 @@ async function gatherRoutedModelsUncached(
         metadataModelIdCaseFoldByProvider.get(target.provider),
         metadataConfigDirByProvider.get(target.provider),
         visionSidecarEnabled,
+        unknownContextWindow,
       ))
       .filter((member): member is CatalogModel => member !== undefined);
     const derived = deriveComboCatalogModel(id, combo, members);
@@ -818,7 +821,15 @@ async function gatherRoutedModelsUncached(
         ? config.combos?.[model.id]?.targets ?? []
         : [{ provider: model.provider }];
       const inactive = quotaInactiveReason(config, targets);
-      const named = displayName && !model.displayName ? { ...model, displayName } : model;
+      const window = model.contextWindow ?? resolveUnknownRoutedContextWindow(
+        providerContextCap(config, model.provider), unknownContextWindow);
+      const defaulted = model.contextWindow === undefined;
+      const budget = clampAutoCompactTokenLimit(window, model.maxInputTokens,
+        Math.min(model.autoCompactTokenLimit ?? Infinity,
+          configuredAutoCompactTokenLimit(enrichedByName.get(model.provider), model.id) ?? Infinity, autoCompactTokenLimit));
+      const budgeted = { ...model, contextWindow: window, autoCompactTokenLimit: budget,
+        ...(defaulted ? { contextWindowDefaulted: true } : {}) };
+      const named = displayName && !model.displayName ? { ...budgeted, displayName } : budgeted;
       return inactive ? { ...named, quotaInactiveReason: inactive } : named;
     }),
     comboOmissions: localOmissions,

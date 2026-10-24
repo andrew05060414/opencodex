@@ -1,12 +1,9 @@
 # Model Catalog
 WorkBuddy AI discovery and account-scoped cache follow the [WorkBuddy contract](providers/workbuddy.md).
 Activation-owned metadata discovery no longer refreshes known deadlines merely because quota snapshots age. See the [quota activation contract](providers/openai-tiers.md#public-provider-contract). Pool 2 discovery uses the [instance credential ownership contract](providers/anthropic-account-pool.md#discovery-credential-ownership). The retained writer uses an observed catalog's nonblocking runtime snapshot for effort diagnostics; it does not run a synchronous version probe. Unchanged clamp diagnostics follow the [effort-clamp observation contract](catalog-effort-clamp.md). Portable Rust-driven Bun contracts run in `.github/workflows/catalog-async-contracts.yml` on Linux, macOS and Windows.
-
 Native result continuations and function-result injection follow [the mode-specific result and control contract](transports/streaming-health.md#experimental-native-function-result-injection); this surface does not infer upstream support or alter its defaults.
 Explicit Codex CLI installation observation supplies no selected-runtime proof to catalog discovery or publication. See the [read-only observation contract](runtime.md#explicit-codex-cli-installation-observation).
-
 Native steering follows [the shared WebSocket contract](transports/streaming-health.md#experimental-native-mid-turn-steering); this surface's defaults remain unchanged.
-
 Catalog discovery remains separate from the Responses final-route [core module ownership](transports/responses.md#core-module-ownership).
 
 The configuration-only [plaintext V2 contract](subagents.md#plaintext-v2-agent-messages)
@@ -598,3 +595,7 @@ The sync result in `src/codex/sync.ts` preserves the catalog owner's optional re
 gathering. Each sync waits at most two seconds for a fresh or shared fetch, then continues with the existing snapshot; the fetch retains its own abort deadline. Routed effort reads in
 `src/reasoning-effort.ts` use a snapshot immediately and request a best-effort background refresh
 only when an existing snapshot answers with an expired ladder. Missing or corrupt snapshots do not fetch on the request path; catalog sync owns their bootstrap. Automatic account exhaustion and recovery use the [spendable Codex credit evidence contract](providers/openai-tiers.md#spendable-codex-credits), including independent freshness, upstream refusal, and reset-ticket separation.
+
+## Configurable catalog defaults
+
+Unknown routed windows use `unknownContextWindow` (default 200,000) only after observed, configured and vendor limits. Defaulted windows are not upstream capability evidence. `autoCompactTokenLimit` (default 600,000) is a soft global ceiling: compaction uses the minimum of it, 90% of the window, known input limits and existing per-model budgets. Native and routed catalogs share the policy. `PUT /api/settings` applies both controls in one transaction and refreshes the catalog. Complete combo members receive provider capability hints before intersection.

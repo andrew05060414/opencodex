@@ -271,6 +271,8 @@ export const configSchema = z.object({
   providerContextCaps: z.record(z.string(), z.number().int().positive()).optional(),
   providerContextCapValues: z.record(z.string(), z.number().int().positive()).optional(),
   contextCapValue: z.number().int().positive().optional(),
+  unknownContextWindow: z.number().int().positive().safe().optional(),
+  autoCompactTokenLimit: z.number().int().positive().safe().optional(),
   multiAgentGuidanceEnabled: z.boolean().optional(),
   // Invalid optional recovery config must not discard unrelated provider/account state.
   plaintextV2AgentMessages: z.boolean().optional().catch(undefined),

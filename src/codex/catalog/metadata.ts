@@ -14,7 +14,7 @@ import { getModelMetadata, getModelMetadataCaseInsensitive, listModelMetadata, r
 import { enrichProviderFromRegistry, shouldCaseFoldMetadataModelId } from "../../providers/derive";
 import { getProviderRegistryEntry, providerCodexAccountMode } from "../../providers/registry";
 import { applyProviderContextCap, providerContextCap } from "../../providers/context-cap";
-import { clampAutoCompactTokenLimit } from "../../providers/auto-compact-budget";
+import { DEFAULT_AUTO_COMPACT_TOKEN_LIMIT, clampAutoCompactTokenLimit } from "../../providers/auto-compact-budget";
 import { routedSlug, slugEquals, slugsEquivalent } from "../../providers/slug-codec";
 import { neutralizeIdentity } from "../../adapters/identity";
 import { filterCursorConfiguredModelsByLiveDiscovery } from "../../adapters/cursor/discovery";
@@ -264,6 +264,7 @@ export interface NativeContextLimits {
   readonly modelWindows?: Readonly<Record<string, number>>;
   /** `providers.openai.modelAutoCompactTokenLimits` — soft, lowering-only budgets. */
   readonly modelAutoCompactTokenLimits?: Readonly<Record<string, number>>;
+  readonly autoCompactTokenLimit?: number;
 }
 
 export type NativeContextLimitsInput = NativeContextLimits | number | undefined;
@@ -287,7 +288,7 @@ export function nativeOpenAiConfiguredContextLimit(slug: string, input?: NativeC
 
 /** Read both levers out of a config once, for call sites that hold one. */
 export function nativeContextLimits(
-  config: Pick<OcxConfig, "providers" | "providerContextCaps">,
+  config: Pick<OcxConfig, "providers" | "providerContextCaps" | "autoCompactTokenLimit">,
 ): NativeContextLimits {
   const provider = config.providers?.[OPENAI_CODEX_PROVIDER_ID];
   const modelWindows: Record<string, number> = {};
@@ -307,6 +308,7 @@ export function nativeContextLimits(
     ...(positiveInt(provider?.contextWindow) !== undefined ? { providerWindow: provider!.contextWindow } : {}),
     ...(Object.keys(modelWindows).length > 0 ? { modelWindows } : {}),
     ...(Object.keys(modelAutoCompactTokenLimits).length > 0 ? { modelAutoCompactTokenLimits } : {}),
+    autoCompactTokenLimit: config.autoCompactTokenLimit ?? DEFAULT_AUTO_COMPACT_TOKEN_LIMIT,
   };
 }
 
@@ -410,7 +412,7 @@ export function nativeOpenAiAutoCompactTokenLimit(
   return clampAutoCompactTokenLimit(
     contextWindow,
     nativeOpenAiMaxInputTokens(slug, limits),
-    configured,
+    Math.min(configured ?? Infinity, asLimits(limits).autoCompactTokenLimit ?? DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
   );
 }
 
@@ -523,7 +525,7 @@ export function desktopVisibleNativeSlugs(
   ]);
 }
 
-export function nativeModelRows(config: Pick<OcxConfig, "disabledModels" | "combos" | "providerContextCaps" | "providers">): Array<{ slug: string; disabled: boolean; contextWindow?: number; maxInputTokens?: number; autoCompactTokenLimit?: number }> {
+export function nativeModelRows(config: Pick<OcxConfig, "disabledModels" | "combos" | "providerContextCaps" | "providers" | "autoCompactTokenLimit">): Array<{ slug: string; disabled: boolean; contextWindow?: number; maxInputTokens?: number; autoCompactTokenLimit?: number }> {
   const disabled = disabledNativeSlugs(config);
   const shadowed = configuredNativeAliasSlugs(config);
   // Both user levers, not just the cap: a per-model window set from the dashboard has to show

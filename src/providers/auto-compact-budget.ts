@@ -1,6 +1,8 @@
 import { SUPPORTED_NATIVE_OPENAI_SLUGS } from "../codex/catalog/native-models";
 import { redactSecretString } from "../lib/redact";
 
+export const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT = 600_000;
+
 const RESERVED_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function positiveSafeInteger(value: unknown): value is number {

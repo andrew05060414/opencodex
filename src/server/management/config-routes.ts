@@ -419,6 +419,8 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       hostname: config.hostname ?? "127.0.0.1",
       streamMode: config.streamMode ?? "auto",
       appOwnedMemoryBudgetMb: config.appOwnedMemoryBudgetMb ?? 256,
+      unknownContextWindow: config.unknownContextWindow ?? 200_000,
+      autoCompactTokenLimit: config.autoCompactTokenLimit ?? 600_000,
       codexAccountPickerEnabled: codexAccountPickerEnabled(config),
       codexQuotaAutoRefresh: quotaAutoRefreshSettings(config),
       // Absent means off, same convention: the GUI renders a plain switch without
@@ -529,6 +531,8 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       codexAutoStart?: unknown;
       streamMode?: unknown;
       appOwnedMemoryBudgetMb?: unknown;
+      unknownContextWindow?: unknown;
+      autoCompactTokenLimit?: unknown;
       codexAccountPickerEnabled?: unknown;
       codexQuotaAutoRefresh?: unknown;
       oauthOpenBrowser?: unknown;
@@ -545,7 +549,9 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       memoryModels?: unknown;
       reasoningRetention?: unknown;
     };
-    if (body.codexAutoStart === undefined
+    if (body.unknownContextWindow === undefined
+      && body.autoCompactTokenLimit === undefined
+      && body.codexAutoStart === undefined
       && body.streamMode === undefined
       && body.appOwnedMemoryBudgetMb === undefined
       && body.codexAccountPickerEnabled === undefined
@@ -563,7 +569,7 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       && body.compactionRecovery === undefined
       && body.reasoningRetention === undefined
       && body.memoryModels === undefined) {
-      return jsonResponse({ error: "provide codexAutoStart, streamMode, appOwnedMemoryBudgetMb, codexAccountPickerEnabled, codexQuotaAutoRefresh, oauthOpenBrowser, showCodexCredits, ultraFastTier, fastRows, codexMainAccountHardLock, codexMainAccountHardLockThresholds, codexMainAccountHardLockFallback, codexDesktopAuthless, codexClientCompaction, compactionRouting, compactionRecovery, reasoningRetention, or memoryModels" }, 400);
+      return jsonResponse({ error: "provide unknownContextWindow, autoCompactTokenLimit, codexAutoStart, streamMode, appOwnedMemoryBudgetMb, codexAccountPickerEnabled, codexQuotaAutoRefresh, oauthOpenBrowser, showCodexCredits, ultraFastTier, fastRows, codexMainAccountHardLock, codexMainAccountHardLockThresholds, codexMainAccountHardLockFallback, codexDesktopAuthless, codexClientCompaction, compactionRouting, compactionRecovery, reasoningRetention, or memoryModels" }, 400);
     }
     if (body.codexAutoStart !== undefined && typeof body.codexAutoStart !== "boolean") {
       return jsonResponse({ error: "codexAutoStart boolean is required" }, 400);
@@ -667,6 +673,16 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       return jsonResponse({ error: `appOwnedMemoryBudgetMb must be an integer from ${MIN_APP_OWNED_MEMORY_BUDGET_MB} to ${MAX_APP_OWNED_MEMORY_BUDGET_MB}` }, 400);
     }
     const restoreCompactionRouting = captureConfigTopLevelRollback(config, ["compactionRouting", "compactionRecovery", "memoryModels", "reasoningRetention"]);
+    for (const field of ["unknownContextWindow", "autoCompactTokenLimit"] as const) {
+      const value = body[field];
+      if (value !== undefined && (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)) {
+        return jsonResponse({ error: `${field} must be a positive safe integer` }, 400);
+      }
+    }
+    const previousContextPolicy = {
+      unknownContextWindow: config.unknownContextWindow,
+      autoCompactTokenLimit: config.autoCompactTokenLimit,
+    };
     const previousSettings = {
       codexAutoStart: config.codexAutoStart,
       hasCodexAutoStart: Object.hasOwn(config, "codexAutoStart"),
@@ -765,6 +781,8 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
         if (Object.keys(all).length > 0) config.codexQuotaAutoRefresh = all;
         else deleteConfigTopLevelKey(config, "codexQuotaAutoRefresh");
       }
+      if (typeof body.unknownContextWindow === "number") config.unknownContextWindow = body.unknownContextWindow;
+      if (typeof body.autoCompactTokenLimit === "number") config.autoCompactTokenLimit = body.autoCompactTokenLimit;
       pickerIsEnabled = codexAccountPickerEnabled(config);
       (deps.saveConfigPreservingClaudeCode ?? saveConfigPreservingClaudeCode)(config);
     } catch (error) {
@@ -810,6 +828,11 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       if (previousSettings.hasCodexClientCompaction) {
         config.codexClientCompaction = previousSettings.codexClientCompaction;
       } else deleteConfigTopLevelKey(config, "codexClientCompaction");
+      for (const field of ["unknownContextWindow", "autoCompactTokenLimit"] as const) {
+        const value = previousContextPolicy[field];
+        if (value === undefined) deleteConfigTopLevelKey(config, field);
+        else config[field] = value;
+      }
       restoreCompactionRouting();
       throw error;
     }
@@ -828,7 +851,8 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
     // injector, which is why flipping either switch left `config.toml` in its old shape until
     // a separate `ocx sync` (#4809). Both halves are needed when a Desktop switch changes; a
     // picker-only update still refreshes just the catalog.
-    const catalogRefresh = pickerWasEnabled !== pickerIsEnabled || desktopSwitchesChanged || fastRowsChanged
+    const catalogRefresh = body.unknownContextWindow !== undefined || body.autoCompactTokenLimit !== undefined
+      || pickerWasEnabled !== pickerIsEnabled || desktopSwitchesChanged || fastRowsChanged
       ? await convergeCodexCatalog()
       : undefined;
     if (fastRowsChanged) {
@@ -854,6 +878,8 @@ export async function handleConfigRoutes(ctx: ManagementContext): Promise<Respon
       codexAutoStart: codexAutoStartEnabled(config),
       streamMode: config.streamMode ?? "auto",
       appOwnedMemoryBudgetMb: config.appOwnedMemoryBudgetMb ?? 256,
+      unknownContextWindow: config.unknownContextWindow ?? 200_000,
+      autoCompactTokenLimit: config.autoCompactTokenLimit ?? 600_000,
       codexAccountPickerEnabled: pickerIsEnabled,
       codexQuotaAutoRefresh: quotaAutoRefreshSettings(config),
       oauthOpenBrowser: config.oauthOpenBrowser !== false,

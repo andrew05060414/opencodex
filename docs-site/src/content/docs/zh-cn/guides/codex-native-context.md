@@ -77,3 +77,19 @@ model = "gpt-6-astra"
 - [原生上下文使用资格](https://github.com/openai/codex/blob/78245b47af2a7aafcabe025828ceecca69db4df1/codex-rs/core/src/session/token_budget.rs)
 - [Provider 身份与内置合并规则](https://github.com/openai/codex/blob/78245b47af2a7aafcabe025828ceecca69db4df1/codex-rs/model-provider-info/src/lib.rs)
 - [历史记录／笔记使用 provider 的请求 header 与认证](https://github.com/openai/codex/blob/78245b47af2a7aafcabe025828ceecca69db4df1/codex-rs/ext/history-notes/src/backend.rs)
+
+
+## 全局目录默认值
+
+`unknownContextWindow` 默认是 `200000` tokens，仅补齐未知的路由模型窗口，不会抬高已知上限。
+`autoCompactTokenLimit` 默认是 `600000` tokens。自动压缩阈值取全局值、窗口的 90%、
+已知输入上限和逐模型压缩配置中的最小值，已有更小的阈值继续生效。
+
+通过经过身份验证的 `PUT /api/settings`，可一次性设置全部模型的默认策略：
+
+```json
+{"unknownContextWindow":200000,"autoCompactTokenLimit":600000}
+```
+
+设置会保存并刷新生成的目录。客户端已有会话可能需要重新加载模型目录。
+默认窗口是客户端预算，不代表已经验证过上游的实际容量。

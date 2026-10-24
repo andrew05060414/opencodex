@@ -239,7 +239,7 @@ function stampCapabilityProvenance(entry: RawEntry, model: CatalogModel): void {
   entry.opencodex_capability_provenance = {
     provider: model.provider,
     model_id: model.id,
-    ...(contextWindow !== undefined && !model.contextWindowInference ? { context_window: contextWindow } : {}),
+    ...(contextWindow !== undefined && !model.contextWindowInference && !model.contextWindowDefaulted ? { context_window: contextWindow } : {}),
     ...(model.contextWindowInference ? { inferred_context_window: contextWindow, context_window_inference: { ...model.contextWindowInference } } : {}),
     ...(inputModalities !== undefined ? { input_modalities: [...inputModalities] } : {}),
     ...(Array.isArray(model.capabilities) && model.capabilities.length > 0

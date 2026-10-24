@@ -3,11 +3,10 @@
 `src/codex/catalog/vendor-context.ts` supplies a missing-window estimate from bundled
 `src/generated/model-metadata.ts` rows only for custom provider names whose config sets
 `inferContextWindow: true`. The flag is off by default so id-only custom rows keep the #1073
-conservative fallback (enabled cap as the window, else 128k). Registry names and metadata
+conservative fallback (enabled cap as the window, else the configured `unknownContextWindow` (default 200k)). Registry names and metadata
 aliases are excluded; the registry-name set is captured at module initialization, not after a gather
 await. `src/codex/catalog/model-hints.ts` keeps observed/configured limits (the smaller value wins),
-then Azure metadata, then this estimate, then an enabled context cap as the window, then the existing
-128k parser fallback. The provider cap still clamps the chosen window. Native and built-in rows
+then Azure metadata, then this estimate, then an enabled context cap as the window, then the 200k parser fallback. The provider cap still clamps the chosen window. Native and built-in rows
 retain their existing policies; OpenAI API metadata used for a custom relay is not Codex subscription
 capacity. The lookup changes no configuration, credentials, pricing, or request model identity.
 
@@ -43,3 +42,7 @@ Compaction and max input still follow the effective default
 window, including retained lower soft budgets. Native capacity remains defined by the
 [native passthrough contract](catalog.md#native-passthrough). Covered by
 `tests/codex-integration/catalog-native-max-context.test.ts`.
+
+## Configurable catalog defaults
+
+Unknown routed windows use `unknownContextWindow` (default 200,000) only after observed, configured and vendor limits. Defaulted windows are not upstream capability evidence. `autoCompactTokenLimit` (default 600,000) is a soft global ceiling: compaction uses the minimum of it, 90% of the window, known input limits and existing per-model budgets. Native and routed catalogs share the policy. `PUT /api/settings` applies both controls in one transaction and refreshes the catalog. Complete combo members receive provider capability hints before intersection.

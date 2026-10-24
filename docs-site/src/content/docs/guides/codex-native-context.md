@@ -123,3 +123,20 @@ These links pin the source contract used for the configuration above, not a depl
 - [Native context eligibility](https://github.com/openai/codex/blob/78245b47af2a7aafcabe025828ceecca69db4df1/codex-rs/core/src/session/token_budget.rs)
 - [Provider identity and built-in merge rules](https://github.com/openai/codex/blob/78245b47af2a7aafcabe025828ceecca69db4df1/codex-rs/model-provider-info/src/lib.rs)
 - [History/notes use the provider's request headers and authentication](https://github.com/openai/codex/blob/78245b47af2a7aafcabe025828ceecca69db4df1/codex-rs/ext/history-notes/src/backend.rs)
+
+
+## Global catalog defaults
+
+`unknownContextWindow` defaults to `200000` tokens for routed models whose window is unknown.
+It does not raise known model limits. `autoCompactTokenLimit` defaults to `600000` tokens.
+The effective compaction threshold is the minimum of this ceiling, 90% of the model window,
+known input limits, and per-model compaction budgets. Smaller explicit budgets remain effective.
+
+Both values can be applied to all models in one authenticated `PUT /api/settings` request:
+
+```json
+{"unknownContextWindow":200000,"autoCompactTokenLimit":600000}
+```
+
+The settings persist and refresh the generated catalog. Existing client sessions may need
+to reload the model catalog. These are client budgets, not proof of upstream capacity.

@@ -2,6 +2,7 @@ import type { OcxConfig } from "../types";
 import { deleteConfigTopLevelKey } from "../config/rebase-provenance";
 
 export const DEFAULT_PROVIDER_CONTEXT_CAP = 350_000;
+export const DEFAULT_UNKNOWN_CONTEXT_WINDOW = 200_000;
 
 function isValidContextCap(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -30,11 +31,11 @@ export function applyProviderContextCap(contextWindow: number | undefined, cap: 
 
 /**
  * 上游没报窗口时，已开启的 Context cap 就是实际窗口。
- * 128k 只是 Codex 解析器的兼容底线，不能当成“已发现窗口”再拿去和 cap 做 min。
+ * 未知窗口使用可配置的目录默认值；该默认值不是已发现的上游容量。
  */
-export function resolveUnknownRoutedContextWindow(cap: number | undefined): number {
+export function resolveUnknownRoutedContextWindow(cap: number | undefined, fallback = DEFAULT_UNKNOWN_CONTEXT_WINDOW): number {
   const window = isValidContextCap(cap) ? Math.floor(cap) : 0;
-  return window > 0 ? window : 128_000;
+  return window > 0 ? window : fallback;
 }
 
 /** Effective global cap value: explicit config value, else the built-in default. */

@@ -112,6 +112,8 @@ export interface CatalogModel {
   contextWindow?: number;
   /** Bundled fallback only; never a serving-provider capability assertion. */
   contextWindowInference?: VendorContextInference;
+  /** A client compatibility default, never observed upstream capacity. */
+  contextWindowDefaulted?: boolean;
   maxInputTokens?: number;
   /** Model-scoped output-token ceiling; omitted when no authoritative value is known. */
   maxOutputTokens?: number;
@@ -581,7 +583,7 @@ export function ensureStrictCatalogFields(
     // Never leave it empty: an entry with no modality at all is worse than a text-only one.
     entry.input_modalities = accepted.length > 0 ? accepted : ["text"];
   }
-  const contextWindow = typeof entry.context_window === "number" && entry.context_window > 0 ? entry.context_window : 128000;
+  const contextWindow = typeof entry.context_window === "number" && entry.context_window > 0 ? entry.context_window : 200000;
   entry.context_window = contextWindow;
   if (
     typeof entry.max_context_window !== "number"
