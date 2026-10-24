@@ -225,9 +225,11 @@ current port holder and retry the restart after the conflict is resolved.
 Idempotently ensure a background proxy is running, then sync its live model catalog. If
 `codexAutoStart` is `false`, it prints that autostart is disabled and does nothing.
 
-With a validated connected-client configuration, `ensure` succeeds without starting a local
-provider proxy after reconciling the client journal. This does not probe or certify the remote
-hub's availability. Invalid or mismatched client state still fails.
+With a validated connected-client configuration, `ensure` synchronizes the last-known-good Hub
+catalog and Codex routing before returning, without starting a local provider proxy. A temporary
+Hub outage keeps the retained catalog and reports a stale result; invalid or mismatched client
+state still fails. This makes `ensure` suitable for a service restart or launcher shim as the
+client's automatic repair point.
 
 ### `ocx restore [back]` · `ocx eject [back]`
 

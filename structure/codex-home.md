@@ -202,7 +202,11 @@ through `withoutSiblingMarker`.
 
 The startup sync is not the owner's last look at `config.toml`. Once it settles, `handleStart`
 starts `src/codex/routing-healer.ts` in an unmarked owner (never in a sibling or the
-connected-client runtime), and the exit cleanup stops it before any teardown. An unref'd timer
+connected-client runtime), and the exit cleanup stops it before any teardown. A connected-client
+start first runs `syncConnectedClient`, so a service restart re-applies the Hub catalog and
+client routing before the local listener is published. The same reconciliation runs from
+`ocx ensure`, which is the launcher-shim repair point when a client service is already running.
+An unref'd timer
 reads `config.toml` every 10 s; unchanged bytes cost nothing more. `src/codex/routing-drift.ts`
 calls routing foreign only when it is opencodex-owned (the marker line, the journaled value, or the
 `opencodex` provider table), names a loopback endpoint with an explicit port that is neither the

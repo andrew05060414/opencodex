@@ -410,6 +410,30 @@ async function resolvedRuntimeOwnership(): Promise<RuntimeOwnershipObservation> 
 }
 
 /**
+ * A package update stops and repairs the service, but a connected client also needs its Hub
+ * catalog and Codex routing reapplied after the stop/restore phase. Keep this post-flight step
+ * client-scoped: standalone and Hub updates retain their existing behavior, while a stale or
+ * failed client convergence makes the update nonzero instead of claiming the machine is done.
+ */
+async function reconcileConnectedClientAfterUpdate(): Promise<number> {
+  const { readClientConnectionState } = await import("../client/state");
+  if (readClientConnectionState().kind !== "connected") return 0;
+  try {
+    const { syncConnectedClient } = await import("../client/connect");
+    const result = await syncConnectedClient();
+    if (result.stale) {
+      console.warn("⚠️  Updated, but the connected Hub was unavailable; retained the last-known-good catalog and routing.");
+      return 1;
+    }
+    console.log("🔁 Reconciled the connected Hub catalog and Codex routing after update.");
+    return 0;
+  } catch (error) {
+    console.warn(`⚠️  Updated, but connected-client reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+}
+
+/**
  * `ocx update` fallback for source checkouts and Bun global installs. npm and pnpm global installs
  * are updated in the Node bin launcher before Bun starts, so Windows does not replace the running
  * Bun binary.
@@ -1055,5 +1079,9 @@ export async function runUpdate(): Promise<void> {
     throw error;
   }
   });
+  if (updateExitCode === 0) {
+    const clientReconciliation = await reconcileConnectedClientAfterUpdate();
+    if (clientReconciliation !== 0) process.exitCode = clientReconciliation;
+  }
   if (updateExitCode) process.exit(updateExitCode);
 }

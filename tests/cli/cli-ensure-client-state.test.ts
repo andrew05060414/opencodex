@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { dispatchCommand, type CliDispatchDeps } from "../../src/cli/dispatch";
+import * as clientConnect from "../../src/client/connect";
 import * as clientState from "../../src/client/state";
 import * as journal from "../../src/codex/journal";
 import type { OcxClientConnectionConfig } from "../../src/types";
@@ -11,6 +12,7 @@ let stateSpy: ReturnType<typeof spyOn>;
 let journalSpy: ReturnType<typeof spyOn>;
 let errorSpy: ReturnType<typeof spyOn>;
 let fetchSpy: ReturnType<typeof spyOn>;
+let syncSpy: ReturnType<typeof spyOn>;
 
 beforeEach(() => {
   savedExitCode = process.exitCode;
@@ -25,12 +27,16 @@ beforeEach(() => {
   });
   errorSpy = spyOn(console, "error").mockImplementation(() => {});
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation(async () => {
-    throw new Error("ensure dispatch must not probe a remote hub");
+    throw new Error("ensure repair should use the injected connected-client sync");
+  });
+  syncSpy = spyOn(clientConnect, "syncConnectedClient").mockImplementation(async () => {
+    events.push("client-sync");
+    return { catalogWritten: true, cacheSynced: true, injected: true, stale: false };
   });
 });
 
 afterEach(() => {
-  stateSpy.mockRestore(); journalSpy.mockRestore(); errorSpy.mockRestore(); fetchSpy.mockRestore();
+  stateSpy.mockRestore(); journalSpy.mockRestore(); errorSpy.mockRestore(); fetchSpy.mockRestore(); syncSpy.mockRestore();
   // Bun needs an explicit zero to reset the failure status injected by the local-ensure case.
   process.exitCode = savedExitCode ?? 0;
 });
@@ -48,8 +54,9 @@ async function ensure(failLocal = false): Promise<number> {
 test("connected ensure succeeds after reconciliation without starting a local proxy", async () => {
   state = { kind: "connected", value: { apiKeyId: "fixture-client" } as OcxClientConnectionConfig };
   expect(await ensure()).toBe(0);
-  expect(events).toEqual(["journal"]);
+  expect(events).toEqual(["journal", "client-sync"]);
   expect(journalSpy).toHaveBeenCalledWith({ activeClientApiKeyId: "fixture-client" });
+  expect(syncSpy).toHaveBeenCalledTimes(1);
   expect(fetchSpy).not.toHaveBeenCalled();
 });
 

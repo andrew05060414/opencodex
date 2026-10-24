@@ -359,11 +359,25 @@ const commandRunners: Record<string, CommandRunner> = {
     const clientState = readClientConnectionState();
     await reconcileClientJournalBeforeLifecycle(clientState);
     if (clientState.kind !== "disconnected") {
-      console.error(clientState.kind === "connected"
-        ? "Client mode does not start a local provider proxy; use 'ocx sync'."
-        : `Client state is ${clientState.kind}: ${clientState.reason}`);
-      // A validated client delegates inference to its hub; no local startup is needed.
-      return clientState.kind === "connected" ? 0 : 1;
+      if (clientState.kind !== "connected") {
+        console.error(`Client state is ${clientState.kind}: ${clientState.reason}`);
+        return 1;
+      }
+      // A client service is the local repair loop's owner. Reconcile the Hub catalog and
+      // Codex routing whenever `ensure` runs (including from the launcher shim), so a
+      // service restart or a stale native fallback repairs the client without a human
+      // having to remember `ocx sync`.
+      try {
+        const { syncConnectedClient } = await import("../client/connect");
+        const result = await syncConnectedClient();
+        console.log(result.stale
+          ? "Hub unavailable; retained the last-known-good client catalog (stale)."
+          : "Connected client catalog and Codex routing synchronized.");
+        return 0;
+      } catch (error) {
+        console.error(`Connected client repair failed: ${terminalSafeError(error).message}`);
+        return 1;
+      }
     }
     await deps.handleEnsure();
     return Number(process.exitCode ?? 0);

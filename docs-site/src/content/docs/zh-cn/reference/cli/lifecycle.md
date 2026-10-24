@@ -46,6 +46,8 @@ ocx start --socks5-off
 
 以幂等方式确保后台代理正在运行，然后同步其当前模型目录。如果 `codexAutoStart` 为 `false`，它会打印自启动已禁用，并且不执行任何操作。
 
+对于已验证连接的 Client，`ensure` 会在返回前同步 Hub 的最后已知可用目录并重新对齐 Codex routing，且不会启动本地 provider proxy。Hub 临时不可达时保留已有目录并报告 stale；Client 状态 invalid 或 mismatched 仍然失败。因此服务重启和 launcher shim 都可以把 `ensure` 当作 Client 的自动修复入口。
+
 ### `ocx restore [back]` · `ocx eject [back]`
 
 在**不停止代理**的情况下恢复原生 Codex——移除注入的配置行和路由后的目录条目，让普通 `codex` 重新以原生方式工作。`eject` 是 `restore` 的别名。
