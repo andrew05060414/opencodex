@@ -19,11 +19,73 @@ import {
 import { buildClaudeContextWindows } from "../../src/claude/context-windows";
 import { buildDesktop3pRegistry } from "../../src/claude/desktop-3p";
 import { commandInvocation } from "../../src/lib/win-exec";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LivenessIo, LiveProxy } from "../../src/server/proxy-liveness";
 import type { OcxConfig } from "../../src/types";
+import { readClaudeWorkflowSettings, setClaudeWorkflowSettings } from "../../src/claude/workflow-settings";
+import { createTempHome } from "../helpers/temp-home";
+import { handleAgentSettingsRoutes } from "../../src/server/management/agent-settings-routes";
+import type { ManagementContext } from "../../src/server/management/context";
+
+describe("native Claude workflow preferences", () => {
+  test("the management toggle rejects mixed mutations and preserves other Claude preferences", async () => {
+    const home = createTempHome("claude-workflow-api-");
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = home.root;
+    try {
+      writeFileSync(home.path("settings.json"), '{"permissions":{"deny":["Bash"]}}');
+      const call = (body: unknown) => handleAgentSettingsRoutes({
+        url: new URL("http://localhost/api/claude-code"),
+        req: new Request("http://localhost/api/claude-code", { method: "PUT", body: JSON.stringify(body) }),
+        config: cfg(), deps: {}, version: "fixture",
+        trustedLoopbackIngress: true, guiSessionIssuance: null,
+        convergeCodexCatalog: async () => ({ status: "committed", changed: false, degraded: false, notices: [] }),
+        syncClaudeAgentDefsBestEffort: async () => {},
+      } as ManagementContext);
+      expect((await call({ ultracode: "true" }))?.status).toBe(400);
+      expect((await call({ ultracode: true, enabled: true }))?.status).toBe(400);
+      const response = await call({ ultracode: true });
+      expect(response?.status).toBe(200);
+      expect((await response!.json()).ultracode).toBe(true);
+      expect(JSON.parse(readFileSync(home.path("settings.json"), "utf8"))).toEqual({ permissions: { deny: ["Bash"] }, ultracode: true });
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
+      home.remove();
+    }
+  });
+  test("on and off preserve routing, permissions and unrelated settings", () => {
+    const home = createTempHome("claude-workflow-");
+    try {
+      const settings = home.path("settings.json");
+      const original = { env: { ANTHROPIC_MODEL: "example/claude" }, permissions: { deny: ["Bash(rm *)"] }, theme: "dark" };
+      writeFileSync(settings, JSON.stringify(original));
+      expect(setClaudeWorkflowSettings(true, home.root).ultracode).toBe(true);
+      expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ ...original, ultracode: true });
+      expect(setClaudeWorkflowSettings(false, home.root).ultracode).toBe(false);
+      expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ ...original, ultracode: false });
+    } finally { home.remove(); }
+  });
+  test("missing settings can be created, corrupt and disabled settings are preserved", () => {
+    const home = createTempHome("claude-workflow-");
+    try {
+      const settings = home.path("settings.json");
+      expect(readClaudeWorkflowSettings(home.root).ultracode).toBe(false);
+      expect(setClaudeWorkflowSettings(true, home.root).ultracode).toBe(true);
+      for (const content of ["", "{invalid", "[]", "null"]) {
+        writeFileSync(settings, content);
+        expect(readClaudeWorkflowSettings(home.root).workflowSettingsError).toBeDefined();
+        expect(() => setClaudeWorkflowSettings(true, home.root)).toThrow();
+        expect(readFileSync(settings, "utf8")).toBe(content);
+      }
+      writeFileSync(settings, '{"disableWorkflows":true,"ultracode":false}');
+      expect(() => setClaudeWorkflowSettings(true, home.root)).toThrow("disabled");
+      expect(JSON.parse(readFileSync(settings, "utf8")).disableWorkflows).toBe(true);
+    } finally { home.remove(); }
+  });
+});
 
 function cfg(extra?: Partial<OcxConfig>): OcxConfig {
   return {

@@ -3,6 +3,12 @@ title: Claude Code
 description: Use any routed model from Claude Code — opencodex serves the Anthropic Messages API and gateway model discovery on the same port.
 ---
 
+## Native dynamic workflows
+
+Start normally with `ocx claude`; no separate launcher is required. In either the Claude or Claude Desktop connection page, **Automatic workflows (Ultracode)** changes the native Claude user preference. It applies to new Claude Code CLI and Desktop **Code** sessions, including plain `claude`, and does not add a workflow executor to Desktop Chat or configure its model routing. Existing Claude policy and permission settings still apply.
+
+The equivalent CLI is `ocx claude workflow on`, `ocx claude workflow off`, or `ocx claude workflow status`. The setting is shared with Claude itself rather than duplicated in OpenCodex config. Malformed settings and explicitly disabled workflows are reported without overwriting them. Use `/workflows` in Claude Code to manage runs, or ask explicitly to “use a workflow”. See [Anthropic's workflow documentation](https://code.claude.com/docs/en/workflows).
+
 opencodex serves `POST /v1/messages` (plus `count_tokens`) alongside `/v1/responses`, so Claude
 Code can use every routed provider — OAuth logins, account pools, key failover and sidecars
 included — with zero extra auth work.

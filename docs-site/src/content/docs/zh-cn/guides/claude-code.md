@@ -3,6 +3,12 @@ title: Claude Code 指南
 description: 在 Claude Code 中使用任意已路由模型——opencodex 在同一端口提供 Anthropic Messages API 和网关模型发现功能。
 ---
 
+## 原生动态工作流
+
+直接用 `ocx claude` 启动，无需额外短命令。连接页的 Claude 与 Claude Desktop 中，“自动工作流（Ultracode）”修改的是 Claude 本机共享用户设置；新开的 CLI 和 Desktop **Code** 会话生效，普通 `claude` 也会读取它。Desktop Chat 不会因此获得工作流执行器，也不会改变 Code 标签页的模型路由、登录、组织策略或权限规则。
+
+终端也可使用 `ocx claude workflow on`、`ocx claude workflow off`、`ocx claude workflow status`。配置损坏或明确关闭工作流时会拒绝覆盖。进入 Claude Code 后，用自然语言要求“使用 workflow 执行这份清单”，用 `/workflows` 管理运行。详见 [Anthropic 官方文档](https://code.claude.com/docs/en/workflows)。
+
 opencodex 在 `/v1/responses` 之外还提供 `POST /v1/messages`（以及 `count_tokens`），因此 Claude
 Code 可以使用每一个已路由的提供商——包括 OAuth 登录、账户池、密钥故障转移和 sidecar——
 而无需进行任何额外的身份验证配置。

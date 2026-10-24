@@ -1,4 +1,5 @@
 import { ensureManagementClaudeIntercept, interceptStartRefusal, interceptStatus } from "./claude-intercept-routes";
+import { readClaudeWorkflowSettings, setClaudeWorkflowSettings } from "../../claude/workflow-settings";
 import { persistCommittedDesktopGateway } from "../../claude/desktop-gateway-state";
 import { captureDesktopAppliedMarker, commitDesktopAppliedMarker } from "../../claude/desktop-applied-marker";
 import { isPassiveRead } from "../../lib/passive-read";
@@ -1476,6 +1477,7 @@ export async function handleAgentSettingsRoutes(ctx: ManagementContext): Promise
     const sharedProxy = readFirstPartyProxyStatus(config, bound?.proxyPort ?? null);
     return jsonResponse({
       enabled: config.claudeCode?.enabled !== false,
+      ...readClaudeWorkflowSettings(),
       cliFirstParty: config.claudeCode?.cliFirstParty === true,
       cliFirstPartyApplied: config.claudeCode?.cliFirstParty === true && sharedProxy === "live",
       desktopFirstParty: desired.desktop,
@@ -1545,6 +1547,16 @@ export async function handleAgentSettingsRoutes(ctx: ManagementContext): Promise
       return prototype === Object.prototype || prototype === null;
     };
     if (!isPlainObject(parsedBody)) return jsonResponse({ error: "body must be an object" }, 400);
+    if (Object.hasOwn(parsedBody, "ultracode")) {
+      if (typeof parsedBody.ultracode !== "boolean" || Object.keys(parsedBody).length !== 1) {
+        return jsonResponse({ error: "ultracode must be a boolean and sent alone" }, 400);
+      }
+      try {
+        return jsonResponse({ ok: true, ...setClaudeWorkflowSettings(parsedBody.ultracode) });
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : "Could not update Claude workflow settings." }, 409);
+      }
+    }
     const body = parsedBody as { enabled?: unknown; cliFirstParty?: unknown; authMode?: unknown; model?: unknown; smallFastModel?: unknown; modelMap?: unknown; classifierModel?: unknown; classifierFallbacks?: unknown; systemEnv?: unknown; fastMode?: unknown; maxContextTokens?: unknown; alwaysEnableEffort?: unknown; tierModels?: unknown; autoContext?: unknown; autoCompactWindow?: unknown; contextAccounting?: unknown; blockedSkills?: unknown; injectAgents?: unknown; webSearchSidecar?: unknown; visionSidecar?: unknown };
     if (body.cliFirstParty !== undefined && typeof body.cliFirstParty !== "boolean")
       return jsonResponse({ error: "cliFirstParty must be a boolean" }, 400);

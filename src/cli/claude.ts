@@ -37,6 +37,7 @@ import { desktopProfileWireAlias, legacyDesktopProfileWireAlias } from "../claud
 import { inspectDesktopFirstParty } from "../claude/desktop-first-party";
 import { isClaudeInterceptProxyUrl, type ClaudeInterceptSettingsState } from "../claude/intercept/settings";
 import { withoutSiblingMarker } from "../codex/sibling-start";
+import { readClaudeWorkflowSettings, setClaudeWorkflowSettings } from "../claude/workflow-settings";
 
 export interface ClaudeLaunchEnv {
   [key: string]: string | undefined;
@@ -825,6 +826,21 @@ export async function resolveHubRosterForClaude(
 }
 
 export async function cmdClaude(args: string[]): Promise<number> {
+  if (args[0] === "workflow") {
+    const action = args[1] ?? "status";
+    if (args.length > 2 || !["on", "off", "status"].includes(action)) {
+      console.error("Usage: ocx claude workflow [on|off|status]");
+      return 1;
+    }
+    try {
+      const state = action === "status" ? readClaudeWorkflowSettings() : setClaudeWorkflowSettings(action === "on");
+      console.log(JSON.stringify(state, null, 2));
+      return "workflowSettingsError" in state ? 1 : 0;
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "Could not update Claude workflow settings.");
+      return 1;
+    }
+  }
   const config = loadConfig();
   const clientState = readClientConnectionState();
   const tokenState = clientState.kind === "connected" ? readServiceApiTokenState() : undefined;
