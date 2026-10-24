@@ -1079,7 +1079,7 @@ export async function runUpdate(): Promise<void> {
     throw error;
   }
   });
-  if (updateExitCode === 0) {
+  if (!updateExitCode) {
     const clientReconciliation = await reconcileConnectedClientAfterUpdate();
     if (clientReconciliation !== 0) process.exitCode = clientReconciliation;
   }
