@@ -16,7 +16,7 @@ const now = 2_000_000_000_000;
 const reset = now + 3_600_000;
 const quota = { updatedAt: now, customWindows: [
   { label: "Gem", percent: 36, resetAt: reset }, { label: "Gem (Weekly)", percent: 22, resetAt: reset },
-  { label: "Cla", percent: 0, resetAt: reset }, { label: "Cla (Weekly)", percent: 100, resetAt: reset },
+  { label: "Claude / GPT", percent: 0, resetAt: reset }, { label: "Claude / GPT (Weekly)", percent: 100, resetAt: reset },
   { label: "gemini-3.8-flash · tier", modelId: "gemini-3.8-flash", percent: 99 }, { label: "Argon", modelId: "argon", percent: 95 },
 ] };
 const summary = { groups: [

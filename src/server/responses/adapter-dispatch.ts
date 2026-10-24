@@ -616,6 +616,7 @@ export async function prepareAdapterExchange(
     const consoleGoUploadRetryGuard: { attempted: boolean } = { attempted: false };
     let oauth401ReplayAttempted = transportState.oauth401ReplayAttempted;
     let antigravityAuthRotationAttempted = false;
+    let antigravityModelNotFoundExhausted = false;
     // At most one reasoning-effort downgrade per request. This sits outside the recovery loop
     // below for the same reason the two guards above do: a guard declared inside it is reset by
     // every `continue recovery`, which would let one turn walk the whole ladder down.
@@ -1127,6 +1128,7 @@ export async function prepareAdapterExchange(
         && await isAntigravityModelNotFoundRefusal(upstreamResponse, options.abortSignal)) {
         const rotated = await rotateAntigravityModelNotFound(upstreamResponse);
         if (rotated) { upstreamResponse = rotated; continue recovery; }
+        antigravityModelNotFoundExhausted = true;
       }
 
       // Static API-key pools can recover a credential-scoped 401 without abandoning the
@@ -1966,7 +1968,9 @@ export async function prepareAdapterExchange(
         errorType: normalized.type, code: normalized.code,
         message: "Structured upstream failure observed before client formatting",
       });
-      const message = normalized.cyberPolicy
+      const message = antigravityModelNotFoundExhausted
+        ? `No stored Google Antigravity account can serve the model "${route.modelId ?? parsed.modelId ?? "the requested model"}". ${normalized.safeText}`
+        : normalized.cyberPolicy
         ? normalized.message
           ?? (isCyberPolicyCode(normalized.code) ? CYBER_POLICY_FALLBACK_MESSAGE : normalized.safeText)
         : enrichOpenCodeZenUpstreamMessage(
