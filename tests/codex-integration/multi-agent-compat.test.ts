@@ -480,8 +480,13 @@ describe("multiAgentGuidanceText", () => {
       },
     ]);
 
-    const effective = effectiveSubagentRoster(["gpt-5.6-sol"], "v2");
-    expect(effective.advertised).toEqual([]);
+    const effective = effectiveSubagentRoster([
+      ...Array.from({ length: 5 }, (_, index) => `filler-${index}`),
+      "gpt-5.6-sol",
+    ], "v2");
+    expect(effective.advertised.map(m => m.model)).toEqual(
+      Array.from({ length: 5 }, (_, index) => `filler-${index}`),
+    );
     expect(effective.excluded).toEqual([{
       configured: "gpt-5.6-sol",
       catalogModel: "desktop/gpt-5.6-sol",
@@ -508,8 +513,11 @@ describe("multiAgentGuidanceText", () => {
       },
     ]);
 
-    expect(effectiveSubagentRoster(["gpt-5.6-sol"], "v2").advertised.map(m => m.model))
-      .toEqual(["desktop/gpt-5.6-sol"]);
+    expect(effectiveSubagentRoster([
+      ...Array.from({ length: 4 }, (_, index) => `filler-${index}`),
+      "gpt-5.6-sol",
+    ], "v2").advertised.map(m => m.model))
+      .toEqual([...Array.from({ length: 4 }, (_, index) => `filler-${index}`), "desktop/gpt-5.6-sol"]);
     expect(await multiAgentGuidanceText(
       parsedFixture({ tools: [{ name: "spawn_agent" }] }),
       { injectionModel: "gpt-5.6-sol" },
@@ -539,6 +547,10 @@ describe("multiAgentGuidanceText", () => {
     ]);
     const configured = [
       "provider/vendor/model",
+      "eligible-a",
+      "eligible-b",
+      "v1-model",
+      "filler-a",
       "hidden-model",
       "disabled-model",
       "missing-model",
@@ -553,7 +565,13 @@ describe("multiAgentGuidanceText", () => {
       "v1-model",
       "filler-a",
     ]);
-    expect(effective.advertised.map(model => model.model)).toEqual(["provider/vendor-model"]);
+    expect(effective.advertised.map(model => model.model)).toEqual([
+      "provider/vendor-model",
+      "eligible-a",
+      "eligible-b",
+      "v1-model",
+      "filler-a",
+    ]);
     expect(effective.excluded).toEqual([
       { configured: "hidden-model", catalogModel: "hidden-model", reason: "picker_hidden" },
       { configured: "disabled-model", catalogModel: "disabled-model", reason: "surface_incompatible" },

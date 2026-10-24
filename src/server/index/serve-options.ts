@@ -1082,7 +1082,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
                   ? nativeFastEligible(model.id)
                   : catalogRowFastEligible(model)
               : undefined,
-            { modelPickerOrder: config.modelPickerOrder, featured: config.subagentModels },
+            { modelPickerOrder: config.modelPickerOrder },
           );
           return jsonResponse({ data }, 200, req, policy);
         }
@@ -1106,7 +1106,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
             loadCatalogTemplate(),
             catalogNativeSlugs,
             goOrdered,
-            config.subagentModels,
+            undefined,
             websocketsEnabled(config),
             maMode as "v1" | "default" | "v2",
             exactComboSlugs,
