@@ -14,8 +14,8 @@ import { getCachedProviderAccountQuota, hasPassiveAccountQuota } from "../provid
 import { kiroAccountEvidence } from "../providers/kiro-usage";
 import type { ProviderAccount } from "./types";
 
-/** Antigravity hosts Gemini and Claude windows on one account; ranking must not mix them. */
-export type QuotaModelFamily = "gem" | "cla";
+/** Antigravity hosts Gemini, Claude, and Argon windows on one account; ranking must not mix them. */
+export type QuotaModelFamily = "gem" | "cla" | "argon";
 
 export function classifyModelFamilyForQuota(
   provider: string,
@@ -27,6 +27,8 @@ export function classifyModelFamilyForQuota(
   const id = modelId.toLowerCase();
   // Gemma is not Gemini: a substring/prefix match would poison Gemini ranking.
   if (/(?:^|[^a-z])gemma(?:[^a-z]|$)/.test(id)) return undefined;
+  // Gemini 4 Argon has a separate dedicated weekly quota bucket from standard Gemini 3.x models.
+  if (/(?:^|[^a-z])argon(?:[^a-z]|$)/.test(id)) return "argon";
   // Catalog ids are gemini-*, never a bare gem- token. Window labels still match Gem via
   // windowMatchesFamily; this classifier is only for request model ids.
   if (/(?:^|[^a-z])gemini(?:[^a-z]|$)/.test(id)) return "gem";
@@ -42,6 +44,7 @@ export function classifyModelFamilyForQuota(
 
 function windowMatchesFamily(label: string, family: QuotaModelFamily): boolean {
   const token = label.trim().split(/[\s(/]+/)[0] ?? "";
+  if (family === "argon") return /^argon$/i.test(token);
   if (family === "gem") return /^gem(?:ini)?$/i.test(token);
   return /^cla(?:ude)?$/i.test(token);
 }

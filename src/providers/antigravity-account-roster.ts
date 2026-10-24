@@ -119,8 +119,11 @@ export function antigravityAccountSupportsModel(
     for (const candidate of [id, canonical, alias]) {
       if (!candidate) continue;
       const deniedAt = accountDenials.get(candidate);
-      if (deniedAt !== undefined && now - deniedAt <= ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS) {
-        return false;
+      if (deniedAt !== undefined) {
+        if (now - deniedAt <= ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS) {
+          return false;
+        }
+        accountDenials.delete(candidate);
       }
     }
   }

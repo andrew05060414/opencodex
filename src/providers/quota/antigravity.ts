@@ -170,7 +170,7 @@ function parseAntigravityQuotaSummary(body: Record<string, unknown> | null): Pro
     }
   }
 
-  const PREFERRED_ORDER = ["Gem", "Gem (Weekly)", "Claude / GPT", "Claude / GPT (Weekly)", "Argon (Weekly)"];
+  const PREFERRED_ORDER = ["Gem", "Gem (Weekly)", "Claude / GPT", "Claude / GPT (Weekly)", "Argon", "Argon (Weekly)"];
   const customWindows = Array.from(customWindowsMap.values()).sort((a, b) => {
     const ia = PREFERRED_ORDER.indexOf(a.label);
     const ib = PREFERRED_ORDER.indexOf(b.label);
@@ -291,9 +291,13 @@ export async function probeAntigravityUsageQuota(accessToken: string, projectId:
   try {
     let response = await fetchQuota(ANTIGRAVITY_QUOTA_SUMMARY_URL);
     if (response.status === 403) {
-      // Some valid accounts reject the IDE fingerprint only for quota accounting.
+      // Some valid accounts reject the CLI fingerprint or IDE fingerprint only for quota accounting.
       try { await response.body?.cancel(); } catch { /* Best-effort release before retry. */ }
-      response = await fetchQuota(ANTIGRAVITY_QUOTA_SUMMARY_URL, "antigravity/1.0");
+      response = await fetchQuota(ANTIGRAVITY_QUOTA_SUMMARY_URL, antigravityUserAgent());
+      if (response.status === 403) {
+        try { await response.body?.cancel(); } catch { /* Best-effort release before retry. */ }
+        response = await fetchQuota(ANTIGRAVITY_QUOTA_SUMMARY_URL, "antigravity/1.0");
+      }
     }
     if (await providerRedirectError(response, ANTIGRAVITY_QUOTA_SUMMARY_URL)) return unavailableAntigravityQuota("redirect_blocked");
     if (response.status === 401 || response.status === 403) return unavailableAntigravityQuota("access_denied");

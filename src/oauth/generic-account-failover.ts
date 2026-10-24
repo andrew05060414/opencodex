@@ -693,16 +693,19 @@ export function preferredInitialAccount(
   const modelEligible = preferKiroModelSupport(providerName,
     eligibleFailoverAccounts(providerName, now, classifyModelFamilyForQuota(providerName, requestedModelId)),
     requestedModelId, config);
+  const activeListed = active && requestedModelId ? accountListsModel(providerName, active, requestedModelId) : undefined;
   const activeLacks = (providerName === "kiro" || providerName === "google-antigravity")
     && !!active && !!requestedModelId
-    && accountListsModel(providerName, active, requestedModelId) === false;
-  const listingSibling = activeLacks
-    ? (modelEligible.find(id => id !== active && (providerName === "kiro"
-        ? kiroModelListingHasRoom(config, id, requestedModelId!)
-        : accountListsModel(providerName, id, requestedModelId!) === true))
-       ?? (providerName === "google-antigravity"
-           ? modelEligible.find(id => id !== active && accountListsModel(providerName, id, requestedModelId!) === undefined)
-           : undefined))
+    && activeListed === false;
+  const listingSibling = (providerName === "kiro" || providerName === "google-antigravity") && !!active && !!requestedModelId
+    ? (activeListed !== true
+        ? modelEligible.find(id => id !== active && (providerName === "kiro"
+            ? kiroModelListingHasRoom(config, id, requestedModelId!)
+            : accountListsModel(providerName, id, requestedModelId!) === true))
+        : undefined)
+      ?? (activeLacks && providerName === "google-antigravity"
+          ? modelEligible.find(id => id !== active && accountListsModel(providerName, id, requestedModelId!) === undefined)
+          : undefined)
     : undefined;
   if (listingSibling) return listingSibling;
 

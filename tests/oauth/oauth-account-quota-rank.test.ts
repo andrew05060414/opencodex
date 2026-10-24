@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  accountResetTimestamp,
   classifyModelFamilyForQuota,
   hasHeadroomEvidence,
   isAccountQuotaExhausted,
@@ -76,14 +77,15 @@ function config(strategy?: "quota" | "round-robin" | "fill-first"): OcxConfig {
   } as unknown as OcxConfig;
 }
 
-function seedWindows(accountId: string, gem: number, cla: number): void {
+function seedWindows(accountId: string, gem: number, cla: number, argon?: number): void {
   setCachedProviderAccountQuotaForTests("google-antigravity", accountId, {
     updatedAt: Date.now(),
     customWindows: [
       { label: "Gem", percent: gem },
       { label: "Gem (Weekly)", percent: gem },
-      { label: "Cla", percent: cla },
-      { label: "Cla (Weekly)", percent: cla },
+      { label: "Claude / GPT", percent: cla },
+      { label: "Claude / GPT (Weekly)", percent: cla },
+      ...(argon !== undefined ? [{ label: "Argon (Weekly)", percent: argon }] : []),
     ],
   });
 }
@@ -106,6 +108,8 @@ describe("classifyModelFamilyForQuota", () => {
     expect(classifyModelFamilyForQuota("google-antigravity", "gemini-3.8-flash")).toBe("gem");
     expect(classifyModelFamilyForQuota("google-antigravity", "gemini-pro-agent")).toBe("gem");
     expect(classifyModelFamilyForQuota("google-antigravity", "gemini-3.1-flash-image")).toBe("gem");
+    expect(classifyModelFamilyForQuota("google-antigravity", "gemini-4-argon")).toBe("argon");
+    expect(classifyModelFamilyForQuota("google-antigravity", "gemini-4-argon-high")).toBe("argon");
     expect(classifyModelFamilyForQuota("google-antigravity", "claude-sonnet-4-5")).toBe("cla");
     expect(classifyModelFamilyForQuota("google-antigravity", "claude-opus-4-6-thinking")).toBe("cla");
     expect(classifyModelFamilyForQuota("google-antigravity", "claude-3-7-sonnet")).toBe("cla");
@@ -174,6 +178,56 @@ describe("model-family headroom filtering", () => {
       "claude-opus-4-6-thinking",
     );
     expect(rankedClaude[0]).toBe("b");
+  });
+
+  test("Argon request uses dedicated Argon window and ignores Gem / Claude windows", () => {
+    // acct-a: Gem 20%, Claude 20%, Argon 95% (headroom 5%)
+    // acct-b: Gem 80%, Claude 80%, Argon 10% (headroom 90%)
+    seedWindows("a", 20, 20, 95);
+    seedWindows("b", 80, 80, 10);
+
+    const rankedArgon = rankAccountsByHeadroom(
+      "google-antigravity",
+      ["a", "b"],
+      "gemini-4-argon",
+    );
+    expect(rankedArgon[0]).toBe("b");
+
+    // Wire model variants also route under argon family
+    const rankedArgonWire = rankAccountsByHeadroom(
+      "google-antigravity",
+      ["a", "b"],
+      "gemini-4-argon-high",
+    );
+    expect(rankedArgonWire[0]).toBe("b");
+
+    // Standard Gemini request ignores Argon quota
+    const rankedGemini = rankAccountsByHeadroom(
+      "google-antigravity",
+      ["b", "a"],
+      "gemini-3.8-flash",
+    );
+    expect(rankedGemini[0]).toBe("a");
+  });
+
+  test("Argon exhaustion identifies Argon spent without exhausting standard Gemini", () => {
+    seedWindows("a", 10, 10, 100);
+    expect(isAccountQuotaExhausted("google-antigravity", "a", "gemini-4-argon")).toBe(true);
+    expect(isAccountQuotaExhausted("google-antigravity", "a", "gemini-4-argon-low")).toBe(true);
+    expect(isAccountQuotaExhausted("google-antigravity", "a", "gemini-3.8-flash")).toBe(false);
+  });
+
+  test("accountResetTimestamp retrieves Argon weekly reset", () => {
+    const futureReset = Date.now() + 3600_000;
+    setCachedProviderAccountQuotaForTests("google-antigravity", "a", {
+      updatedAt: Date.now(),
+      customWindows: [
+        { label: "Gem", percent: 10, resetAt: Date.now() + 1000 },
+        { label: "Gem (Weekly)", percent: 10, resetAt: Date.now() + 2000 },
+        { label: "Argon (Weekly)", percent: 50, resetAt: futureReset },
+      ],
+    });
+    expect(accountResetTimestamp("google-antigravity", "a", "gemini-4-argon")).toBe(futureReset);
   });
 
   test("non-Antigravity provider ignores modelId and uses all windows", () => {
