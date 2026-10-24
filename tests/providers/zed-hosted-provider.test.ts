@@ -795,6 +795,28 @@ describe("Zed OpenAI tool relay", () => {
       budget.dispose();
     }
   });
+
+  test("a consumer that stops while calls are open releases their buffered arguments", async () => {
+    const budget = createTranslatorBudget();
+    try {
+      const iterator = translateZedOpenAiStream(new Response(sse([
+        { type: "response.output_item.added", item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" } },
+        { type: "response.output_item.added", item: { id: "fc_b", type: "function_call", call_id: "call_b", name: "b", arguments: "" } },
+        { type: "response.function_call_arguments.delta", item_id: "fc_b", delta: "{\"y\":2}" },
+        { type: "response.function_call_arguments.delta", item_id: "fc_a", delta: "{\"x\":1}" },
+        { type: "response.function_call_arguments.done", item_id: "fc_a", arguments: "{\"x\":1}" },
+      ])).body, budget);
+      let step = await iterator.next();
+      while (!step.done && step.value.type !== "tool_call_delta") step = await iterator.next();
+      expect(step.done).toBe(false);
+      // Both calls are still open: a is mid-stream and b's arguments are buffered behind it.
+      expect(budget.snapshot().activeCalls).toBeGreaterThan(0);
+      await iterator.return(undefined);
+      expect(budget.snapshot()).toMatchObject({ currentBytes: 0, activeCalls: 0 });
+    } finally {
+      budget.dispose();
+    }
+  });
 });
 
 describe("Zed inference send accounting", () => {
