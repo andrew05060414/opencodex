@@ -321,7 +321,7 @@ describe("Codex catalog restore", () => {
     expect(restored.map(m => m.slug)).toEqual(["gpt-5.5", "user-native"]);
   }, { timeout: 15_000 });
 
-  test("sync applies native-only subagent priority selections", () => {
+  test("sync preserves native model priorities when subagentModels are configured (PX-1276)", () => {
     const catalogPath = join(codexHome, "catalog.json");
     writeFileSync(join(codexHome, "config.toml"), 'model_catalog_json = "catalog.json"\n', "utf8");
     writeFileSync(catalogPath, JSON.stringify({
@@ -349,8 +349,8 @@ describe("Codex catalog restore", () => {
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toMatchObject({ added: 0 });
     const synced = JSON.parse(readFileSync(catalogPath, "utf8")).models as Array<Record<string, unknown>>;
-    expect(synced.find(m => m.slug === "gpt-5.5")?.priority).toBe(0);
-    expect(synced.find(m => m.slug === "gpt-5.6-luna")?.priority).toBeGreaterThan(100);
+    expect(synced.find(m => m.slug === "gpt-5.5")?.priority).toBe(50);
+    expect(synced.find(m => m.slug === "gpt-5.6-luna")?.priority).toBe(0);
   }, { timeout: 15_000 });
 
   test("sync advertises documented Codex-native additions omitted by the bundled catalog", () => {
