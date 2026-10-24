@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 // Brazilian Portuguese — generated from en.ts. Must match TKey set (compile-checked).
 import type { TKey } from "./en";
 
@@ -3560,6 +3560,14 @@ export const pt: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "Esta execução usa a porta {bound}; a porta configurada {configured} é diferente. Use a porta vinculada ou restaure o valor configurado.",
   "claude.intercept.reason.failed": "Não foi possível iniciar a interceptação. Tente novamente após verificar a configuração do proxy local.",
   "claude.intercept.reason.stopped": "O ciclo de vida da interceptação foi encerrado. Inicie um serviço OpenCodex em execução.",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "Primeira parte da CLI do Claude Code",
   "claude.firstParty.desc": "Permite que a CLI claude independente mantenha o login do Claude enquanto seu tráfego passa pelo proxy de interceptação local.",
   "claude.firstParty.aria": "Alternar primeira parte da CLI do Claude Code",

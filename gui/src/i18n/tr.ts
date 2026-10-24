@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 // Turkish — generated from en.ts. Must match TKey set (compile-checked).
 import type { TKey } from "./en";
 
@@ -3540,6 +3540,14 @@ export const tr: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "Bu çalıştırma {bound} bağlantı noktasını kullanıyor; yapılandırılan değer {configured}. Mevcut noktayı kullanın veya yapılandırmayı geri yükleyin.",
   "claude.intercept.reason.failed": "Yakalama başlatılamadı. Yerel proxy yapılandırmasını kontrol edip tekrar deneyin.",
   "claude.intercept.reason.stopped": "Yakalama durdu. OpenCodex hizmetini başlatın.",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "Claude Code CLI first-party",
   "claude.firstParty.desc": "Bağımsız claude CLI, Claude oturumunu korurken trafiğini yerel yakalama proxy'sinden geçirir.",
   "claude.firstParty.aria": "Claude Code CLI first-party modunu değiştir",

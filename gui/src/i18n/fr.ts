@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import type { TKey } from "./en";
 
 /**
@@ -3517,6 +3517,14 @@ export const fr: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "Cette exécution utilise le port {bound}, différent du port configuré {configured}. Utilisez le port lié ou rétablissez la configuration.",
   "claude.intercept.reason.failed": "L’interception n’a pas pu démarrer. Vérifiez le proxy local et réessayez.",
   "claude.intercept.reason.stopped": "L’interception est arrêtée. Démarrez le service OpenCodex.",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "First-party de la CLI Claude Code",
   "claude.firstParty.desc": "La CLI claude autonome garde sa connexion Claude, mais son trafic passe par le proxy d’interception local.",
   "claude.firstParty.aria": "Activer ou désactiver le first-party de la CLI Claude Code",

@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import type { TKey } from "./en";
 
 /**
@@ -3537,6 +3537,14 @@ export const ko: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "현재 실행은 {bound} 포트를 사용하며 설정된 {configured} 포트와 다릅니다. 실행 중인 포트를 사용하거나 설정값을 복원하세요.",
   "claude.intercept.reason.failed": "가로채기를 시작하지 못했습니다. 로컬 프록시 설정을 확인한 뒤 다시 시도하세요.",
   "claude.intercept.reason.stopped": "가로채기 수명주기가 종료됐습니다. OpenCodex 서비스를 실행하세요.",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "Claude Code CLI 1P",
   "claude.firstParty.desc": "단독 claude CLI가 Claude 로그인을 유지한 채 로컬 가로채기 프록시를 거치도록 합니다.",
   "claude.firstParty.aria": "Claude Code CLI 1P 켜기/끄기",

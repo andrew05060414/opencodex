@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import type { TKey } from "./en";
 
 /**
@@ -3510,6 +3510,14 @@ export const zh: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "本次运行使用端口{bound}，与配置端口{configured}不同。请使用当前端口或恢复配置。",
   "claude.intercept.reason.failed": "无法启动拦截。请检查本地代理配置后重试。",
   "claude.intercept.reason.stopped": "拦截已停止。请启动OpenCodex服务。",
+  "claude.workflow.label": "自动工作流（Ultracode）",
+  "claude.workflow.desc": "复杂任务自动生成脚本、并行委派子代理并汇总结果。",
+  "claude.workflow.scopeNote": "适用 CLI 和 Desktop Code，普通 Chat 不适用；修改本机共享 Claude 设置，普通 claude 也受影响。",
+  "claude.workflow.effectiveNote": "将在下个新会话生效。",
+  "claude.workflow.disabledNotice": "工作流当前在 Claude 设置或环境变量中被禁用。",
+  "claude.workflow.settingsError": "无法读取有效的 Claude 用户设置：{error}",
+  "claude.workflow.fetchError": "加载 Claude 工作流设置失败。",
+  "claude.workflow.saveError": "更新 Claude 工作流设置失败。",
   "claude.firstParty.label": "Claude Code CLI 第一方",
   "claude.firstParty.desc": "独立的 claude CLI 保留其 Claude 登录，同时流量经过本地拦截代理。",
   "claude.firstParty.aria": "切换 Claude Code CLI 第一方模式",

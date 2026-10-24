@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import type { TKey } from "./en";
 
 /**
@@ -3289,6 +3289,14 @@ export const ru: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "Используется порт {bound}, в настройках — {configured}. Используйте текущий порт или восстановите настройку.",
   "claude.intercept.reason.failed": "Не удалось запустить перехват. Проверьте настройки локального прокси и повторите попытку.",
   "claude.intercept.reason.stopped": "Перехват остановлен. Запустите службу OpenCodex.",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "First-party для Claude Code CLI",
   "claude.firstParty.desc": "Отдельный claude CLI сохраняет вход в Claude, а его трафик идёт через локальный прокси перехвата.",
   "claude.firstParty.aria": "Переключить first-party для Claude Code CLI",

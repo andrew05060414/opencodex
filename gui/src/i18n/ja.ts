@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import type { TKey } from "./en";
 
 /**
@@ -3199,6 +3199,14 @@ export const ja: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "現在のポートは{bound}、設定は{configured}です。現在のポートを使用するか設定を戻してください。",
   "claude.intercept.reason.failed": "傍受を開始できませんでした。ローカルプロキシの設定を確認して再試行してください。",
   "claude.intercept.reason.stopped": "傍受は停止しました。OpenCodexサービスを起動してください。",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "Claude Code CLI の 1P",
   "claude.firstParty.desc": "単体の claude CLI が Claude のログインを保ったまま、ローカルのインターセプトプロキシを経由するようにします。",
   "claude.firstParty.aria": "Claude Code CLI の 1P を切り替え",

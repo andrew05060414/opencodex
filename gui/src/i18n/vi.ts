@@ -1,4 +1,4 @@
-import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+﻿import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 // Vietnamese — generated from en.ts. Must match TKey set (compile-checked).
 import type { TKey } from "./en";
 
@@ -3528,6 +3528,14 @@ export const vi: Record<TKey, string> = {
   "claude.intercept.reason.port_mismatch": "Lần chạy này dùng cổng {bound}, khác cổng cấu hình {configured}. Dùng cổng hiện tại hoặc khôi phục cấu hình.",
   "claude.intercept.reason.failed": "Không thể bắt đầu chặn. Kiểm tra cấu hình proxy cục bộ rồi thử lại.",
   "claude.intercept.reason.stopped": "Chặn đã dừng. Hãy khởi chạy dịch vụ OpenCodex.",
+  "claude.workflow.label": "Automatic workflows (Ultracode)",
+  "claude.workflow.desc": "Automatically generate scripts, delegate to parallel subagents, and summarize results for complex tasks.",
+  "claude.workflow.scopeNote": "Applies to CLI and Desktop Code; standard Chat is not supported. Changes shared local Claude settings and also affects standard claude.",
+  "claude.workflow.effectiveNote": "Changes take effect in the next new session.",
+  "claude.workflow.disabledNotice": "Workflows are currently disabled in Claude settings or environment.",
+  "claude.workflow.settingsError": "Cannot read valid Claude user settings: {error}",
+  "claude.workflow.fetchError": "Failed to load Claude workflow settings.",
+  "claude.workflow.saveError": "Failed to update Claude workflow settings.",
   "claude.firstParty.label": "First-party cho Claude Code CLI",
   "claude.firstParty.desc": "CLI claude độc lập giữ phiên đăng nhập Claude, còn lưu lượng đi qua proxy chặn cục bộ.",
   "claude.firstParty.aria": "Bật/tắt first-party cho Claude Code CLI",
