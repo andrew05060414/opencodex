@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { constants, createHash, createPublicKey, publicEncrypt } from "node:crypto";
 import { createZedAdapter, zedEventStream, type ZedProvider } from "../../src/adapters/zed";
+import { translateZedOpenAiStream } from "../../src/adapters/zed-openai-stream";
+import { createTranslatorBudget } from "../../src/lib/translator-budget";
 import { setIcaclsRunnerForTests, resetHardenedStateForTests } from "../../src/lib/windows-secret-acl";
 import { getValidAccessTokenSnapshot } from "../../src/oauth";
 import { saveCredential } from "../../src/oauth/store";
@@ -415,6 +417,34 @@ describe("Zed OpenAI tool relay", () => {
     ]);
   });
 
+  test("promotes the current turn when replay repair drops a reasoning item", async () => {
+    catalogFetch();
+    const shell = { type: "function", name: "shell", parameters: { type: "object", properties: {} } };
+    const parsed = parseRequest({
+      model: "gpt-6.1-sol",
+      previous_response_id: "resp_replay",
+      input: [
+        { type: "reasoning", id: "rs_1", summary: [] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "earlier" }] },
+        { type: "additional_tools", tools: [shell] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "now" }] },
+      ],
+      stream: true,
+    });
+    parsed._zedAuthContext = { userId: "user-1" };
+    parsed._replayPrefixLen = 2;
+    const rawBefore = JSON.stringify(parsed._rawBody);
+    const adapter = withTestTranslatorBudget(createZedAdapter({ ...provider, statelessResponses: true }));
+    const request = await adapter.buildRequest(parsed);
+    const body = JSON.parse(request.body).provider_request;
+    expect(body.tools).toEqual([shell]);
+    expect(JSON.stringify(body.input)).not.toContain("additional_tools");
+    expect(JSON.stringify(body.input)).not.toContain("reasoning");
+    expect(JSON.stringify(parsed._rawBody)).toBe(rawBefore);
+    expect(rawBefore).toContain("additional_tools");
+    expect(rawBefore).toContain("reasoning");
+  });
+
   async function relay(frames: unknown[]): Promise<unknown[]> {
     catalogFetch();
     const parsed = parseRequest({ model: "gpt-6.1-sol", input: "hello", stream: true });
@@ -524,6 +554,102 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "text_delta", text: "partial" },
       { type: "incomplete", reason: "max_output_tokens", usage: { inputTokens: 4, outputTokens: 9 } },
+    ]);
+  });
+
+  test("keeps interleaved function-call deltas until each call closes", async () => {
+    const events = await relay([
+      { event: { type: "response.output_item.added", item: { id: "call_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" } } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "call_a", delta: "{\"x\":" } },
+      { event: { type: "response.output_item.added", item: { id: "call_b", type: "function_call", call_id: "call_b", name: "b", arguments: "" } } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "call_b", delta: "{\"y\":2}" } },
+      { event: { type: "response.function_call_arguments.done", item_id: "call_b", arguments: "{\"y\":2}" } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "call_a", delta: "1}" } },
+      { event: { type: "response.function_call_arguments.done", item_id: "call_a", arguments: "{\"x\":1}" } },
+      { event: { type: "response.completed", response: { output: [
+        { type: "function_call", id: "call_a", call_id: "call_a", name: "a", arguments: "{\"x\":1}" },
+        { type: "function_call", id: "call_b", call_id: "call_b", name: "b", arguments: "{\"y\":2}" },
+      ] } } },
+    ]);
+    expect(events).toEqual([
+      { type: "tool_call_start", id: "call_a", name: "a" },
+      { type: "tool_call_delta", arguments: "{\"x\":" },
+      { type: "tool_call_delta", arguments: "1}" },
+      { type: "tool_call_end" },
+      { type: "tool_call_start", id: "call_b", name: "b" },
+      { type: "tool_call_delta", arguments: "{\"y\":2}" },
+      { type: "tool_call_end" },
+      { type: "done" },
+    ]);
+  });
+
+  test("keeps interleaved custom-tool input until each call closes", async () => {
+    const events = await relay([
+      { event: { type: "response.output_item.added", item: { id: "ctc_a", type: "custom_tool_call", call_id: "call_a", name: "apply_patch", input: "" } } },
+      { event: { type: "response.custom_tool_call_input.delta", item_id: "ctc_a", delta: "left" } },
+      { event: { type: "response.output_item.added", item: { id: "ctc_b", type: "custom_tool_call", call_id: "call_b", name: "apply_patch", input: "" } } },
+      { event: { type: "response.custom_tool_call_input.delta", item_id: "ctc_b", delta: "right" } },
+      { event: { type: "response.custom_tool_call_input.done", item_id: "ctc_b", input: "right" } },
+      { event: { type: "response.custom_tool_call_input.delta", item_id: "ctc_a", delta: " side" } },
+      { event: { type: "response.custom_tool_call_input.done", item_id: "ctc_a", input: "left side" } },
+      { event: { type: "response.completed", response: { output: [] } } },
+    ]);
+    expect(events).toEqual([
+      { type: "tool_call_start", id: "call_a", name: "apply_patch" },
+      { type: "tool_call_delta", arguments: "left" },
+      { type: "tool_call_delta", arguments: " side" },
+      { type: "tool_call_end" },
+      { type: "tool_call_start", id: "call_b", name: "apply_patch" },
+      { type: "tool_call_delta", arguments: "right" },
+      { type: "tool_call_end" },
+      { type: "done" },
+    ]);
+  });
+
+  test("an incomplete response does not invent tool arguments from a later full item", async () => {
+    const events = await relay([
+      { event: { type: "response.output_item.added", item: { id: "call_a", type: "function_call", call_id: "call_a", name: "a", arguments: "{\"x\":1}" } } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "call_a", delta: "{\"x\":" } },
+      { event: { type: "response.output_item.added", item: { id: "call_b", type: "function_call", call_id: "call_b", name: "b", arguments: "" } } },
+      { event: { type: "response.function_call_arguments.delta", item_id: "call_b", delta: "{\"y\":" } },
+      { event: { type: "response.function_call_arguments.done", item_id: "call_b", arguments: "{\"y\":2}" } },
+      { event: { type: "response.incomplete", response: {
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [
+          { type: "function_call", id: "call_a", call_id: "call_a", name: "a", arguments: "{\"x\":1}" },
+          { type: "function_call", id: "call_b", call_id: "call_b", name: "b", arguments: "{\"y\":2}" },
+        ],
+      } } },
+    ]);
+    expect(events).toEqual([
+      { type: "tool_call_start", id: "call_a", name: "a" },
+      { type: "tool_call_delta", arguments: "{\"x\":" },
+      { type: "tool_call_end" },
+      { type: "tool_call_start", id: "call_b", name: "b" },
+      { type: "tool_call_delta", arguments: "{\"y\":2}" },
+      { type: "tool_call_end" },
+      { type: "incomplete", reason: "max_output_tokens" },
+    ]);
+  });
+
+  test("EOF flushes received arguments and ignores a full arguments field that never completed", async () => {
+    const budget = createTranslatorBudget();
+    const frames = [
+      { type: "response.output_item.added", item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "{\"x\":1}" } },
+      { type: "response.function_call_arguments.delta", item_id: "fc_a", delta: "{\"x\":" },
+    ];
+    const sse = frames.map(event => "data: " + JSON.stringify(event) + "\n\n").join("");
+    const events = [];
+    try {
+      for await (const event of translateZedOpenAiStream(new Response(sse).body, budget)) events.push(event);
+    } finally {
+      budget.dispose();
+    }
+    expect(events).toEqual([
+      { type: "tool_call_start", id: "call_a", name: "a" },
+      { type: "tool_call_delta", arguments: "{\"x\":" },
+      { type: "tool_call_end" },
+      { type: "done" },
     ]);
   });
 });

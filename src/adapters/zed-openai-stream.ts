@@ -1,6 +1,7 @@
 import type { AdapterEvent, OcxMessagePhase, OcxUsage } from "../types";
 import type { TranslatorBudget } from "../lib/translator-budget";
 import { decodeServerSentEvents } from "../lib/sse-decoder";
+import { transferCompactionCiphertextLease } from "../responses/compaction";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -62,8 +63,12 @@ interface CallState {
   name: string;
   args: string;
   pendingFull?: string;
+  emitted: number;
   started: boolean;
   ended: boolean;
+  closed: boolean;
+  /** True only after this call's own done or completed item, not after EOF. */
+  allowFull: boolean;
 }
 
 function phaseOf(item: Record<string, unknown>): OcxMessagePhase | undefined {
@@ -121,6 +126,11 @@ function incompleteReason(payload: Record<string, unknown>): string {
  * first sentence as final_answer and ends the turn. A later synthetic response.completed
  * with empty output (Zed's stream-ended frame) must not wipe usage taken from the real
  * completion, and completed output must not repeat text or calls that already streamed.
+ * Adapter tool deltas are unkeyed, so only the oldest open call is emitted. A newer call
+ * keeps every later delta until the older call's own terminal event, then replays in order.
+ * EOF and response.incomplete flush arguments that already arrived; they do not copy a full
+ * arguments field that never came from that call's done or completed item. A compaction
+ * ciphertext is carried on done, with the same retained lease as the Responses parser.
  */
 export async function* translateZedOpenAiStream(
   body: ReadableStream<Uint8Array> | null,
@@ -139,57 +149,91 @@ export async function* translateZedOpenAiStream(
   let sawRawReasoning = false;
   let usage: OcxUsage | undefined;
   let terminal = false;
+  let compactionEncryptedContent: string | undefined;
+  let compactionEncryptedContentBytes = 0;
+  let ciphertextTransferred = false;
 
-  function* closeOpenCallsExcept(keep: CallState): Generator<AdapterEvent> {
-    for (const other of calls.values()) {
-      if (other !== keep && other.started && !other.ended) {
-        other.ended = true;
-        yield { type: "tool_call_end" };
-      }
-    }
+  function argumentText(state: CallState): string {
+    const full = state.pendingFull;
+    if (state.allowFull && typeof full === "string" && full.startsWith(state.args)) return full;
+    return state.args;
   }
 
-  function* startIfNeeded(state: CallState): Generator<AdapterEvent> {
-    if (state.started || state.ended || !state.name) return;
-    yield* closeOpenCallsExcept(state);
-    state.started = true;
-    yield { type: "tool_call_start", id: state.callId, name: state.name };
-    if (state.args) yield { type: "tool_call_delta", arguments: state.args };
+  /** Emit the oldest open call. Newer calls stay buffered until that call closes. */
+  function* pump(): Generator<AdapterEvent> {
+    while (true) {
+      const next = [...calls.values()].find(state => !state.ended);
+      if (!next) return;
+      if (!next.name) {
+        if (!next.closed) return;
+        next.ended = true;
+        continue;
+      }
+      if (!next.started) {
+        next.started = true;
+        yield { type: "tool_call_start", id: next.callId, name: next.name };
+      }
+      const text = argumentText(next);
+      if (text.length > next.emitted) {
+        const delta = text.slice(next.emitted);
+        next.emitted = text.length;
+        yield { type: "tool_call_delta", arguments: delta };
+      }
+      if (!next.closed) return;
+      next.ended = true;
+      yield { type: "tool_call_end" };
+    }
   }
 
   function* appendArgs(state: CallState, fragment: string): Generator<AdapterEvent> {
     if (!fragment || state.ended) return;
-    if (!state.started) {
-      if (!state.name) {
-        state.args += fragment;
-        return;
-      }
-      yield* startIfNeeded(state);
-    }
     state.args += fragment;
-    yield { type: "tool_call_delta", arguments: fragment };
+    yield* pump();
   }
 
   function rememberFull(state: CallState, full: unknown): void {
     if (typeof full === "string" && full.length > 0) state.pendingFull = full;
   }
 
-  function* finishCall(state: CallState): Generator<AdapterEvent> {
+  function* closeCall(state: CallState, allowFull: boolean): Generator<AdapterEvent> {
     if (state.ended) return;
-    const full = state.pendingFull;
-    if (typeof full === "string" && full.length > state.args.length && full.startsWith(state.args)) {
-      yield* appendArgs(state, full.slice(state.args.length));
+    state.closed = true;
+    if (allowFull) state.allowFull = true;
+    yield* pump();
+  }
+
+  function* flushUnclosed(allowFull: boolean): Generator<AdapterEvent> {
+    for (const state of calls.values()) {
+      if (state.ended || state.closed) continue;
+      state.closed = true;
+      if (allowFull) state.allowFull = true;
     }
-    yield* startIfNeeded(state);
-    if (!state.started) return;
-    state.ended = true;
-    yield { type: "tool_call_end" };
+    yield* pump();
+  }
+
+  function retainCompaction(response: unknown): void {
+    if (!isRecord(response) || !Array.isArray(response.output)) return;
+    const compaction = response.output.find(item =>
+      isRecord(item) && item.type === "compaction" && typeof item.encrypted_content === "string");
+    if (!isRecord(compaction) || typeof compaction.encrypted_content !== "string") return;
+    const next = compaction.encrypted_content;
+    if (next === compactionEncryptedContent) return;
+    const nextBytes = Buffer.byteLength(next, "utf8");
+    const reservation = budget.reserveTransient(nextBytes, { kind: "retained_collectors" });
+    compactionEncryptedContent = next;
+    reservation.commitRetained();
+    budget.releaseRetained(compactionEncryptedContentBytes, { kind: "retained_collectors" });
+    compactionEncryptedContentBytes = nextBytes;
   }
 
   function ensureCall(key: string, callId: string, name: string): CallState {
     let state = calls.get(key);
     if (!state) {
-      state = { key, callId, name, args: "", started: false, ended: false };
+      state = {
+        // A delta names only the item. Keep the call id the added item already carried instead of
+        // replacing it with the item id, which would mislabel a deferred start.
+        key, callId: callId || key, name, args: "", emitted: 0, started: false, ended: false, closed: false, allowFull: false,
+      };
       calls.set(key, state);
       return state;
     }
@@ -246,8 +290,8 @@ export async function* translateZedOpenAiStream(
     const name = typeof item.name === "string" ? item.name : "";
     const state = ensureCall(key, callId, name);
     rememberFull(state, item.type === "custom_tool_call" ? item.input : item.arguments);
-    if (done) yield* finishCall(state);
-    else yield* startIfNeeded(state);
+    if (done) yield* closeCall(state, true);
+    else yield* pump();
   }
 
   function* emitReasoningItem(item: Record<string, unknown>): Generator<AdapterEvent> {
@@ -295,7 +339,7 @@ export async function* translateZedOpenAiStream(
     }
     if (payload.type === "response.incomplete") {
       terminal = true;
-      for (const state of calls.values()) yield* finishCall(state);
+      yield* flushUnclosed(false);
       const response = isRecord(payload.response) ? payload.response : undefined;
       const nextUsage = usageFromResponse(response) ?? usage;
       if (nextUsage) usage = nextUsage;
@@ -330,19 +374,20 @@ export async function* translateZedOpenAiStream(
     ) {
       const key = typeof payload.item_id === "string" ? payload.item_id : undefined;
       if (!key) return;
-      yield* appendArgs(ensureCall(key, key, ""), payload.delta);
+      yield* appendArgs(ensureCall(key, "", ""), payload.delta);
       return;
     }
     if (payload.type === "response.function_call_arguments.done" || payload.type === "response.custom_tool_call_input.done") {
       const key = typeof payload.item_id === "string" ? payload.item_id : undefined;
       if (!key) return;
-      const state = ensureCall(key, key, "");
+      const state = ensureCall(key, "", "");
       rememberFull(state, payload.type === "response.custom_tool_call_input.done" ? payload.input : payload.arguments);
-      yield* finishCall(state);
+      yield* closeCall(state, true);
       return;
     }
     if (payload.type === "response.completed") {
       const response = isRecord(payload.response) ? payload.response : undefined;
+      retainCompaction(response);
       if (response && Array.isArray(response.output)) {
         for (const item of response.output) {
           if (isRecord(item)) yield* consumeItem(item, true);
@@ -353,15 +398,26 @@ export async function* translateZedOpenAiStream(
     }
   }
 
-  for await (const event of decodeServerSentEvents(body, { translatorBudget: budget })) {
-    let payload: unknown;
-    try { payload = JSON.parse(event.data); } catch { continue; }
-    if (!isRecord(payload)) continue;
-    yield* onPayload(payload);
-    if (terminal) return;
-  }
+  try {
+    for await (const event of decodeServerSentEvents(body, { translatorBudget: budget })) {
+      let payload: unknown;
+      try { payload = JSON.parse(event.data); } catch { continue; }
+      if (!isRecord(payload)) continue;
+      yield* onPayload(payload);
+      if (terminal) return;
+    }
 
-  for (const state of calls.values()) yield* finishCall(state);
-  yield { type: "done", ...(usage ? { usage } : {}) };
+    yield* flushUnclosed(false);
+    const done: AdapterEvent = {
+      type: "done",
+      ...(usage ? { usage } : {}),
+      ...(compactionEncryptedContent ? { compactionEncryptedContent } : {}),
+    };
+    transferCompactionCiphertextLease(done, budget, compactionEncryptedContentBytes);
+    ciphertextTransferred = true;
+    yield done;
+  } finally {
+    if (!ciphertextTransferred) budget.releaseRetained(compactionEncryptedContentBytes, { kind: "retained_collectors" });
+  }
 }
 
