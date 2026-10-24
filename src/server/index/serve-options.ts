@@ -1098,7 +1098,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
                   ? nativeFastEligible(model.id)
                   : catalogRowFastEligible(model)
               : undefined,
-            { modelPickerOrder: config.modelPickerOrder, featured: config.subagentModels }, configuredRoutedDisplayName(config),
+            { modelPickerOrder: config.modelPickerOrder }, configuredRoutedDisplayName(config),
           );
           return jsonResponse({ data }, 200, req, policy);
         }
