@@ -43,3 +43,21 @@ Compaction and max input still follow the effective default
 window, including retained lower soft budgets. Native capacity remains defined by the
 [native passthrough contract](catalog.md#native-passthrough). Covered by
 `tests/codex-integration/catalog-native-max-context.test.ts`.
+
+## Published context ladders
+
+A lane may publish a selectable window ladder instead of one number. The Grok CLI subscription
+lane (`cli-chat-proxy.grok.com`) reports its default rung in `context_window` and the ladder in
+`context_windows`; probed live 2026-10-24, all four rows (grok-4.5, grok-4.6, grok-4.7,
+grok-4.7-build-fast) read `context_window: 256000` with `context_windows: [256000, 500000]`.
+`catalogHintsFromModelsApiItem` in `src/codex/catalog/model-hints.ts` reads the widest valid
+rung, so the 500k the registry already carries survives a lane that reports its default rung as
+the effective window. Configuration cannot restore that: `clampObservedModelLimits` only lowers
+an observation, so a lane-reported short window was previously sticky.
+
+The read sits immediately above the `context_window` fallback — a ladder outranks the default rung
+beside it, while every other recognized field keeps the precedence it already had, and a lane that
+publishes no ladder is unaffected. Inspection is bounded to eight rungs. A ladder is the model's
+capacity, not evidence that the configured tier serves it; the same rule as above applies, and an
+operator who is entitled to only the short rung sets a lower window or an enabled Context cap.
+Covered by `tests/codex-integration/catalog-context-window-ladder.test.ts`.
