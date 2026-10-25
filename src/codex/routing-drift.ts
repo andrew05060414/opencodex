@@ -78,6 +78,8 @@ function loopbackEndpoint(url: string): { hostname: string; port: number } | nul
   try {
     const parsed = new URL(url);
     if (!parsed.port) return null;
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    if (pathname !== "" && pathname !== "/v1") return null;
     const port = Number(parsed.port);
     if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
     return { hostname: parsed.hostname.replace(/^\[|\]$/g, ""), port };

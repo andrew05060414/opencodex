@@ -337,8 +337,10 @@ export function routeAntigravityModel(
     return { kind: "refuse", message: antigravitySelectedAccountUnlistedMessage(model) };
   }
   const ready = new Set(eligibleFailoverAccounts(providerName, now, classifyModelFamilyForQuota(providerName, model)));
+  const accountRows = new Map((getAccountSet(providerName)?.accounts ?? []).map(account => [account.id, account]));
+  const quotaRanked = rankAccountsByHeadroom(providerName, serving, model, accountRows);
   const rank = (id: string) => (ready.has(id) ? 0 : 2) + (accountListsModel(providerName, id, model) === true ? 0 : 1);
-  const best = serving.reduce((left, right) => rank(right) < rank(left) ? right : left);
+  const best = quotaRanked.reduce((left, right) => rank(right) < rank(left) ? right : left);
   return { kind: "reroute", accountId: best };
 }
 
@@ -791,7 +793,8 @@ export function preferredInitialAccount(
         ? modelEligible.find(id => id !== active && accountListsModel(providerName, id, requestedModelId!) === undefined)
         : undefined)
     : undefined;
-  if (listingSibling) return listingSibling;
+  if (providerName === "kiro" && listingSibling) return listingSibling;
+  const fallbackSibling = listingSibling ?? null;
 
   // A configured strategy answers this question itself. Both guards below exist to protect the
   // QUOTA answer, and both are fatal to the other two: hasHeadroomEvidence refuses every
@@ -808,13 +811,13 @@ export function preferredInitialAccount(
     }
     candidates = preferKiroModelSupport(providerName, candidates, requestedModelId, config);
     const picked = candidates.sort((a, b) => accountInFlight("kiro", a) - accountInFlight("kiro", b))[0];
-    return picked && picked !== active ? picked : null;
+    return picked && picked !== active ? picked : fallbackSibling;
   }
   if (strategy === "round-robin") {
     const family = classifyModelFamilyForQuota(providerName, requestedModelId);
     const eligibleNow = preferKiroModelSupport(providerName,
       eligibleFailoverAccounts(providerName, now, family), requestedModelId, config);
-    if (eligibleNow.length === 0) return null;
+    if (eligibleNow.length === 0) return fallbackSibling;
     // PEEK, not pick: this proposal is discardable, and advancing the ring for an account the
     // resolver then rejects would skip a turn for nothing. noteGenericPoolSelection commits.
     const picked = peekRoundRobinAccount(
@@ -822,11 +825,11 @@ export function preferredInitialAccount(
       eligibleNow,
       genericStickyLimit(config, providerName),
     );
-    return picked && picked !== active ? picked : null;
+    return picked && picked !== active ? picked : fallbackSibling;
   }
   if (strategy === "fill-first") {
     const picked = pickFillFirstGenericAccount(config, providerName, active, now, requestedModelId, accountRows, activeAccountOverride !== undefined);
-    return picked && picked !== active ? picked : null;
+    return picked && picked !== active ? picked : fallbackSibling;
   }
   if (strategy === "reset-first") {
     // Same candidate set as round-robin: paused, reauth-needed and cooled accounts are out,
@@ -835,13 +838,13 @@ export function preferredInitialAccount(
     const family = classifyModelFamilyForQuota(providerName, requestedModelId);
     const eligibleNow = preferKiroModelSupport(providerName,
       eligibleFailoverAccounts(providerName, now, family), requestedModelId, config);
-    if (eligibleNow.length === 0 || !hasHeadroomEvidence(providerName, eligibleNow, requestedModelId, accountRows)) return null;
+    if (eligibleNow.length === 0 || !hasHeadroomEvidence(providerName, eligibleNow, requestedModelId, accountRows)) return fallbackSibling;
     const best = rankAccountsByResetFirst(providerName, eligibleNow, requestedModelId, now, accountRows)[0] ?? null;
-    return best && best !== active ? best : null;
+    return best && best !== active ? best : fallbackSibling;
   }
 
   const activeRow = selected.accounts.find(account => account.id === active);
-  if (activeRow && activeRow.paused !== true && activeRow.needsReauth !== true
+  if (!activeLacks && activeRow && activeRow.paused !== true && activeRow.needsReauth !== true
     && !isCooled(providerName, activeRow.id, now, classifyModelFamilyForQuota(providerName, requestedModelId))
     && !isAccountQuotaExhausted(providerName, activeRow.id, requestedModelId, activeRow)) return null;
 
@@ -850,7 +853,7 @@ export function preferredInitialAccount(
   // 429 and the eligible list collapses to one candidate, which any ranking returns
   // unchanged — an answer that looks ranked but was never measured. The no-op guarantee
   // for quota-less providers has to be checked on the full roster.
-  if (!hasHeadroomEvidence(providerName, order, requestedModelId, accountRows)) return null;
+  if (!hasHeadroomEvidence(providerName, order, requestedModelId, accountRows)) return fallbackSibling;
 
   // Cooldowns are respected here, unlike in the presence count: this picks the account to
   // send to right now, and one inside its 429 window is the single candidate we hold
@@ -858,20 +861,20 @@ export function preferredInitialAccount(
   const eligible = preferKiroModelSupport(providerName,
     order.filter(id => !isCooled(providerName, id, now, classifyModelFamilyForQuota(providerName, requestedModelId))),
     requestedModelId, config);
-  if (eligible.length === 0) return null;
+  if (eligible.length === 0) return fallbackSibling;
 
   // Start the ring at the active account so an unranked outcome reproduces today's choice.
   const start = active ? order.indexOf(active) : -1;
   const ring = start >= 0 ? [...order.slice(start), ...order.slice(0, start)] : order;
   const candidates = ring.filter(id => eligible.includes(id));
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return fallbackSibling;
 
   const best = rankAccountsByHeadroom(providerName, candidates, requestedModelId, accountRows)[0] ?? null;
   // Nothing to do when the ranking agrees with the account we would have used anyway.
   //
   // A proposal still needs guarded selection commit after credential resolution: a
   // removal, reauth verdict, or manual choice can arrive during that await.
-  return best && best !== active ? best : null;
+  return best && best !== active ? best : fallbackSibling;
 }
 
 /** Earliest remaining cooldown, for a client-facing Retry-After when every account is cooled. */

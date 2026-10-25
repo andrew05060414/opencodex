@@ -33,6 +33,7 @@ import {
 import {
   buildModelsRequest,
   getModelsOAuthAccessSnapshot,
+  getValidAccessSnapshotForAccount,
   observeActiveOAuthAccessToken,
   resolveModelsAuthToken,
   type OAuthActiveTokenObservation,
@@ -52,7 +53,7 @@ import {
 } from "../../providers/service-tier";
 import type { FastPolicyAuthority } from "../../providers/fastwire";
 import { effectiveGoogleMode, getProviderRegistryEntry, providerMatchesRegistryTransport, registryEntryForProviderDestination } from "../../providers/registry";
-import { parseAntigravityAvailableModels, registerAntigravityDiscoveredWireModels } from "../../providers/antigravity-models";
+import { parseAntigravityAvailableModels, registerAntigravityDiscoveredWireModels, type AntigravityAvailableModel } from "../../providers/antigravity-models";
 import { recordAntigravityAccountRoster } from "../../providers/antigravity-account-roster";
 import { applyProviderContextCap, providerContextCap, resolveUnknownRoutedContextWindow } from "../../providers/context-cap";
 import { clampAutoCompactTokenLimit } from "../../providers/auto-compact-budget";
@@ -791,7 +792,54 @@ export async function fetchProviderModelsWithAuth(
       return observed(models, "degraded");
     }
     if (antigravity) {
-      const upstream: CatalogModel[] = antigravity.map(model => ({
+      const mergedAntigravity: AntigravityAvailableModel[] = [...antigravity];
+      const seenModelIds = new Set(mergedAntigravity.map(model => model.id));
+      const siblingRosters = new Map<string, readonly AntigravityAvailableModel[]>();
+      if (resolveAuth.kind === "refreshing" && prov.authMode === "oauth" && auth.oauthAccountId) {
+        const siblings = (getAccountSet(name)?.accounts ?? []).filter(
+          account => account.id !== auth.oauthAccountId && account.paused !== true && account.needsReauth !== true,
+        );
+        if (siblings.length > 0) {
+          await Promise.all(siblings.map(async sibling => {
+            try {
+              const snapshot = sibling.credential.access && sibling.credential.expires > Date.now() + 60_000
+                ? { accessToken: sibling.credential.access, projectId: sibling.credential.projectId }
+                : await getValidAccessSnapshotForAccount(name, sibling.id, { requireUsableAccount: true });
+              const siblingProject = prov.project ?? snapshot.projectId ?? sibling.credential.projectId;
+              if (!snapshot.accessToken || !siblingProject) return;
+              const siblingHeaders = materializeCapturedHeaders(request, snapshot.accessToken);
+              const siblingRes = request.method === "POST"
+                ? await providerOutboundPost(name, prov, url, {
+                  headers: siblingHeaders,
+                  body: JSON.stringify({ project: siblingProject }),
+                  signal: AbortSignal.timeout(8000),
+                }, outboundDependencies)
+                : await providerOutboundGet(name, prov, url, {
+                  headers: siblingHeaders,
+                  signal: AbortSignal.timeout(8000),
+                }, outboundDependencies);
+              if (!siblingRes.ok || await providerRedirectError(siblingRes, url)) return;
+              const siblingBounded = await readBoundedDiscoveryJson(siblingRes, discovery.maxResponseBytes);
+              if (!siblingBounded.ok) return;
+              const siblingModels = parseAntigravityAvailableModels(siblingBounded.value, discovery.maxModels);
+              if (!siblingModels) return;
+              siblingRosters.set(sibling.id, siblingModels);
+            } catch {
+              // Fail-soft: one sibling's discovery error never degrades the pool catalog.
+            }
+          }));
+          for (const sibling of siblings) {
+            const siblingModels = siblingRosters.get(sibling.id);
+            if (!siblingModels) continue;
+            for (const model of siblingModels) {
+              if (seenModelIds.has(model.id)) continue;
+              seenModelIds.add(model.id);
+              mergedAntigravity.push(model);
+            }
+          }
+        }
+      }
+      const upstream: CatalogModel[] = mergedAntigravity.map(model => ({
         id: model.id,
         provider: name,
         // Only an exact discovered wire map proves a new model's selectable effort ladder.
@@ -811,13 +859,16 @@ export async function fetchProviderModelsWithAuth(
       }
       // Save exact family routes before publishing synthetic IDs. These synchronous writes
       // cannot interleave with a credential-generation change; failure keeps the prior cache.
-      registerAntigravityDiscoveredWireModels(prov.baseUrl, antigravity, {
+      registerAntigravityDiscoveredWireModels(prov.baseUrl, mergedAntigravity, {
         provider: name,
         cacheGeneration,
       });
       // Entitlement is per account (Claude 4.6 vs 5.5, Argon): remember what THIS account
       // lists so account selection can prefer one that serves the requested model.
       if (auth.oauthAccountId) recordAntigravityAccountRoster(name, auth.oauthAccountId, antigravity);
+      for (const [siblingId, siblingModels] of siblingRosters) {
+        recordAntigravityAccountRoster(name, siblingId, siblingModels);
+      }
       if (!setCached(name, forCache, Date.now(), cacheGeneration, catalogAuthority)) {
         return observed(withConfiguredRetention(configured), "degraded");
       }
