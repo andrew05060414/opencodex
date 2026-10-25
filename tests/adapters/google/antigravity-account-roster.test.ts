@@ -133,6 +133,46 @@ describe("Antigravity exposure follows each account's own discovery", () => {
     expect(antigravityAccountSupportsModel(PROVIDER, "acct-55", "claude-sonnet-4-6")).toBe(false);
     expect(antigravityAccountRosterModelIds(PROVIDER, "acct-55")).toEqual(expect.arrayContaining(["claude-opus-5-5", "gemini-4-argon"]));
   });
+
+  test("disabled placeholder wire models (gemini-4-argon-disabled) are excluded from discovery and rosters", async () => {
+    const roster46WithDisabledArgon = {
+      models: {
+        ...ROSTER_46.models,
+        "gemini-4-argon-disabled": { displayName: "Gemini 4 Argon", disabled: true, tagTitle: "Unavailable", maxTokens: 1_048_576 },
+      },
+      agentModelSorts: [{ groups: [{ modelIds: [
+        "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low",
+        "gemini-4-argon-disabled", "claude-sonnet-4-6", "claude-opus-4-6-thinking",
+      ] }] }],
+    };
+    const ids = await discoveredIds(roster46WithDisabledArgon, "acct-46-disabled");
+    expect(ids).toEqual(["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3.8-flash"]);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-46-disabled", "gemini-4-argon")).toBe(false);
+  });
+
+  test("multi-account discovery unions models across 4.6 and 5.5 accounts while recording per-account rosters", async () => {
+    homeWithAccounts(["acct-46", "acct-55"], "acct-46");
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const auth = new Headers(init?.headers).get("authorization");
+      return Response.json(auth === "Bearer access-acct-46" ? ROSTER_46 : ROSTER_55);
+    }) as typeof fetch;
+    const models = await gatherRoutedModels({ providers: { [PROVIDER]: provider() } } as unknown as OcxConfig);
+    const ids = models.filter(model => model.provider === PROVIDER).map(model => model.id).sort();
+    expect(ids).toEqual([
+      "claude-opus-4-6-thinking",
+      "claude-opus-5-5",
+      "claude-sonnet-4-6",
+      "claude-sonnet-5-5",
+      "gemini-3.8-flash",
+      "gemini-4-argon",
+    ]);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-46", "claude-opus-4-6-thinking")).toBe(true);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-46", "claude-opus-5-5")).toBe(false);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-46", "gemini-4-argon")).toBe(false);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-55", "claude-opus-5-5")).toBe(true);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-55", "gemini-4-argon")).toBe(true);
+    expect(antigravityAccountSupportsModel(PROVIDER, "acct-55", "claude-opus-4-6-thinking")).toBe(false);
+  });
 });
 
 describe("Claude 4.6 and 5.5 both map", () => {

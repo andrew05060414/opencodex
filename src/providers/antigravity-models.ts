@@ -656,7 +656,7 @@ export function parseAntigravityAvailableModels(
   const available = new Map<string, Record<string, unknown>>();
   for (const wireId of ids) {
     const info = antigravityRecord(models[wireId]);
-    if (!info || available.has(wireId)) continue;
+    if (!info || info.disabled === true || wireId.endsWith("-disabled") || available.has(wireId)) continue;
     // Compatibility aliases are deliberately routed to NEWER wire ids for saved
     // selections. CCA keeps serving retired generations (3.5/3.6 Flash tiers) in its
     // agent list long after they stop being the model anyone should pick, so admitting
