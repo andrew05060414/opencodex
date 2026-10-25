@@ -72,6 +72,21 @@ test("loads initial state from GET /api/claude-code and displays checkbox", asyn
   expect(checkbox.disabled).toBe(false);
 });
 
+test("omits the workflow card when the server has no workflow capability", async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ enabled: true, model: "sonnet" }), {
+    headers: { "Content-Type": "application/json" },
+  });
+  const { container } = await mount(<ClaudeWorkflowSettings apiBase="http://localhost" />);
+  expect(container.textContent).toBe("");
+});
+
+test("does not request workflow settings for an inactive panel", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response(null, { status: 500 }); };
+  await mount(<ClaudeWorkflowSettings apiBase="http://localhost" active={false} />);
+  expect(calls).toBe(0);
+});
+
 test("toggles ultracode and updates state on successful PUT /api/claude-code", async () => {
   let putPayload: any = null;
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

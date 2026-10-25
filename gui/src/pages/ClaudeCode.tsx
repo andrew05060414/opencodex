@@ -453,7 +453,7 @@ export default function ClaudeCode({ apiBase, active = true }: { apiBase: string
         return key ? <Notice tone="warn">{t(key)}</Notice> : null;
       })()}
 
-      <ClaudeWorkflowSettings apiBase={apiBase} />
+      <ClaudeWorkflowSettings apiBase={apiBase} active={active} />
 
       <CcwSection title={t("claude.quickstart")}>
         <ClaudeCodeQuickstartSection manualEnv={buildManualEnv(state)} />

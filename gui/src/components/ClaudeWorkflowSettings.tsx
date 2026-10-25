@@ -13,9 +13,11 @@ export interface ClaudeWorkflowData {
 
 export function ClaudeWorkflowSettings({
   apiBase,
+  active = true,
   onUpdated,
 }: {
   apiBase: string;
+  active?: boolean;
   onUpdated?: (data: ClaudeWorkflowData) => void;
 }) {
   const t = useT();
@@ -24,18 +26,28 @@ export function ClaudeWorkflowSettings({
   const [loading, setLoading] = useState<boolean>(true);
   const [pending, setPending] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [supported, setSupported] = useState(true);
 
   useEffect(() => {
+    if (!active) return;
     let cancelled = false;
     const ctrl = new AbortController();
     fetch(`${apiBase}/api/claude-code`, { signal: ctrl.signal })
       .then(res => readJsonOrThrow<ClaudeWorkflowData>(res, t("claude.workflow.fetchError")))
       .then(body => {
         if (cancelled) return;
+        // Newer servers no longer expose the workflow settings capability.
+        // Its absence is not a failed request or a disabled user setting.
+        if (body && !("ultracode" in body)) {
+          setSupported(false);
+          setLoading(false);
+          return;
+        }
         if (!body || typeof body.ultracode !== "boolean") {
           throw new Error(t("claude.workflow.fetchError"));
         }
         setData(body);
+        setSupported(true);
         setError(null);
         setLoading(false);
         onUpdated?.(body);
@@ -49,7 +61,7 @@ export function ClaudeWorkflowSettings({
       cancelled = true;
       ctrl.abort();
     };
-  }, [apiBase, onUpdated, t]);
+  }, [active, apiBase, onUpdated, t]);
 
   const toggleUltracode = async (nextValue: boolean) => {
     if (pending || !data) return;
@@ -81,6 +93,7 @@ export function ClaudeWorkflowSettings({
     }
   };
 
+  if (!supported) return null;
   const isDisabled = loading || pending || !data || data.workflowsDisabled === true || Boolean(data.workflowSettingsError);
 
   return (

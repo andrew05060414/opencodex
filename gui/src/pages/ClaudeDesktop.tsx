@@ -684,7 +684,7 @@ export default function ClaudeDesktop({
         />
       )}
 
-      <ClaudeWorkflowSettings apiBase={apiBase} />
+      <ClaudeWorkflowSettings apiBase={apiBase} active={active} />
 
       {data.models.length === 0 && (
         <EmptyState title={t("claudeDesktop.emptyTitle")}>{t("claudeDesktop.emptyHint")}</EmptyState>
