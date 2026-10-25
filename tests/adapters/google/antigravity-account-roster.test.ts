@@ -11,6 +11,7 @@ import {
   antigravitySelectedAccountUnlistedMessage,
   clearGenericFailoverHealth,
   hasEligibleGenericOAuthFailoverTarget,
+  noteGenericPoolSelection,
   preferKiroModelSupport,
   preferredInitialAccount,
   rotateAntigravityAccountOnAuthRefusal,
@@ -18,6 +19,7 @@ import {
   rotateGenericOAuthAccountOn429,
   routeAntigravityModel,
 } from "../../../src/oauth/generic-account-failover";
+import { clearPoolRotationState } from "../../../src/oauth/pool-kernel";
 import {
   ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS,
   ANTIGRAVITY_MODEL_DENIAL_TTL_MS,
@@ -399,5 +401,37 @@ describe("model routing fails closed on a proven roster omission (#7500)", () =>
     clearAntigravityAccountRosters(PROVIDER, "acct-55");
     record("acct-55", ROSTER_46);
     expect(rotateAntigravityAccountOnAuthRefusal(true, "acct-a", "stale-generation", "claude-opus-5-5")).toBeNull();
+  });
+
+  test("round-robin rotates across model-supporting accounts per family without resetting weights", () => {
+    clearPoolRotationState();
+    homeWithAccounts(["acct-46a", "acct-55a", "acct-46b", "acct-55b"], "acct-46a");
+    record("acct-46a", ROSTER_46);
+    record("acct-55a", ROSTER_55);
+    record("acct-46b", ROSTER_46);
+    record("acct-55b", ROSTER_55);
+
+    const rrConfig = {
+      pool: { kernel: true },
+      providers: {
+        [PROVIDER]: provider({
+          oauthAccountFailover: { enabled: true, strategy: "round-robin", stickyLimit: 1 },
+        }),
+      },
+    } as unknown as OcxConfig;
+
+    // First 5.5 pick should choose acct-55a, and committing via noteGenericPoolSelection must not reset SWRR weights
+    const pick1 = preferredInitialAccount(rrConfig, PROVIDER, Date.now(), "claude-opus-5-5") ?? "acct-46a";
+    expect(pick1).toBe("acct-55a");
+    noteGenericPoolSelection(rrConfig, PROVIDER, pick1, "claude-opus-5-5");
+
+    // Second 5.5 pick must advance to acct-55b (previously stuck on acct-55a because noteGenericPoolSelection cleared weights)
+    const pick2 = preferredInitialAccount(rrConfig, PROVIDER, Date.now(), "claude-opus-5-5") ?? "acct-46a";
+    expect(pick2).toBe("acct-55b");
+    noteGenericPoolSelection(rrConfig, PROVIDER, pick2, "claude-opus-5-5");
+
+    // Third 5.5 pick wraps back to acct-55a
+    const pick3 = preferredInitialAccount(rrConfig, PROVIDER, Date.now(), "claude-opus-5-5") ?? "acct-46a";
+    expect(pick3).toBe("acct-55a");
   });
 });
