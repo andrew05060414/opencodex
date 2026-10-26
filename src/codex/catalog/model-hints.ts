@@ -109,8 +109,8 @@ import type {
 /**
  * Fill the registry seed's per-model numeric capability maps beneath the provider's own
  * values, mutating `prov` in place. The merge is per key — an operator's entry always
- * wins; a model the persisted map never mentions picks up its seed value — matching
- * `mergeRecordFill` in src/router.ts exactly.
+ * wins; a model the persisted map never mentions picks up its seed value, bounded
+ * by the operator's provider-wide context limit before enrichment can hide its origin.
  *
  * Routing already performs this fill at resolve time (routedProviderConfig in
  * src/router.ts) and the catalog did not, and that divergence is #4570:
@@ -133,7 +133,11 @@ export function applyRegistryCapabilitySeedFill(name: string, prov: OcxProviderC
   const entry = getProviderRegistryEntry(name);
   if (!entry) return;
   if (entry.modelContextWindows || prov.modelContextWindows) {
-    prov.modelContextWindows = { ...(entry.modelContextWindows ?? {}), ...(prov.modelContextWindows ?? {}) };
+    const providerWindow = typeof prov.contextWindow === "number" && prov.contextWindow > 0
+      ? prov.contextWindow : undefined;
+    const seeds = Object.fromEntries(Object.entries(entry.modelContextWindows ?? {}).map(([id, window]) =>
+      [id, providerWindow !== undefined ? Math.min(window, providerWindow) : window]));
+    prov.modelContextWindows = { ...seeds, ...(prov.modelContextWindows ?? {}) };
   }
   if (entry.modelMaxOutputTokens || prov.modelMaxOutputTokens) {
     prov.modelMaxOutputTokens = { ...(entry.modelMaxOutputTokens ?? {}), ...(prov.modelMaxOutputTokens ?? {}) };

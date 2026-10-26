@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { applyProviderConfigHints, catalogHintsFromModelsApiItem } from "../../src/codex/catalog/provider-fetch";
 import { deriveEntry } from "../../src/codex/catalog/sync";
+import { captureProviderGather } from "../../src/codex/catalog/gather-capture";
 import { getProviderRegistryEntry } from "../../src/providers/registry";
 import type { OcxProviderConfig } from "../../src/types";
 
@@ -124,6 +125,45 @@ describe("models-API context ladder", () => {
       ...provider, modelContextWindows: { [id]: 900000 },
     }, model).contextWindow).toBe(500000);
   });
+
+  for (const { label, authMode, item, overrides, window, compact } of [
+    { label: "provider-wide limit", authMode: "oauth", item: GROK_LANE_ITEM,
+      overrides: { contextWindow: 300000 }, window: 300000, compact: 270000 },
+    { label: "partial model map", authMode: "oauth", item: GROK_LANE_ITEM,
+      overrides: { contextWindow: 300000, modelContextWindows: { "grok-4.6": 200000 } }, window: 300000, compact: 270000 },
+    { label: "higher explicit model limit", authMode: "oauth", item: GROK_LANE_ITEM,
+      overrides: { contextWindow: 300000, modelContextWindows: { "grok-4.7": 400000 } }, window: 400000, compact: 360000 },
+    { label: "lower explicit model limit", authMode: "oauth", item: GROK_LANE_ITEM,
+      overrides: { contextWindow: 300000, modelContextWindows: { "grok-4.7": 200000 } }, window: 200000, compact: 180000 },
+    { label: "unconfigured OAuth ladder", authMode: "oauth", item: GROK_LANE_ITEM,
+      overrides: {}, window: 500000, compact: 450000 },
+    { label: "key-auth observed limit", authMode: "key", item: { id: "grok-4.7", context_window: 256000 },
+      overrides: { contextWindow: 300000 }, window: 256000, compact: 230400 },
+    { label: "key-auth smaller model limit", authMode: "key", item: { id: "grok-4.3", context_window: 131072 },
+      overrides: { contextWindow: 300000 }, window: 131072, compact: 117964 },
+  ] satisfies { label: string; authMode: "oauth" | "key"; item: typeof GROK_LANE_ITEM | { id: string; context_window: number };
+    overrides: Partial<OcxProviderConfig>; window: number; compact: number }[]) {
+    test(`capture preserves ${label} through hints and serialization`, () => {
+      const registry = getProviderRegistryEntry("xai")!;
+      const configured: OcxProviderConfig = {
+        adapter: registry.adapter, baseUrl: registry.baseUrl, authMode, ...overrides,
+      };
+      const original = structuredClone(configured);
+      const captured = captureProviderGather("xai", configured, {
+        kind: "observed", resolve: () => ({ apiKey: "fixture-token", observed: true }),
+      });
+      const model = applyProviderConfigHints("xai", captured.provider, {
+        provider: "xai", id: item.id, ...catalogHintsFromModelsApiItem("xai", item),
+      });
+      const entry = deriveEntry(null, `xai/${item.id}`, "Grok", 1, model);
+      expect(entry).toMatchObject({
+        context_window: window, max_context_window: window, auto_compact_token_limit: compact,
+        opencodex_capability_provenance: { context_window: window },
+      });
+      expect(configured).toEqual(original);
+      expect(Object.isFrozen(captured.provider)).toBe(true);
+    });
+  }
 
   test("inspection is bounded, so an oversized ladder cannot pad the read", () => {
     const padded = [...Array.from({ length: 8 }, () => 256000), 500000];
