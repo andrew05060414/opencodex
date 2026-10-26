@@ -6,6 +6,8 @@ import { bridgeToResponsesSSE, buildResponseJSON } from "../../src/bridge";
 import { zedEventStream } from "../../src/adapters/zed";
 import { scrubZedCredentials } from "../../src/providers/zed";
 import { foldChatCompletion } from "../../src/protocols/encoders/chat";
+import { scanEventsForWebSearch } from "../../src/web-search/loop";
+import { anthropicSearchAssistantContent } from "../../src/web-search/anthropic-history";
 
 // Each source chunk contains one frame, so the tests measure retained state separately.
 function stream(frames: unknown[]): ReadableStream<Uint8Array> {
@@ -104,6 +106,29 @@ describe("Zed OpenAI terminal contract", () => {
       expect(JSON.stringify(events)).not.toContain(credentials.accessToken);
       expect(JSON.stringify(events)).not.toContain(credentials.userId);
     } finally { budget.dispose(); }
+  });
+
+  test.each(["anthropic", "google", "x_ai", "open_ai"] as const)("%s untyped error envelopes scrub diagnostic strings", async family => {
+    const credentials = { userId: "fixture-user-42", accessToken: "fixture-token-xyz" };
+    const secret = credentials.userId + " " + credentials.accessToken;
+    const body = new Response(JSON.stringify({ event: { error: { message: secret, code: secret, type: secret } } }) + "\n").body!;
+    const text = await new Response(zedEventStream(body, family, text => scrubZedCredentials(text, credentials))).text();
+    expect(text).not.toContain(credentials.accessToken);
+    expect(text).not.toContain(credentials.userId);
+  });
+
+  test("search scanning preserves an unfinished call without making it executable", () => {
+    const events: AdapterEvent[] = [
+      { type: "tool_call_start", id: "search", name: "web_search" },
+      { type: "tool_call_delta", arguments: '{"query":"fixture"}' },
+      { type: "tool_call_end", incomplete: true },
+      { type: "incomplete", reason: "max_output_tokens" },
+    ];
+    const split = scanEventsForWebSearch(events);
+    expect(split.calls).toEqual([]);
+    expect(split.passthrough).toEqual(events);
+    expect(split.hasMalformedToolCall).toBe(true);
+    expect(() => anthropicSearchAssistantContent(events)).toThrow("unfinished tool call");
   });
 
   test.each([false, true])("truncated tools preserve terminal reason and usage through the %s streaming bridge", async streaming => {

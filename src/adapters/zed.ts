@@ -236,20 +236,19 @@ export function zedEventStream(
     }
     if (isNativeTerminalEvent(event)) sawNativeTerminal = true;
     // Native diagnostics can echo the same account credential as status failures.
-    const diagnostic = event.type === "error" || event.type === "response.failed" || event.type === "response.incomplete";
-    const scrubFields = (record: Record<string, unknown>): Record<string, unknown> => ({
-      ...record,
-      ...(typeof record.message === "string" ? { message: scrub(record.message) } : {}),
-      ...(typeof record.reason === "string" ? { reason: scrub(record.reason) } : {}),
-    });
-    const scrubRecord = (record: Record<string, unknown>): Record<string, unknown> => ({
-      ...scrubFields(record),
+    const diagnostic = Object.hasOwn(event, "error") || event.type === "response.failed" || event.type === "response.incomplete"
+      || event.type === "error" || (isRecord(event.response) && Object.hasOwn(event.response, "error"));
+    const scrubFields = (record: Record<string, unknown>, preserveType = false): Record<string, unknown> => Object.fromEntries(
+      Object.entries(record).map(([key, value]) => [key, typeof value === "string" && !(preserveType && key === "type") ? scrub(value) : value]),
+    );
+    const scrubRecord = (record: Record<string, unknown>, preserveType = false): Record<string, unknown> => ({
+      ...scrubFields(record, preserveType),
       ...(typeof record.error === "string" ? { error: scrub(record.error) }
         : isRecord(record.error) ? { error: scrubFields(record.error) } : {}),
       ...(isRecord(record.incomplete_details) ? { incomplete_details: scrubFields(record.incomplete_details) } : {}),
     });
     emit(controller, diagnostic ? {
-      ...scrubRecord(event),
+      ...scrubRecord(event, true),
       ...(isRecord(event.response) ? { response: scrubRecord(event.response) } : {}),
     } : event);
   }
