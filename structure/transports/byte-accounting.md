@@ -375,6 +375,8 @@ Explicitly selected canonical Codex Lite ordinary unreferenced history notes reu
 The Zed OpenAI relay uses private per-call budget keys so client encoders cannot close its leases.
 Each argument or full snapshot replacement reserves its complete new logical size before releasing
 the old physical bytes; two retained copies spend the turn cap without doubling a call's logical limit.
+JSON reconciliation and semantic replay hashing reserve transient source bytes; rebuilt suffixes
+are admitted before retention. Late deltas retain the authoritative delivery string and its lease.
 Dedupe identities include an entry allowance, so even empty items remain bounded. Queued semantic
 events and opaque usage are charged until emitted or replaced; cancellation, read failure and
 identity/argument refusal release every relay-owned buffer. Failed terminals close outstanding calls

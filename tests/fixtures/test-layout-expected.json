@@ -2,6 +2,7 @@
     "tool-identity-hash.test.ts": "adapters",
     "zed-openai-contract.test.ts": "providers",
     "zed-failure-relay.test.ts": "providers",
+    "zed-argument-consistency.test.ts": "providers",
     "server-combo-required-tool-contract.test.ts": "server",
     "responses-anthropic-compaction-prefix.test.ts": "responses",
     "service-proxy-env.test.ts": "service",

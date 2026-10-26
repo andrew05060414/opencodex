@@ -381,7 +381,7 @@ Current-turn tool declarations carried in Codex's `additional_tools` input are p
 supported tool catalog. Function calls and custom-tool input are relayed in order, including
 interleaved calls, so a tool-using turn can continue after its introductory text. Incomplete calls
 keep only received arguments and remain incomplete; cancellation releases buffered data. Conflicting
-completed tool input fails the turn with incomplete calls. On upstream failure, received text and
+completed custom input, including later deltas, fails the turn with incomplete calls. Function arguments accept equivalent JSON values and compatible partial snapshots while preserving delivered bytes. On upstream failure, received text and
 reasoning remain visible and usage retains numeric counters only. The relay is covered by synthetic stream fixtures; live hosted-stream compatibility remains unverified.
 
 For the canonical Kimi Coding Plan presets (`kimi` account login and `kimi-code` API key),
