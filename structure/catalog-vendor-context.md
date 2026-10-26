@@ -13,7 +13,8 @@ capacity. The lookup changes no configuration, credentials, pricing, or request 
 
 `src/codex/catalog/gather-capture.ts` fills registry numeric capability maps on the detached
 provider before enrichment. `applyRegistryCapabilitySeedFill` bounds registry context seeds by
-an explicitly configured positive provider-wide window, then overlays explicit per-model windows.
+an explicitly configured positive provider-wide window, then overlays explicit per-model windows
+using the static resolver's case-aware map merge for both context and output limits.
 Thus enrichment cannot promote a registry default above the operator's limit; explicit per-model
 settings still win and smaller observed windows remain authoritative. Capture, hints and Codex
 serialization are covered by `tests/codex-integration/catalog-context-window-ladder.test.ts`,

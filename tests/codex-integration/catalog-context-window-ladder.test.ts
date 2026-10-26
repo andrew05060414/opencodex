@@ -135,6 +135,8 @@ describe("models-API context ladder", () => {
       overrides: { contextWindow: 300000, modelContextWindows: { "grok-4.7": 400000 } }, window: 400000, compact: 360000 },
     { label: "lower explicit model limit", authMode: "oauth", item: GROK_LANE_ITEM,
       overrides: { contextWindow: 300000, modelContextWindows: { "grok-4.7": 200000 } }, window: 200000, compact: 180000 },
+    { label: "case-varied explicit model limit", authMode: "oauth", item: GROK_LANE_ITEM,
+      overrides: { contextWindow: 300000, modelContextWindows: { "GROK-4.7": 200000 } }, window: 200000, compact: 180000 },
     { label: "unconfigured OAuth ladder", authMode: "oauth", item: GROK_LANE_ITEM,
       overrides: {}, window: 500000, compact: 450000 },
     { label: "key-auth observed limit", authMode: "key", item: { id: "grok-4.7", context_window: 256000 },
@@ -164,6 +166,19 @@ describe("models-API context ladder", () => {
       expect(Object.isFrozen(captured.provider)).toBe(true);
     });
   }
+
+  test("capture preserves a case-varied explicit output limit beneath registry enrichment", () => {
+    const registry = getProviderRegistryEntry("xai")!;
+    const captured = captureProviderGather("xai", {
+      adapter: registry.adapter, baseUrl: registry.baseUrl, authMode: "oauth",
+      modelMaxOutputTokens: { "GROK-4.7": 12345 },
+    }, { kind: "observed", resolve: () => ({ apiKey: "fixture-token", observed: true }) });
+    const model = applyProviderConfigHints("xai", captured.provider, {
+      provider: "xai", id: GROK_LANE_ITEM.id, ...catalogHintsFromModelsApiItem("xai", GROK_LANE_ITEM),
+    });
+    expect(model.maxOutputTokens).toBe(12345);
+    expect(captured.provider.modelMaxOutputTokens).not.toHaveProperty("grok-4.7");
+  });
 
   test("inspection is bounded, so an oversized ladder cannot pad the read", () => {
     const padded = [...Array.from({ length: 8 }, () => 256000), 500000];

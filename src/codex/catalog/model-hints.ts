@@ -94,6 +94,7 @@ import { disabledNativeSlugs, hasComboTargets, hasNativeOpenAiCapabilityMetadata
 import { deriveComboCatalogModel, normalizedOpenAiApiSignature, openAiApiCollisionWarnings, replaceLastComboCatalogOmissions, warnUncataloguedComboOnce } from "./aggregation";
 import type { ComboCatalogOmission } from "./aggregation";
 import { clampObservedModelLimits, resolveModelPolicy } from "../../providers/resolved-model-policy";
+import { mapFill } from "../../providers/resolved-model-policy-merge";
 import type { CatalogGatherProviderAuthEvidence } from "./filesystem-evidence";
 import type {
   CatalogAdmissionSnapshot,
@@ -137,10 +138,10 @@ export function applyRegistryCapabilitySeedFill(name: string, prov: OcxProviderC
       ? prov.contextWindow : undefined;
     const seeds = Object.fromEntries(Object.entries(entry.modelContextWindows ?? {}).map(([id, window]) =>
       [id, providerWindow !== undefined ? Math.min(window, providerWindow) : window]));
-    prov.modelContextWindows = { ...seeds, ...(prov.modelContextWindows ?? {}) };
+    [prov.modelContextWindows] = mapFill(seeds, prov.modelContextWindows);
   }
   if (entry.modelMaxOutputTokens || prov.modelMaxOutputTokens) {
-    prov.modelMaxOutputTokens = { ...(entry.modelMaxOutputTokens ?? {}), ...(prov.modelMaxOutputTokens ?? {}) };
+    [prov.modelMaxOutputTokens] = mapFill(entry.modelMaxOutputTokens, prov.modelMaxOutputTokens);
   }
 }
 const NUMERIC_MODEL_ID_SEGMENT = /^\d+$/;
