@@ -6,7 +6,8 @@ import { truncationReasonFor } from "../responses/truncated-stop-reason";
 import { unnamedToolCallEvent } from "./openai-chat/response-events";
 import { usageFromResponsesPayload } from "./openai-responses/usage";
 import { zedDiagnosticUsage } from "./zed-diagnostic-usage";
-import { consistentZedArgumentDelta, reconcileZedArguments, zedArgumentFingerprint } from "./zed-tool-arguments";
+import { reconcileZedArguments, zedArgumentFingerprint, ZedArgumentAuthority, zedArgumentAuthorityBytes } from "./zed-tool-arguments";
+import { ZedJsonError } from "./zed-json-tokens";
 import { randomUUID } from "node:crypto";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -26,6 +27,8 @@ interface CallState {
   args: string;
   pendingFull?: string;
   authoritative: boolean;
+  authority?: ZedArgumentAuthority;
+  authorityBytes?: number;
   argsBytes: number;
   fullBytes: number;
   lastCodeUnit: number;
@@ -150,7 +153,9 @@ export async function* translateZedOpenAiStream(
   }
 
   function argumentWorkspace<T>(texts: string[], work: () => T): T {
-    const reservation = budget.reserveTransient(texts.reduce((size, text) => size + Buffer.byteLength(text, "utf8"), 0),
+    // Source copies, canonical tokens, reconciliation positions and iterative grammar stacks.
+    const reservation = budget.reserveTransient(texts.reduce((size, text) => size + Buffer.byteLength(text, "utf8"), 0)
+      + 12 * Math.max(0, ...texts.map(text => text.length)),
       { kind: "retained_collectors" });
     try { return work(); } finally { reservation.release(); }
   }
@@ -193,8 +198,10 @@ export async function* translateZedOpenAiStream(
         yield { type: "tool_call_delta", arguments: delta };
       }
       if (!next.closed) return;
+      // Failed/incomplete input is never executable or eligible for successful replay dedupe.
+      // In particular, do not scan over-limit JSON again while flushing its failure.
+      next.finalHash = next.allowFull && !next.incomplete ? fingerprint(next, text) : undefined;
       next.ended = true;
-      next.finalHash = fingerprint(next, text);
       if (next.name) yield { type: "tool_call_end", ...(!next.allowFull || next.incomplete ? { incomplete: true } : {}) };
       releaseCall(next);
       for (const entry of next.after) {
@@ -214,10 +221,7 @@ export async function* translateZedOpenAiStream(
     try {
       const next = state.args + fragment;
       if (state.authoritative) {
-        const full = state.pendingFull ?? state.args;
-        const consistent = argumentWorkspace([next, full], () =>
-          consistentZedArgumentDelta(next, full, state.kind === "custom_tool_call"));
-        if (!consistent) throw new ZedToolArgumentsError();
+        state.authority!.push(fragment);
         // The original string is still the delivery/authority owner while the late stream
         // catches up using an equivalent serialization. Transfer its existing lease.
         if (state.pendingFull === undefined) {
@@ -246,16 +250,26 @@ export async function* translateZedOpenAiStream(
     // Completed input remains authoritative even when another call blocks all emission.
     if (authoritative) {
       const snapshot = full;
-      full = argumentWorkspace([state.args, snapshot], () => {
+      const confirmed = state.pendingFull ?? state.args;
+      if (state.authoritative) {
+        if (fingerprint(state, confirmed) !== fingerprint(state, snapshot)) throw new ZedToolArgumentsError();
+        full = confirmed;
+      } else full = argumentWorkspace([state.args, snapshot], () => {
         const custom = state.kind === "custom_tool_call";
-        const confirmed = state.pendingFull ?? state.args;
-        if (state.authoritative && fingerprint(state, confirmed) !== fingerprint(state, snapshot)) return;
-        if (state.authoritative) return confirmed;
         const received = reconcileZedArguments(state.args, snapshot, custom);
         if (received === undefined) return;
         return reconcileZedArguments(argumentText(state).slice(0, state.emitted), received, custom);
       });
       if (typeof full !== "string") throw new ZedToolArgumentsError();
+      if (!state.authoritative) {
+        const custom = state.kind === "custom_tool_call";
+        const bytes = zedArgumentAuthorityBytes(full, custom);
+        const reservation = budget.reserveTransient(bytes, { kind: "retained_collectors" });
+        try { state.authority = new ZedArgumentAuthority(full, custom, state.args); }
+        catch (error) { reservation.release(); throw error; }
+        reservation.commitRetained();
+        state.authorityBytes = bytes;
+      }
       state.authoritative = true;
     }
     if (full === state.pendingFull) return;
@@ -280,6 +294,9 @@ export async function* translateZedOpenAiStream(
    */
   function releaseCall(state: CallState): void {
     budget.closeCall(state.budgetKey);
+    budget.releaseRetained(state.authorityBytes ?? 0, { kind: "retained_collectors" });
+    state.authority = undefined;
+    state.authorityBytes = 0;
     state.args = "";
     state.argsBytes = 0;
     state.pendingFull = undefined;
@@ -293,7 +310,7 @@ export async function* translateZedOpenAiStream(
    * reaches the flush path, so the buffers must not outlive the request.
    */
   function releaseStreamBuffers(): void {
-    for (const state of calls.values()) budget.closeCall(state.budgetKey);
+    for (const state of calls.values()) releaseCall(state);
     calls.clear();
     aliases.clear();
     callIds.clear();
@@ -695,7 +712,7 @@ export async function* translateZedOpenAiStream(
     ciphertextTransferred = true;
     yield done;
   } catch (error) {
-    if (!(error instanceof ZedToolIdentityError) && !(error instanceof ZedToolArgumentsError)) throw error;
+    if (!(error instanceof ZedToolIdentityError) && !(error instanceof ZedToolArgumentsError) && !(error instanceof ZedJsonError)) throw error;
     retainUsage(undefined, true);
     yield* flushUnclosed(false, true);
     yield { type: "error", message: error.message, ...(usage ? { usage } : {}) };

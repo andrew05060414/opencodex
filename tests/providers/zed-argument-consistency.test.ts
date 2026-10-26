@@ -21,8 +21,13 @@ for (const [label,streamed,final] of [
   ['key order','{"x":1,"y":2}','{"y":2,"x":1}'],
   ['nested order','{"x":{"a":1,"b":2}}','{"x":{"b":2,"a":1}}'],
   ['partial with whitespace','{"x":','{ "x": 1 }'],
-] as const) test(`equivalent function JSON must succeed: ${label}`,async()=>{
+] as const) test(`function lexical snapshot consistency: ${label}`,async()=>{
   const events = await collect([added,delta(streamed),ended(final),completed()]);
+  if (label.includes('order')) {
+    expect(events.at(-1)?.type).toBe('error');
+    expect(events.some(e => e.type === 'tool_call_end' && !e.incomplete)).toBe(false);
+    return;
+  }
   expect(events.at(-1)?.type).toBe('done');
   expect(events).toContainEqual({type:'tool_call_end'});
   expect(buildResponseJSON(events,'fixture').status).toBe('completed');
@@ -40,6 +45,11 @@ for (const [label, prefix, final] of [
 ] as const) {
   for (const streaming of [false, true]) test(`function wire preserves delivered bytes: ${label}, stream=${streaming}`, async () => {
     const events = await collect([added, delta(prefix), ended(final), completed()]);
+    if (label === 'nested key order' || label === 'array values') {
+      expect(events.at(-1)?.type).toBe('error');
+      expect(buildResponseJSON(events, 'fixture').status).toBe('failed');
+      return;
+    }
     const delivered = argumentDeltas(events);
     expect(delivered.startsWith(prefix)).toBe(true);
     expect(JSON.parse(delivered)).toEqual(JSON.parse(final));
@@ -62,6 +72,11 @@ for (const [first, full, late] of [
   const events = await collect([added, delta(first),
     { type: 'response.function_call_arguments.done', item_id: 'a', arguments: full },
     delta(late), ended(full), completed()]);
+  if (first === '') {
+    expect(events.at(-1)?.type).toBe('error');
+    expect(events.some(e => e.type === 'tool_call_end' && !e.incomplete)).toBe(false);
+    return;
+  }
   expect(events.at(-1)?.type).toBe('done');
   const delivered = argumentDeltas(events);
   expect(JSON.parse(delivered)).toEqual(JSON.parse(full));
@@ -127,7 +142,7 @@ test('semantic replay fingerprint distinguishes overflowing JSON numbers from nu
   }
 });
 
-for (const parallel of [false, true]) test(`late reordered function JSON accepts split token boundaries (parallel=${parallel})`, async () => {
+for (const parallel of [false, true]) test(`late reordered function JSON conflicts across split token boundaries (parallel=${parallel})`, async () => {
   const target = { ...item(''), id: 'b', call_id: 'call-b' };
   const events = await collect([
     ...(parallel ? [added] : []), { type: 'response.output_item.added', item: target },
@@ -135,8 +150,8 @@ for (const parallel of [false, true]) test(`late reordered function JSON accepts
     ...['{"y":2,', '"x":1}'].map(value => ({ type: 'response.function_call_arguments.delta', item_id: 'b', delta: value })),
     ...(parallel ? [delta('{}'), ended('{}')] : []), completed(),
   ]);
-  expect(events.at(-1)?.type).toBe('done');
-  expect(events.filter(value => value.type === 'tool_call_end' && !value.incomplete)).toHaveLength(parallel ? 2 : 1);
+  expect(events.at(-1)?.type).toBe('error');
+  expect(events.some(value => value.type === 'tool_call_end' && !value.incomplete)).toBe(false);
 });
 
 test('malformed function replay cannot impersonate the canonical fingerprint input', async () => {
@@ -157,6 +172,11 @@ for (const [full, late] of [
       { type: 'response.function_call_arguments.done', item_id: 'b', arguments: full },
       ...late.split('').map(value => ({ type: 'response.function_call_arguments.delta', item_id: 'b', delta: value })),
       ...(parallel ? [delta('{}'), ended('{}')] : []), completed()]);
+    if (full.includes('"y"')) {
+      expect(events.at(-1)?.type).toBe('error');
+      expect(events.some(value => value.type === 'tool_call_end' && !value.incomplete)).toBe(false);
+      return;
+    }
     expect(events.at(-1)?.type).toBe('done');
     expect(events.filter(value => value.type === 'tool_call_end' && !value.incomplete)).toHaveLength(parallel ? 2 : 1);
     expect(buildResponseJSON(events, 'fixture').output).toContainEqual(expect.objectContaining({ call_id: 'call-b', arguments: full, status: 'completed' }));
@@ -178,7 +198,7 @@ test('raw function arguments cannot impersonate a later parsed JSON replay', asy
   expect(events.at(-1)?.type).toBe('error');
 });
 
-for (const streaming of [false, true]) test(`split late JSON preserves successful client projection (stream=${streaming})`, async () => {
+for (const streaming of [false, true]) test(`split reordered late JSON fails client projection (stream=${streaming})`, async () => {
   const events = await collect([added,
     { type: 'response.function_call_arguments.done', item_id: 'a', arguments: '{"x":1,"y":2}' },
     delta('{"y":2,'), delta('"x":1}'), ended('{"x":1,"y":2}'), completed()]);
@@ -186,21 +206,21 @@ for (const streaming of [false, true]) test(`split late JSON preserves successfu
   if (streaming) {
     const wire = await new Response(bridgeToResponsesSSE((async function* () { yield* events; })(), 'fixture')).text();
     result = wire.split('\n').filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)))
-      .findLast(event => event.type === 'response.completed')?.response;
+      .findLast(event => event.type === 'response.failed')?.response;
   }
-  expect(result.status).toBe('completed');
-  expect(result.output).toContainEqual(expect.objectContaining({ type: 'function_call', arguments: '{"x":1,"y":2}', status: 'completed' }));
+  expect(result.status).toBe('failed');
+  expect(result.output).toContainEqual(expect.objectContaining({ type: 'function_call', status: 'incomplete' }));
 });
 
 for (const [full, pieces] of [
   ['0.25', ['2', '.5e-1']],
   ['{"x":1}', ['{"x":1,"', 'x":1}']],
-] as const) test(`equivalent numeric or duplicate-member serialization is independent of fragmentation: ${full}`, async () => {
+] as const) test(`changed numeric or duplicate-member serialization conflicts across fragments: ${full}`, async () => {
   const events = await collect([added,
     { type: 'response.function_call_arguments.done', item_id: 'a', arguments: full },
     ...pieces.map(value => delta(value)), completed()]);
-  expect(events.at(-1)?.type).toBe('done');
-  expect(argumentDeltas(events)).toBe(full);
+  expect(events.at(-1)?.type).toBe('error');
+  expect(events.some(e => e.type === 'tool_call_end' && !e.incomplete)).toBe(false);
 });
 
 for (const [full, late] of [['{"x":[1]}', '{"x":[1,'], ['{"x":1}', '{"x":1.e']] as const) {
@@ -221,20 +241,20 @@ test('signed zero is distinct in both complete comparison and completed replay',
   ]) expect((await collect(frames)).at(-1)?.type).toBe('error');
 });
 
-test('semantically equal response replay after item completion must not fail the turn',async()=>{
+test('reordered response replay after item completion fails the turn',async()=>{
   const events = await collect([added,delta('{"x":1,"y":2}'),ended('{"x":1,"y":2}'),completed([item('{"y":2,"x":1}')])]);
-  expect(events.at(-1)?.type).toBe('done');
-  expect(buildResponseJSON(events,'fixture').status).toBe('completed');
+  expect(events.at(-1)?.type).toBe('error');
+  expect(buildResponseJSON(events,'fixture').status).toBe('failed');
 });
 
-test('parallel buffered function can accept an equivalent final JSON snapshot',async()=>{
+test('parallel buffered function rejects a reordered final JSON snapshot',async()=>{
   const b={...item(''),id:'b',call_id:'call-b'};
   const events=await collect([added,{type:'response.output_item.added',item:b},
     {type:'response.function_call_arguments.delta',item_id:'b',delta:'{"x":1,"y":2}'},
     {type:'response.output_item.done',item:{...b,arguments:'{"y":2,"x":1}'}},
     delta('{}'),ended('{}'),completed()]);
-  expect(events.at(-1)?.type).toBe('done');
-  expect(events.filter(e=>e.type==='tool_call_end'&&!e.incomplete)).toHaveLength(2);
+  expect(events.at(-1)?.type).toBe('error');
+  expect(events.some(e=>e.type==='tool_call_end'&&!e.incomplete)).toBe(false);
 });
 
 test('custom input must not extend beyond authoritative input.done before response completion',async()=>{
