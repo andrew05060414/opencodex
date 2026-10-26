@@ -260,6 +260,7 @@ describe("Zed OpenAI terminal contract", () => {
     ])).toEqual([
       { type: "tool_call_start", id: "call", name: "shell" },
       { type: "tool_call_delta", arguments: "{" },
+      { type: "tool_call_end", incomplete: true },
       { type: "error", message: "failure", usage: { inputTokens: 7, outputTokens: 3 } },
     ]);
   });

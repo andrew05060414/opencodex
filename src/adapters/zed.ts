@@ -6,6 +6,7 @@ import { createGoogleAdapter } from "./google";
 import { createOpenAIChatAdapter } from "./openai-chat";
 import { createResponsesPassthroughAdapter } from "./openai-responses";
 import { liftZedAdditionalTools, translateZedOpenAiStream } from "./zed-openai-stream";
+import { zedDiagnosticUsage } from "./zed-diagnostic-usage";
 import { createAdapterPhysicalSend } from "./physical-send";
 import type { AdapterEvent, OcxParsedRequest, OcxProviderConfig } from "../types";
 import { createTranslatorBudget, releaseTranslatedEvent, retainTranslatedEvent, type TranslatorBudget } from "../lib/translator-budget";
@@ -243,6 +244,7 @@ export function zedEventStream(
     );
     const scrubRecord = (record: Record<string, unknown>, preserveType = false): Record<string, unknown> => ({
       ...scrubFields(record, preserveType),
+      ...(provider === "open_ai" ? { usage: zedDiagnosticUsage(record.usage) } : {}),
       ...(typeof record.error === "string" ? { error: scrub(record.error) }
         : isRecord(record.error) ? { error: { ...scrubFields(record.error), metadata: undefined } } : {}),
       ...(isRecord(record.incomplete_details) ? { incomplete_details: scrubFields(record.incomplete_details) } : {}),

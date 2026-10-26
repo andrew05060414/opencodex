@@ -377,4 +377,6 @@ Each argument or full snapshot replacement reserves its complete new logical siz
 the old physical bytes; two retained copies spend the turn cap without doubling a call's logical limit.
 Dedupe identities include an entry allowance, so even empty items remain bounded. Queued semantic
 events and opaque usage are charged until emitted or replaced; cancellation, read failure and
-identity refusal release every relay-owned buffer. Ciphertext alone transfers with its done lease.
+identity/argument refusal release every relay-owned buffer. Failed terminals close outstanding calls
+incomplete and replay queued semantics before the error; diagnostic usage keeps only numeric counters,
+releasing any previously retained opaque usage. Ciphertext alone transfers with its done lease.

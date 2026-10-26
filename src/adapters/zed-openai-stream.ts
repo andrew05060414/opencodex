@@ -5,6 +5,7 @@ import { transferCompactionCiphertextLease } from "../responses/compaction";
 import { truncationReasonFor } from "../responses/truncated-stop-reason";
 import { unnamedToolCallEvent } from "./openai-chat/response-events";
 import { usageFromResponsesPayload } from "./openai-responses/usage";
+import { zedDiagnosticUsage } from "./zed-diagnostic-usage";
 import { createHash, randomUUID } from "node:crypto";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,6 +39,10 @@ interface CallState {
 
 class ZedToolIdentityError extends Error {
   constructor() { super("Zed stream reused a tool call identity with conflicting data"); }
+}
+
+class ZedToolArgumentsError extends Error {
+  constructor() { super("Zed stream completed a tool call with conflicting arguments"); }
 }
 
 /** UTF-8 bytes a fragment adds to an existing string, without re-measuring the whole buffer. */
@@ -143,26 +148,28 @@ export async function* translateZedOpenAiStream(
   }
 
   /** Emit the oldest open call. Newer calls stay buffered until that call closes. */
-  function* pump(): Generator<AdapterEvent> {
+  function* pump(preserveFailure = false): Generator<AdapterEvent> {
     while (true) {
       if (terminalError) return;
       const next = [...calls.values()].find(state => !state.ended);
       if (!next) return;
       if (!next.name) {
         if (!next.closed) return;
-        next.ended = true;
-        releaseCall(next);
-        terminal = true;
-        terminalError = true;
-        yield unnamedToolCallEvent(usage);
-        return;
+        if (!preserveFailure) {
+          next.ended = true;
+          releaseCall(next);
+          terminal = true;
+          terminalError = true;
+          yield unnamedToolCallEvent(usage);
+          return;
+        }
       }
-      if (!next.started) {
+      if (next.name && !next.started) {
         next.started = true;
         yield { type: "tool_call_start", id: next.callId, name: next.name };
       }
       const text = argumentText(next);
-      if (text.length > next.emitted) {
+      if (next.name && text.length > next.emitted) {
         const delta = text.slice(next.emitted);
         next.emitted = text.length;
         yield { type: "tool_call_delta", arguments: delta };
@@ -170,7 +177,7 @@ export async function* translateZedOpenAiStream(
       if (!next.closed) return;
       next.ended = true;
       next.finalHash = createHash("sha256").update(text).digest("hex");
-      yield { type: "tool_call_end", ...(!next.allowFull || next.incomplete ? { incomplete: true } : {}) };
+      if (next.name) yield { type: "tool_call_end", ...(!next.allowFull || next.incomplete ? { incomplete: true } : {}) };
       releaseCall(next);
       for (const entry of next.after) {
         budget.releaseRetained(entry.bytes, { kind: "retained_collectors" });
@@ -183,6 +190,11 @@ export async function* translateZedOpenAiStream(
 
   function* appendArgs(state: CallState, fragment: string): Generator<AdapterEvent> {
     if (!fragment || state.ended) return;
+    // A full done snapshot may have supplied bytes ahead of these later deltas.
+    const overlap = Math.min(fragment.length, state.emitted - state.args.length);
+    if (overlap > 0 && fragment.slice(0, overlap) !== argumentText(state).slice(state.args.length, state.args.length + overlap)) {
+      throw new ZedToolArgumentsError();
+    }
     const nextBytes = appendedUtf8Bytes(state.argsBytes, state.lastCodeUnit, fragment);
     const scope = { kind: "tool_args" as const, callId: state.budgetKey };
     const reservation = budget.reserveTransient(nextBytes, scope);
@@ -194,13 +206,18 @@ export async function* translateZedOpenAiStream(
     yield* pump();
   }
 
-  function rememberFull(state: CallState, full: unknown): void {
+  function rememberFull(state: CallState, full: unknown, authoritative = false): void {
     // A closed call's buffers were already released; charging again would outlive their owner.
-    if (typeof full !== "string" || full.length === 0) return;
+    if (typeof full !== "string" || (!authoritative && full.length === 0)) return;
     if (state.ended) {
       if (state.finalHash && state.finalHash !== createHash("sha256").update(full).digest("hex")) throw new ZedToolIdentityError();
       return;
     }
+    if (!authoritative && state.allowFull) return;
+    // Added-item snapshots are speculative. A completion must agree with received deltas
+    // and with any full snapshot bytes already delivered, including empty/shorter values.
+    if (authoritative && (!full.startsWith(state.args)
+      || !full.startsWith(argumentText(state).slice(0, state.emitted)))) throw new ZedToolArgumentsError();
     if (full === state.pendingFull) return;
     if (full === state.args) {
       budget.releaseRetained(state.fullBytes, { kind: "tool_args", callId: state.budgetKey });
@@ -269,14 +286,14 @@ export async function* translateZedOpenAiStream(
     yield* pump();
   }
 
-  function* flushUnclosed(allowFull: boolean): Generator<AdapterEvent> {
+  function* flushUnclosed(allowFull: boolean, preserveFailure = false): Generator<AdapterEvent> {
     for (const state of calls.values()) {
-      if (state.ended || state.closed) continue;
+      if (state.ended) continue;
       state.closed = true;
       if (!allowFull) state.incomplete = true;
       if (allowFull) state.allowFull = true;
     }
-    yield* pump();
+    yield* pump(preserveFailure);
   }
 
   function retainCompaction(response: unknown): void {
@@ -348,8 +365,15 @@ export async function* translateZedOpenAiStream(
     yield { type: "heartbeat" };
   }
 
-  function retainUsage(response: unknown): void {
-    const next = usageFromResponsesPayload(response);
+  function retainUsage(response: unknown, diagnostic = false): void {
+    if (diagnostic && usage) {
+      const { rawUsage: _raw, ...counters } = usage;
+      usage = counters;
+      budget.releaseRetained(usageRawBytes, { kind: "retained_collectors" });
+      usageRawBytes = 0;
+    }
+    const next = usageFromResponsesPayload(diagnostic && isRecord(response)
+      ? { usage: zedDiagnosticUsage(response.usage) } : response);
     if (!next) return;
     const bytes = next.rawUsage ? Buffer.byteLength(JSON.stringify(next.rawUsage), "utf8") : 0;
     const reservation = budget.reserveTransient(bytes, { kind: "retained_collectors" });
@@ -450,7 +474,7 @@ export async function* translateZedOpenAiStream(
     const name = typeof item.name === "string" ? item.name : "";
     const state = ensureCall(key, callId, name, item.type);
     if (item.status === "incomplete") state.incomplete = true;
-    rememberFull(state, item.type === "custom_tool_call" ? item.input : item.arguments);
+    rememberFull(state, item.type === "custom_tool_call" ? item.input : item.arguments, done);
     if (done) yield* closeCall(state, true);
     else yield* pump();
   }
@@ -500,13 +524,14 @@ export async function* translateZedOpenAiStream(
   function* onPayload(payload: Record<string, unknown>): Generator<AdapterEvent> {
     if (payload.type === "error" || payload.type === "response.failed" || (payload.error !== undefined && payload.error !== null)) {
       terminal = true;
-      retainUsage(payload.response);
+      retainUsage(payload.response ?? payload, true);
+      yield* flushUnclosed(false, true);
       yield { type: "error", message: failureMessage(payload), ...(usage ? { usage } : {}) };
       return;
     }
     if (payload.type === "response.incomplete") {
       terminal = true;
-      retainUsage(payload.response);
+      retainUsage(payload.response, true);
       yield* flushUnclosed(false);
       if (terminalError) return;
       yield { type: "incomplete", reason: incompleteReason(payload), ...(usage ? { usage } : {}) };
@@ -579,7 +604,7 @@ export async function* translateZedOpenAiStream(
       const key = typeof payload.item_id === "string" ? payload.item_id : undefined;
       if (!key) return;
       const state = ensureCall(key, "", "");
-      rememberFull(state, payload.type === "response.custom_tool_call_input.done" ? payload.input : payload.arguments);
+      rememberFull(state, payload.type === "response.custom_tool_call_input.done" ? payload.input : payload.arguments, true);
       state.argsDone = true;
       state.allowFull = true;
       yield* pump();
@@ -629,7 +654,9 @@ export async function* translateZedOpenAiStream(
     ciphertextTransferred = true;
     yield done;
   } catch (error) {
-    if (!(error instanceof ZedToolIdentityError)) throw error;
+    if (!(error instanceof ZedToolIdentityError) && !(error instanceof ZedToolArgumentsError)) throw error;
+    retainUsage(undefined, true);
+    yield* flushUnclosed(false, true);
     yield { type: "error", message: error.message, ...(usage ? { usage } : {}) };
   } finally {
     if (!ciphertextTransferred) budget.releaseRetained(compactionEncryptedContentBytes, { kind: "retained_collectors" });

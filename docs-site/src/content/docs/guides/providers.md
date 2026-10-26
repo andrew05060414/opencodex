@@ -380,8 +380,9 @@ For Zed-hosted OpenAI models, OpenCodex translates `developer` instructions to `
 Current-turn tool declarations carried in Codex's `additional_tools` input are promoted into the
 supported tool catalog. Function calls and custom-tool input are relayed in order, including
 interleaved calls, so a tool-using turn can continue after its introductory text. Incomplete calls
-keep only received arguments and remain incomplete; cancellation releases buffered data. The
-relay is covered by synthetic stream fixtures; live hosted-stream compatibility remains unverified.
+keep only received arguments and remain incomplete; cancellation releases buffered data. Conflicting
+completed tool input fails the turn with incomplete calls. On upstream failure, received text and
+reasoning remain visible and usage retains numeric counters only. The relay is covered by synthetic stream fixtures; live hosted-stream compatibility remains unverified.
 
 For the canonical Kimi Coding Plan presets (`kimi` account login and `kimi-code` API key),
 opencodex forwards only a caller-supplied stable `prompt_cache_key` to the Chat Completions request
