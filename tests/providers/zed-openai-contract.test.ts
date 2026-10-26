@@ -40,6 +40,7 @@ describe("Zed OpenAI terminal contract", () => {
       { type: "response.function_call_arguments.delta", item_id: "fc", delta: '{"x":' }, semantic,
       { type: "response.function_call_arguments.delta", item_id: "fc", delta: "1}" },
       { type: "response.function_call_arguments.done", item_id: "fc", arguments: '{"x":1}' },
+      { type: "response.completed", response: { output: [] } },
     ]);
     const semanticIndex = events.findIndex(event => event.type === (channel === "text" ? "text_delta" : channel === "summary" ? "thinking_delta" : "reasoning_raw_delta"));
     expect(semanticIndex).toBeGreaterThan(events.findIndex(event => event.type === "tool_call_end"));
@@ -115,6 +116,36 @@ describe("Zed OpenAI terminal contract", () => {
     const text = await new Response(zedEventStream(body, family, text => scrubZedCredentials(text, credentials))).text();
     expect(text).not.toContain(credentials.accessToken);
     expect(text).not.toContain(credentials.userId);
+  });
+
+  test("nested diagnostic metadata cannot carry credential strings to a delegate", async () => {
+    const credentials = { userId: "fixture-user-42", accessToken: "fixture-token-xyz" };
+    const body = new Response(JSON.stringify({ event: { type: "error", error: {
+      message: "failure", metadata: { request_id: credentials.accessToken, nested: [credentials.userId] },
+    } } }) + "\n").body!;
+    const text = await new Response(zedEventStream(body, "x_ai", text => scrubZedCredentials(text, credentials))).text();
+    expect(text).not.toContain(credentials.accessToken);
+    expect(text).not.toContain(credentials.userId);
+  });
+
+  test("an untyped upstream error cannot become a successful completion", async () => {
+    expect(await collect([{ error: { message: "failure" } }, { type: "response.completed", response: { output: [] } }]))
+      .toEqual([{ type: "error", message: "failure" }]);
+  });
+
+  test.each([false, true])("argument completion cannot override a later incomplete item (stream=%s)", async streaming => {
+    const events = await collect([
+      { type: "response.output_item.added", item: { type: "function_call", id: "fc", call_id: "call", name: "shell", arguments: "" } },
+      { type: "response.function_call_arguments.done", item_id: "fc", arguments: "{}" },
+      { type: "response.output_item.done", item: { type: "function_call", id: "fc", call_id: "call", name: "shell", arguments: "{}", status: "incomplete" } },
+      { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } },
+    ]);
+    const result = streaming
+      ? (await new Response(bridgeToResponsesSSE((async function* () { yield* events; })(), "fixture")).text()).split("\n")
+        .filter(line => line.startsWith("data: {"))
+        .map(line => JSON.parse(line.slice(6))).findLast(event => event.type === "response.incomplete")?.response
+      : buildResponseJSON(events, "fixture");
+    expect(result.output).toContainEqual(expect.objectContaining({ call_id: "call", status: "incomplete", arguments: "{}" }));
   });
 
   test("search scanning preserves an unfinished call without making it executable", () => {
@@ -206,6 +237,7 @@ describe("Zed OpenAI terminal contract", () => {
       { type: "response.function_call_arguments.delta", item_id: "b", delta: "{}" },
       { type: "response.function_call_arguments.done", item_id: "a", arguments: "{}" },
       { type: "response.function_call_arguments.done", item_id: "b", arguments: "{}" },
+      { type: "response.completed", response: { output: [] } },
     ]);
     expect(events[1]).toMatchObject({ type: "heartbeat" });
     expect(events.filter(event => event.type === "tool_call_start").map(event => event.id)).toEqual(["call_a", "call_b"]);
@@ -274,6 +306,7 @@ describe("Zed OpenAI retention bounds", () => {
       { type: "response.output_item.added", item: { type: "function_call", id: "fc", call_id: "call", name: "shell", arguments: "x" } },
       { type: "response.function_call_arguments.delta", item_id: "fc", delta: "x".repeat(15) },
       { type: "response.function_call_arguments.done", item_id: "fc" },
+      { type: "response.completed", response: { output: [] } },
     ], { maxCallArgumentBytes: 30 });
     expect(events.at(-1)).toEqual({ type: "done" });
   });
@@ -299,6 +332,7 @@ describe("Zed OpenAI retention bounds", () => {
       { type: "response.output_item.added", item: { type: "custom_tool_call", id: "fc", call_id: "call", name: "apply_patch", input: "" } },
       { type: "response.custom_tool_call_input.delta", item_id: "fc", delta: "x".repeat(30) },
       { type: "response.custom_tool_call_input.done", item_id: "fc", input: "x".repeat(30) },
+      { type: "response.completed", response: { output: [] } },
     ], { maxCallArgumentBytes: 30 })).at(-1)).toEqual({ type: "done" });
   });
 
@@ -307,6 +341,7 @@ describe("Zed OpenAI retention bounds", () => {
       { type: "response.output_item.added", item: { type: "custom_tool_call", id: "fc", call_id: "call", name: "apply_patch", input: "prefix-stale" } },
       { type: "response.custom_tool_call_input.delta", item_id: "fc", delta: "prefix" },
       { type: "response.custom_tool_call_input.done", item_id: "fc", input: "prefix" },
+      { type: "response.completed", response: { output: [] } },
     ]);
     expect(events.filter(event => event.type === "tool_call_delta").map(event => event.arguments).join(""))
       .toBe("prefix");
@@ -347,6 +382,7 @@ describe("Zed OpenAI retention bounds", () => {
       { type: "response.custom_tool_call_input.delta", item_id: "fc", delta: "\ud83d" },
       { type: "response.custom_tool_call_input.delta", item_id: "fc", delta: "\ude00" },
       { type: "response.custom_tool_call_input.done", item_id: "fc" },
+      { type: "response.completed", response: { output: [] } },
     ], { maxCallArgumentBytes: 4 });
     expect(events.filter(event => event.type === "tool_call_delta").map(event => event.arguments).join(""))
       .toBe("😀");

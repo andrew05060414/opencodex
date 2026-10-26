@@ -631,7 +631,7 @@ describe("Zed OpenAI tool relay", () => {
       { type: "tool_call_end", incomplete: true },
       { type: "tool_call_start", id: "call_b", name: "b" },
       { type: "tool_call_delta", arguments: "{\"y\":2}" },
-      { type: "tool_call_end" },
+      { type: "tool_call_end", incomplete: true },
       { type: "incomplete", reason: "max_output_tokens" },
     ]);
   });
@@ -739,6 +739,7 @@ describe("Zed OpenAI tool relay", () => {
         { type: "response.output_item.added", item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" } },
         { type: "response.function_call_arguments.delta", item_id: "fc_a", delta: "{\"x\":1}" },
         { type: "response.function_call_arguments.done", item_id: "fc_a", arguments: "{\"x\":1}" },
+        { type: "response.completed", response: { output: [] } },
       ])).body, budget)) events.push(event);
       expect(events).toHaveLength(5);
       expect(budget.snapshot().currentBytes).toBe(0);

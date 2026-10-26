@@ -244,7 +244,7 @@ export function zedEventStream(
     const scrubRecord = (record: Record<string, unknown>, preserveType = false): Record<string, unknown> => ({
       ...scrubFields(record, preserveType),
       ...(typeof record.error === "string" ? { error: scrub(record.error) }
-        : isRecord(record.error) ? { error: scrubFields(record.error) } : {}),
+        : isRecord(record.error) ? { error: { ...scrubFields(record.error), metadata: undefined } } : {}),
       ...(isRecord(record.incomplete_details) ? { incomplete_details: scrubFields(record.incomplete_details) } : {}),
     });
     emit(controller, diagnostic ? {

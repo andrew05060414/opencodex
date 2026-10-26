@@ -31,6 +31,7 @@ interface CallState {
   ended: boolean;
   closed: boolean;
   incomplete: boolean;
+  argsDone: boolean;
   /** True only after this call's own done or completed item, not after EOF. */
   allowFull: boolean;
 }
@@ -84,7 +85,8 @@ function incompleteReason(payload: Record<string, unknown>): string {
  * with empty output (Zed's stream-ended frame) must not wipe usage taken from the real
  * completion, and completed output must not repeat text or calls that already streamed.
  * Adapter tool deltas are unkeyed, so only the oldest open call is emitted. A newer call
- * keeps every later delta until the older call's own terminal event, then replays in order.
+ * keeps every later delta until the older call's authoritative item end, then replays in order.
+ * Argument-done confirms bytes only; item status or successful response completion closes a call.
  * EOF and response.incomplete flush arguments that already arrived; they do not copy a full
  * arguments field that never came from that call's done or completed item. A compaction
  * ciphertext is carried on done, with the same retained lease as the Responses parser.
@@ -271,6 +273,7 @@ export async function* translateZedOpenAiStream(
     for (const state of calls.values()) {
       if (state.ended || state.closed) continue;
       state.closed = true;
+      if (!allowFull) state.incomplete = true;
       if (allowFull) state.allowFull = true;
     }
     yield* pump();
@@ -316,6 +319,7 @@ export async function* translateZedOpenAiStream(
         ended: false,
         closed: false,
         incomplete: false,
+        argsDone: false,
         allowFull: false,
       };
       calls.set(key, state);
@@ -494,7 +498,7 @@ export async function* translateZedOpenAiStream(
   }
 
   function* onPayload(payload: Record<string, unknown>): Generator<AdapterEvent> {
-    if (payload.type === "error" || payload.type === "response.failed") {
+    if (payload.type === "error" || payload.type === "response.failed" || (payload.error !== undefined && payload.error !== null)) {
       terminal = true;
       retainUsage(payload.response);
       yield { type: "error", message: failureMessage(payload), ...(usage ? { usage } : {}) };
@@ -576,7 +580,9 @@ export async function* translateZedOpenAiStream(
       if (!key) return;
       const state = ensureCall(key, "", "");
       rememberFull(state, payload.type === "response.custom_tool_call_input.done" ? payload.input : payload.arguments);
-      yield* closeCall(state, true);
+      state.argsDone = true;
+      state.allowFull = true;
+      yield* pump();
       return;
     }
     if (payload.type === "response.completed") {
@@ -588,6 +594,12 @@ export async function* translateZedOpenAiStream(
           if (isRecord(item)) yield* consumeItem(item, true);
           if (terminalError) return;
         }
+      }
+      // Arguments.done confirms bytes, not executable item completion. Wait for the item's
+      // status or the successful response terminal before dispatching its end marker.
+      for (const state of calls.values()) {
+        if (state.argsDone && !state.closed) yield* closeCall(state, true);
+        if (terminalError) return;
       }
     }
   }
