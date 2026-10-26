@@ -165,6 +165,15 @@ describe("Zed OpenAI terminal contract", () => {
     expect(buildResponseJSON(events, "fixture").output).toContainEqual(expect.objectContaining({ status: "incomplete" }));
   });
 
+  test("an explicitly incomplete custom item keeps its confirmed input and incomplete status", async () => {
+    const events = await collect([
+      { type: "response.output_item.done", item: { type: "custom_tool_call", id: "fc", call_id: "call", name: "apply_patch", input: "partial", status: "incomplete" } },
+      { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } },
+    ]);
+    const result = buildResponseJSON(events, "fixture", { freeformToolNames: new Set(["apply_patch"]) });
+    expect(result.output).toContainEqual(expect.objectContaining({ type: "custom_tool_call", input: "partial", status: "incomplete" }));
+  });
+
   test("buffered parallel progress emits an invisible heartbeat", async () => {
     const events = await collect([
       { type: "response.output_item.added", item: { id: "a", type: "function_call", call_id: "call_a", name: "shell", arguments: "" } },

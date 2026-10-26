@@ -30,6 +30,7 @@ interface CallState {
   started: boolean;
   ended: boolean;
   closed: boolean;
+  incomplete: boolean;
   /** True only after this call's own done or completed item, not after EOF. */
   allowFull: boolean;
 }
@@ -167,7 +168,7 @@ export async function* translateZedOpenAiStream(
       if (!next.closed) return;
       next.ended = true;
       next.finalHash = createHash("sha256").update(text).digest("hex");
-      yield { type: "tool_call_end", ...(!next.allowFull ? { incomplete: true } : {}) };
+      yield { type: "tool_call_end", ...(!next.allowFull || next.incomplete ? { incomplete: true } : {}) };
       releaseCall(next);
       for (const entry of next.after) {
         budget.releaseRetained(entry.bytes, { kind: "retained_collectors" });
@@ -314,6 +315,7 @@ export async function* translateZedOpenAiStream(
         started: false,
         ended: false,
         closed: false,
+        incomplete: false,
         allowFull: false,
       };
       calls.set(key, state);
@@ -443,6 +445,7 @@ export async function* translateZedOpenAiStream(
     const callId = typeof item.call_id === "string" ? item.call_id : key;
     const name = typeof item.name === "string" ? item.name : "";
     const state = ensureCall(key, callId, name, item.type);
+    if (item.status === "incomplete") state.incomplete = true;
     rememberFull(state, item.type === "custom_tool_call" ? item.input : item.arguments);
     if (done) yield* closeCall(state, true);
     else yield* pump();
@@ -598,7 +601,7 @@ export async function* translateZedOpenAiStream(
       if (terminal) return;
     }
 
-    const unfinished = [...calls.values()].some(state => !state.closed);
+    const unfinished = [...calls.values()].some(state => !state.closed || state.incomplete);
     yield* flushUnclosed(false);
     if (terminal) return;
     if (unfinished) {
