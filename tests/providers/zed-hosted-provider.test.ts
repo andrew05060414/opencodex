@@ -575,6 +575,7 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "a" },
       { type: "tool_call_delta", arguments: "{\"x\":" },
+      { type: "heartbeat" },
       { type: "tool_call_delta", arguments: "1}" },
       { type: "tool_call_end" },
       { type: "tool_call_start", id: "call_b", name: "b" },
@@ -598,6 +599,7 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "apply_patch" },
       { type: "tool_call_delta", arguments: "left" },
+      { type: "heartbeat" },
       { type: "tool_call_delta", arguments: " side" },
       { type: "tool_call_end" },
       { type: "tool_call_start", id: "call_b", name: "apply_patch" },
@@ -625,7 +627,8 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "a" },
       { type: "tool_call_delta", arguments: "{\"x\":" },
-      { type: "tool_call_end" },
+      { type: "heartbeat" },
+      { type: "tool_call_end", incomplete: true },
       { type: "tool_call_start", id: "call_b", name: "b" },
       { type: "tool_call_delta", arguments: "{\"y\":2}" },
       { type: "tool_call_end" },
@@ -649,8 +652,8 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "a" },
       { type: "tool_call_delta", arguments: "{\"x\":" },
-      { type: "tool_call_end" },
-      { type: "done" },
+      { type: "tool_call_end", incomplete: true },
+      { type: "incomplete", reason: "adapter_eof" },
     ]);
   });
 
