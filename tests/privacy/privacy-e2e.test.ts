@@ -267,8 +267,18 @@ describe("Anthropic Messages count_tokens (/v1/messages/count_tokens) native pas
   });
 });
 
-describe("privacy stats: provider/model are backfilled once routing settles (Chat Completions)", () => {
-  test("GET /api/privacy/stats shows the real provider and model, not \"unknown\"", async () => {
+async function statsRequestsAfter(config: OcxConfig): Promise<Array<{ provider: string; model: string }>> {
+  const { handlePrivacyRoutes } = await import("../../src/server/management/privacy-routes");
+  const statsReq = new Request("http://localhost/api/privacy/stats?range=30d", { method: "GET" });
+  const statsResp = await handlePrivacyRoutes({
+    req: statsReq, url: new URL(statsReq.url), config, deps: {}, version: "test", principal: { kind: "admin" },
+  } as never);
+  const data = await statsResp?.json();
+  return data.requests;
+}
+
+describe("privacy stats: provider/model are backfilled once routing settles, via addFinalRequestLog", () => {
+  test("Chat Completions: GET /api/privacy/stats shows the real provider and model, not \"unknown\"", async () => {
     globalPrivacyStats.reset();
     const upstream = fakeUpstream(() => Response.json({
       id: "chatcmpl_backfill", object: "chat.completion",
@@ -286,20 +296,78 @@ describe("privacy stats: provider/model are backfilled once routing settles (Cha
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(chatBodyFixture(`${NAME}/test`, apiKey)),
       });
-      const response = await handleChatCompletions(req, config, { model: "", provider: "" });
+      // logIds supplied: the handler itself calls addFinalRequestLog on completion, same as
+      // serve-options.ts does for a real inbound request -- that is the backfill's trigger.
+      const response = await handleChatCompletions(req, config, { model: "", provider: "" }, { requestId: "test-chat-backfill", start: Date.now() });
       expect(response.status).toBe(200);
       await response.text();
-      const { handlePrivacyRoutes } = await import("../../src/server/management/privacy-routes");
-      const statsReq = new Request("http://localhost/api/privacy/stats?range=30d", { method: "GET" });
-      const statsResp = await handlePrivacyRoutes({
-        req: statsReq, url: new URL(statsReq.url), config, deps: {}, version: "test", principal: { kind: "admin" },
-      } as never);
-      const data = await statsResp?.json();
-      expect(data.requests.length).toBeGreaterThan(0);
-      const row = data.requests[0]!;
-      expect(row.provider).toBe(NAME);
-      expect(row.model).toBe("test");
-      expect(row.provider).not.toBe("unknown");
+      const requests = await statsRequestsAfter(config);
+      expect(requests.length).toBeGreaterThan(0);
+      expect(requests[0]!.provider).toBe(NAME);
+      expect(requests[0]!.model).toBe("test");
+      expect(requests[0]!.provider).not.toBe("unknown");
+    } finally { upstream.stop(); }
+  });
+
+  test("Responses: GET /api/privacy/stats shows the real provider and model, not \"unknown\"", async () => {
+    globalPrivacyStats.reset();
+    const upstream = fakeUpstream(() => Response.json({
+      id: "resp_backfill", object: "response", status: "completed",
+      output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] }],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 } },
+    }));
+    try {
+      const NAME = "privacy-e2e-responses-backfill";
+      const apiKey = fakeOpenAiKey("responses-backfill-e2e");
+      const config = {
+        port: 0, defaultProvider: NAME, openaiProviderTierVersion: 2,
+        providers: { [NAME]: { adapter: "openai-responses", baseUrl: upstream.url, authMode: "key", apiKey: "fixture-platform-key", allowPrivateNetwork: true } },
+        privacy: { enabled: true },
+      } as unknown as OcxConfig;
+      const req = new Request("http://localhost/v1/responses", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(responsesBodyFixture(`${NAME}/gpt-5`, apiKey)),
+      });
+      const logCtx = { model: "unknown", provider: "unknown" };
+      const response = await handleResponses(req, config, logCtx as never);
+      expect(response.status).toBe(200);
+      await response.text();
+      // handleResponses itself defers request-log writing to the caller (serve-options.ts /
+      // relay.ts); mimic that one convergence point directly instead of standing up the whole
+      // HTTP server, since addFinalRequestLog -- not handleResponses -- is where backfill runs.
+      const { addFinalRequestLog } = await import("../../src/server/request-log");
+      addFinalRequestLog("test-responses-backfill", Date.now(), logCtx as never, response.status);
+      const requests = await statsRequestsAfter(config);
+      expect(requests.length).toBeGreaterThan(0);
+      expect(requests[0]!.provider).toBe(NAME);
+      expect(requests[0]!.provider).not.toBe("unknown");
+    } finally { upstream.stop(); }
+  });
+
+  test("Anthropic Messages native passthrough: GET /api/privacy/stats shows the real provider and model, not \"unknown\"", async () => {
+    globalPrivacyStats.reset();
+    const upstream = fakeUpstream(() => new Response('{"type":"message","id":"msg_backfill","role":"assistant","content":[{"type":"text","text":"ok"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}', { headers: { "content-type": "application/json" } }));
+    try {
+      const apiKey = fakeOpenAiKey("messages-backfill-e2e");
+      const config = {
+        providers: {},
+        claudeCode: { anthropicBaseUrl: upstream.url },
+        privacy: { enabled: true },
+      } as unknown as OcxConfig;
+      const req = new Request("http://localhost/v1/messages", {
+        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer sk-ant-oat01-fixture" },
+        body: JSON.stringify(anthropicBodyFixture("claude-sonnet-4-6", apiKey)),
+      });
+      // logIds supplied: anthropicNativePassthrough's own finalize() calls addFinalRequestLog
+      // on completion, same as a real inbound request through serve-options.ts.
+      const response = await handleClaudeMessages(req, config, { model: "claude-sonnet-4-6", provider: "anthropic-native" }, { requestId: "test-messages-backfill", start: Date.now() });
+      expect(response.status).toBe(200);
+      await response.text();
+      const requests = await statsRequestsAfter(config);
+      expect(requests.length).toBeGreaterThan(0);
+      expect(requests[0]!.provider).toBe("anthropic-native");
+      expect(requests[0]!.model).toBe("claude-sonnet-4-6");
+      expect(requests[0]!.provider).not.toBe("unknown");
     } finally { upstream.stop(); }
   });
 });
