@@ -111,7 +111,15 @@ export const configSchema = z.object({
   remoteGui: remoteGuiConfigSchema.optional().catch(undefined),
   // A malformed privacy block must never be read as "unmask": .catch(undefined) drops it and
   // emailMaskingEnabled then falls back to masked, which is also what an absent block means.
-  privacy: z.object({ maskEmails: z.boolean().optional() }).strict().optional().catch(undefined),
+  privacy: z.object({
+    maskEmails: z.boolean().optional(),
+    enabled: z.boolean().optional(),
+    // Exact-match original values that client-request redaction must leave untouched
+    // (privacy_contract.md "放行"). A malformed entry list is dropped by the outer
+    // `.catch(undefined)`, which is safe: an unreadable allowlist means nothing is
+    // allowed through, never the opposite.
+    allowValues: z.array(z.string()).optional(),
+  }).strict().optional().catch(undefined),
   skills: skillsConfigSchema.optional().catch(undefined),
   // Malformed hand edits disable this opt-in exporter. Live writes reject them in diagnostics.ts.
   metricsExport: z.object({ enabled: z.boolean().optional() }).strict().optional().catch(undefined),

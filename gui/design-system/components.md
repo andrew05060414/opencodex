@@ -92,6 +92,13 @@
 - 인증 가능한 provider는 Accounts 또는 API keys를 독립 detail tab으로 노출한다. active account는 focus 가능한 상태로 유지하고 text + `aria-current`로 선택을 알린다. loading/error/empty/reauth/switching은 색만으로 표현하지 않는다.
 - 계정 행, title, aria-label, 확인창, toast에는 masked email 또는 번역된 순번만 사용한다. 저장소의 opaque account id와 token 원문은 사용자 표면에 노출하지 않는다.
 
+## Privacy (탈민) 페이지
+
+- 색은 오직 `kind`(대체된 비밀의 종류) 한 가지 차원만 구분한다. 매핑은 `src/pages/privacy/privacy-kinds.ts`가 단일 출처이며 모두 기존 토큰을 쓴다: 비밀번호 `--red`, API 키 `--blue`, 토큰 `--amber`, 개인 키 `--green`, 연결 문자열 `--accent`, 이메일 `--faint`, 기타 `--muted`. 새 색을 추가하지 말고 종류가 늘면 이 표를 갱신한다.
+- 개요 카드의 큰 숫자는 type scale 밖의 유일한 값이다. `clamp(40px, 7cqi, 60px)`로 `.main-inner` 컨테이너 폭을 따라가며, 뷰포트가 아니라 카드 폭을 기준으로 한다. 이 크기는 페이지당 한 번만 쓴다.
+- 기간 전환(7일/30일)과 목록 탭은 기존 `.usage-segmented` 분할 필터를 그대로 쓴다.
+- 값 자체는 어떤 요소·`title`·`aria` 문자열에도 넣지 않는다. 화면에 남는 것은 종류와 개수뿐이다.
+
 ## 분할 필터 (Segmented filters)
 
 - 서로 배타적인 선택지는 네이티브 `button`을 인접한 pill 형태로 묶고, 컨테이너에는 `role="group"`과 번역된 이름을 제공한다.

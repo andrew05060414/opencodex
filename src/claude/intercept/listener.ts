@@ -62,16 +62,28 @@ export function forwardHeadersForUpstream(source: Headers): Headers {
   return headers;
 }
 
-export async function relayToUpstream(req: Request, upstreamBase: string, fetchImpl: typeof fetch = fetch): Promise<Response> {
+/**
+ * Relay one request to the real upstream verbatim, unless `bodyOverride` is given -- used by
+ * `relayInterceptedMessagesToUpstream` below to send a REDACTED body instead of the client's
+ * original bytes, with a `content-length` that matches what is actually sent.
+ */
+export async function relayToUpstream(
+  req: Request,
+  upstreamBase: string,
+  fetchImpl: typeof fetch = fetch,
+  bodyOverride?: Uint8Array,
+): Promise<Response> {
   const url = new URL(req.url);
   const target = `${upstreamBase.replace(/\/$/, "")}${url.pathname}${url.search}`;
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  const headers = forwardHeadersForUpstream(req.headers);
+  if (bodyOverride) headers.set("content-length", String(bodyOverride.byteLength));
   let upstream: Response;
   try {
     upstream = await fetchImpl(target, {
       method: req.method,
-      headers: forwardHeadersForUpstream(req.headers),
-      body: hasBody ? req.body : undefined,
+      headers,
+      body: (bodyOverride ?? (hasBody ? req.body : undefined)) as BodyInit | undefined,
       signal: req.signal,
       redirect: "manual",
       // @ts-expect-error -- streaming request bodies require half duplex under the fetch spec.
@@ -83,11 +95,51 @@ export async function relayToUpstream(req: Request, upstreamBase: string, fetchI
       { status: 502 },
     );
   }
-  const headers = new Headers();
+  const headers2 = new Headers();
   upstream.headers.forEach((value, name) => {
-    if (!RESPONSE_STRIP_HEADERS.has(name.toLowerCase())) headers.append(name, value);
+    if (!RESPONSE_STRIP_HEADERS.has(name.toLowerCase())) headers2.append(name, value);
   });
-  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: headers2 });
+}
+
+function privacyRelayRefusal(detail: string): Response {
+  return Response.json(
+    { type: "error", error: { type: "api_error", message: `privacy redaction failed; request was not sent: ${detail}` } },
+    { status: 503 },
+  );
+}
+
+/**
+ * Privacy redaction (privacy_contract.md), for the ONE path that used to bypass it entirely:
+ * when a client's traffic is classified `relay-native` (see client-class.ts), `/v1/messages`
+ * and `/v1/messages/count_tokens` never reach the router (and therefore never reach
+ * `claude-messages.ts`'s own redaction) -- `relayToUpstream` sent the client's original bytes
+ * straight to `api.anthropic.com`. This reads the body, redacts it with the SAME Anthropic
+ * Messages redactor, and relays the redacted bytes with a corrected `content-length` instead.
+ *
+ * Fail closed: a request body carrying `content-encoding` is never decoded here (there is no
+ * decoder in this module), and a redaction failure never falls through to relaying the
+ * original body -- both return 503 without calling `fetchImpl`. The response is never touched
+ * (redaction is one-way).
+ */
+export async function relayInterceptedMessagesToUpstream(
+  req: Request,
+  upstreamBase: string,
+  redact: (body: unknown) => unknown,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Response> {
+  if (req.headers.has("content-encoding")) {
+    return privacyRelayRefusal("request body content-encoding is not supported");
+  }
+  let bytes: Uint8Array;
+  try {
+    const raw = await req.text();
+    const parsed = raw.length > 0 ? JSON.parse(raw) : null;
+    bytes = new TextEncoder().encode(JSON.stringify(redact(parsed)));
+  } catch (error) {
+    return privacyRelayRefusal(error instanceof Error ? error.message : String(error));
+  }
+  return relayToUpstream(req, upstreamBase, fetchImpl, bytes);
 }
 
 export interface ClaudeInterceptListenerOptions<T = undefined> {
@@ -107,6 +159,13 @@ export interface ClaudeInterceptListenerOptions<T = undefined> {
   fetchImpl?: typeof fetch;
   /** Test seam: bind a fixed port instead of an ephemeral one. */
   port?: number;
+  /**
+   * Redacts an Anthropic Messages body (privacy_contract.md) before a `relay-native` send for
+   * `/v1/messages` or `/v1/messages/count_tokens` bypasses the router entirely. Absent means
+   * redaction is off (matches `config.privacy.enabled` being off). Throwing is fail-closed:
+   * the caller returns 503 instead of relaying the original body.
+   */
+  redactMessagesBody?: (body: unknown) => unknown;
 }
 
 /** Bind the intercept TLS listener on an ephemeral loopback port. */
@@ -126,6 +185,9 @@ export function startClaudeInterceptListener<T = undefined>(options: ClaudeInter
         return options.dispatch(rewriteInterceptedRequest(req, loopbackOrigin), requestServer);
       }
       const upstream = native ? CLAUDE_INTERCEPT_UPSTREAM : upstreamBase;
+      if (native && options.redactMessagesBody && isClaudeInterceptedPath(url.pathname, req.method)) {
+        return relayInterceptedMessagesToUpstream(req, upstream, options.redactMessagesBody, options.fetchImpl);
+      }
       const catalog = options.cliCatalog ? cliCatalogKind(req.method, url.pathname) : null;
       if (catalog) {
         let models: readonly PickerModelEntry[] | null = null;

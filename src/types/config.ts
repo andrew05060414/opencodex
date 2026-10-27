@@ -468,6 +468,10 @@ export interface OcxPrivacyConfig {
    * those accounts.
    */
   maskEmails?: boolean;
+  /** Turns on client-request body redaction (secrets -> `{{SECRET_xxxxxxxx}}`). Default off. */
+  enabled?: boolean;
+  /** Exact-match original values that client-request redaction must leave untouched. */
+  allowValues?: string[];
 }
 
 export interface OcxLinkTransportConfig {

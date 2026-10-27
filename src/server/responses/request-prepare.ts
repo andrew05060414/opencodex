@@ -67,6 +67,13 @@ import {
   previousResponseProviderState,
 } from "../../responses/state";
 import { formatErrorResponse } from "../../bridge";
+import {
+  clientLabelFromHeaders,
+  isPrivacyRedactionEnabled,
+  privacyOptionsFromConfig,
+  recordPrivacyHitsBestEffort,
+  redactClientBody,
+} from "../../privacy";
 import { mapCodexAuthContextErrorToResponse } from "./codex-auth-error";
 import type { OcxParsedRequest } from "../../types";
 import { buildToolBridgeMaps } from "./collaboration";
@@ -239,6 +246,35 @@ export async function prepareResponsesRequest(
       return clientCancelledResponse();
     }
     return decodeRequestErrorResponse(err, "responses");
+  }
+  // Privacy redaction (privacy_contract.md): mounted on the client's original request
+  // body, before ANY protocol translation, combo/shadow rewriting or routing reads it --
+  // every downstream path, including a combo child dispatch and a direct/native lane,
+  // continues from this same (reassigned) `body`. One-way only; no response restoration.
+  // Fail closed: a redaction error must never let the original body reach a vendor.
+  if (isPrivacyRedactionEnabled(config)) {
+    try {
+      const outcome = redactClientBody(body, privacyOptionsFromConfig(config));
+      body = outcome.body;
+      const bodyModel = body && typeof body === "object" && !Array.isArray(body)
+        ? (body as { model?: unknown }).model
+        : undefined;
+      // Routing hasn't run yet, so provider/model are still unknown; addFinalRequestLog
+      // backfills this row from logCtx once they are (request-log.ts). A Messages/Chat
+      // translate-and-replay shares this same logCtx and re-enters here with an already-
+      // redacted body (no new hits, a null id) -- never clear an outer entry point's id.
+      const privacyEventId = recordPrivacyHitsBestEffort({
+        client: clientLabelFromHeaders(req.headers),
+        model: typeof bodyModel === "string" ? bodyModel : undefined,
+        hits: outcome.hits,
+        placeholderHashes: outcome.placeholderHashes,
+      });
+      if (privacyEventId) logCtx.privacyEventId = privacyEventId;
+    } catch {
+      return formatErrorResponse(503, "server_error", "privacy redaction failed; request was not sent", {
+        code: "privacy_redaction_failed",
+      });
+    }
   }
   // Remove display-only artifact paths before helpers, combo dispatch and upstream replay.
   redactHostedImageDisplayPaths(body);

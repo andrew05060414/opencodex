@@ -14,6 +14,7 @@ import { preparePersistentPickerAuthority } from "./picker-ca-startup";
 import type { PickerCaStore } from "./picker-ca-store";
 import type { PickerRouteInput } from "./picker-models";
 import { CLAUDE_INTERCEPT_PORT_OFFSET, claudeInterceptEnabled, claudeInterceptProxyPort, claudePickerProxyPort } from "./port-policy";
+import { isPrivacyRedactionEnabled, privacyOptionsFromConfig, redactClientBody } from "../../privacy";
 import { createPickerRuntime, pickerDesired, type CreatePickerRuntimeOptions, type PickerRuntime } from "./picker-runtime";
 import type { SecurityRunner } from "./picker-trust";
 import { ensureClaudeInterceptProxyToken, readClaudeInterceptProxyToken } from "./proxy-auth";
@@ -162,6 +163,12 @@ export async function startClaudeIntercept<T>(options: StartClaudeInterceptOptio
     }) } : {}),
     upstreamBase: options.config.claudeCode?.anthropicBaseUrl,
     ...(options.maxRequestBodySize !== undefined ? { maxRequestBodySize: options.maxRequestBodySize } : {}),
+    // Privacy redaction (privacy_contract.md): a `relay-native` client's /v1/messages traffic
+    // bypasses the router -- and therefore bypasses claude-messages.ts's own redaction mount --
+    // entirely. Wire the same Anthropic Messages redactor into that relay path too.
+    ...(isPrivacyRedactionEnabled(options.config) ? {
+      redactMessagesBody: (body: unknown) => redactClientBody(body, privacyOptionsFromConfig(options.config)).body,
+    } : {}),
   });
   let proxy: ConnectProxyHandle;
   try {
