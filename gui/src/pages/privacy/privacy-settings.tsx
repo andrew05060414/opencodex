@@ -42,14 +42,19 @@ export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettings
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<PrivacyTestResult | null>(null);
 
-  const write = async (run: () => Promise<PrivacyConfig>) => {
+  /**
+   * `failureText` is the localized copy for a write whose failure has its own wording. The
+   * allow-list passes it so a failed add or remove always reads in the UI language; a server's
+   * own error text is English and would otherwise be shown as-is.
+   */
+  const write = async (run: () => Promise<PrivacyConfig>, failureText?: string) => {
     if (saving) return;
     setSaving(true);
     setError(null);
     try {
       onSaved(await run());
     } catch (cause) {
-      setError(cause instanceof Error && cause.message ? cause.message : t("privacy.saveFailed"));
+      setError(failureText ?? (cause instanceof Error && cause.message ? cause.message : t("privacy.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -65,7 +70,10 @@ export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettings
     // on screen, and there is nothing to restore it from afterwards by design.
     setAllowDraft("");
     setAllowOpen(true);
-    await write(() => addPrivacyAllowValue(apiBase, value, t("privacy.saveFailed")));
+    await write(
+      () => addPrivacyAllowValue(apiBase, value, t("privacy.settings.allow.addFailed")),
+      t("privacy.settings.allow.addFailed"),
+    );
   };
 
   const runTest = async () => {
@@ -130,7 +138,12 @@ export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettings
                     className="btn btn-ghost btn-sm"
                     disabled={saving}
                     aria-label={t("privacy.settings.allow.removeOne", { id: shortId })}
-                    onClick={() => { void write(() => deletePrivacyAllowValue(apiBase, entry.id, t("privacy.saveFailed"))); }}
+                    onClick={() => {
+                      void write(
+                        () => deletePrivacyAllowValue(apiBase, entry.id, t("privacy.settings.allow.removeFailed")),
+                        t("privacy.settings.allow.removeFailed"),
+                      );
+                    }}
                   >
                     {t("privacy.settings.allow.remove")}
                   </button>
