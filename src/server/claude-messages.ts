@@ -636,12 +636,19 @@ async function handleClaudeMessagesWithBudget(
         const outcome = redactClientBody(anthropicBody, privacyOptionsFromConfig(config));
         anthropicBody = outcome.body;
         const bodyModel = isRec(anthropicBody) ? anthropicBody.model : undefined;
-        recordPrivacyHitsBestEffort({
+        // Routing hasn't run yet, so provider/model are still unknown; addFinalRequestLog
+        // backfills this row from logCtx once they are (request-log.ts) -- the one point every
+        // finish path (native passthrough, routed native, bridge) converges on. A bridge replay
+        // into the Responses pipeline shares this same logCtx and re-enters its own redaction
+        // mount with an already-redacted body (no new hits, a null id); never clear this id with
+        // that.
+        const privacyEventId = recordPrivacyHitsBestEffort({
           client: clientLabelFromHeaders(req.headers),
           model: typeof bodyModel === "string" ? bodyModel : undefined,
           hits: outcome.hits,
           placeholderHashes: outcome.placeholderHashes,
         });
+        if (privacyEventId) logCtx.privacyEventId = privacyEventId;
       } catch {
         if (logIds) addFinalRequestLog(logIds.requestId, logIds.start, logCtx, 503, { closeReason: "non_stream" });
         return anthropicErrorResponse(503, "privacy redaction failed; request was not sent", "api_error");

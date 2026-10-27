@@ -259,12 +259,17 @@ export async function prepareResponsesRequest(
       const bodyModel = body && typeof body === "object" && !Array.isArray(body)
         ? (body as { model?: unknown }).model
         : undefined;
-      recordPrivacyHitsBestEffort({
+      // Routing hasn't run yet, so provider/model are still unknown; addFinalRequestLog
+      // backfills this row from logCtx once they are (request-log.ts). A Messages/Chat
+      // translate-and-replay shares this same logCtx and re-enters here with an already-
+      // redacted body (no new hits, a null id) -- never clear an outer entry point's id.
+      const privacyEventId = recordPrivacyHitsBestEffort({
         client: clientLabelFromHeaders(req.headers),
         model: typeof bodyModel === "string" ? bodyModel : undefined,
         hits: outcome.hits,
         placeholderHashes: outcome.placeholderHashes,
       });
+      if (privacyEventId) logCtx.privacyEventId = privacyEventId;
     } catch {
       return formatErrorResponse(503, "server_error", "privacy redaction failed; request was not sent", {
         code: "privacy_redaction_failed",
