@@ -196,6 +196,26 @@
 }
 .privacy-test-hits { display: flex; gap: var(--space-1-5); flex-wrap: wrap; }
 
+/* The allow-list: a length and four hex digits per row, because that is all the page is given. */
+.privacy-allow-head { display: flex; align-items: center; gap: var(--space-2); min-height: 20px; }
+.privacy-allow-head .link-btn { display: inline-flex; align-items: center; gap: var(--space-2); }
+.privacy-allow-toggle { color: var(--muted); }
+.privacy-allow-list { list-style: none; margin: 0; padding: var(--space-1) 0 0; display: grid; gap: var(--space-1); }
+/*
+  A `display` declaration outranks the `hidden` attribute's user-agent rule, so the collapsed
+  list stayed on screen with the disclosure still reading "Show". The attribute is the state;
+  this is what makes it mean anything.
+*/
+.privacy-allow-list[hidden] { display: none; }
+.privacy-allow-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 6px var(--space-3); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm); background: var(--raised);
+}
+.privacy-allow-row > span:first-child { flex: 1 1 auto; min-width: 0; }
+.privacy-allow-id { color: var(--muted); letter-spacing: var(--tracking-wide); flex: 0 0 auto; }
+.privacy-allow-error { color: var(--red); }
+
 /* ── narrow ────────────────────────────────────────────── */
 
 @container (max-width: 760px) {
