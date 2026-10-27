@@ -236,6 +236,30 @@ describe("PrivacyStatsStore", () => {
     const today = summary.daily.at(-1)!;
     expect(today.masked).toBe(4);
   });
+
+  it("record returns an id that backfillRoute can later use to fill in provider/model", () => {
+    const store = new PrivacyStatsStore({ capacity: 10 });
+    const id = store.record({ ts: Date.now(), client: "codex", hits: [{ kind: "api_key", count: 1 }], placeholderHashes: ["33333333"] });
+    expect(id).not.toBeNull();
+    let summary = store.summary("7d", true);
+    expect(summary.requests[0]!.provider).toBe("unknown");
+    store.backfillRoute(id, { provider: "openai", model: "gpt-5" });
+    summary = store.summary("7d", true);
+    expect(summary.requests[0]!.provider).toBe("openai");
+    expect(summary.requests[0]!.model).toBe("gpt-5");
+  });
+
+  it("backfillRoute is a silent no-op for a missing or stale id", () => {
+    const store = new PrivacyStatsStore({ capacity: 10 });
+    expect(() => store.backfillRoute(null, { provider: "x" })).not.toThrow();
+    expect(() => store.backfillRoute("not-a-real-id", { provider: "x" })).not.toThrow();
+    expect(store.summary("7d", true).totals.requests).toBe(0);
+  });
+
+  it("record with zero hits returns null, never a stray id", () => {
+    const store = new PrivacyStatsStore({ capacity: 10 });
+    expect(store.record({ ts: Date.now(), hits: [], placeholderHashes: [] })).toBeNull();
+  });
 });
 
 describe("management routes: GET/PUT /api/privacy/config, allow-values, POST /api/privacy/test, GET /api/privacy/stats", () => {
