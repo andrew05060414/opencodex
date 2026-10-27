@@ -4203,6 +4203,8 @@ export const en = {
   "privacy.settings.allow.removeOne": "Remove the allowed value {id}",
   "privacy.settings.allow.empty": "Nothing is allowed through.",
   "privacy.settings.allow.tooLong": "A value can be at most {max} characters.",
+  "privacy.settings.allow.addFailed": "Could not add the allowed value.",
+  "privacy.settings.allow.removeFailed": "Could not remove the allowed value.",
   "privacy.test.title": "Try it",
   "privacy.test.placeholder": "Paste text to see what would be replaced",
   "privacy.test.run": "Try it",
