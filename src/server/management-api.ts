@@ -65,6 +65,7 @@ import { handleStorageLogGuardRoutes } from "./management/storage-log-guard-rout
 import { handleRequestHistoryRoutes } from "./management/request-history-routes";
 import { handleRoutingAnalyticsRoutes } from "./management/routing-analytics-routes";
 import { handleMetricsRoutes } from "./management/metrics-routes";
+import { handlePrivacyRoutes } from "./management/privacy-routes";
 import { handleProviderRoutes } from "./management/provider-routes";
 import { handleModelRoutes } from "./management/model-routes";
 import { handleClaudeInterceptRoutes } from "./management/claude-intercept-routes";
@@ -373,6 +374,7 @@ export async function handleManagementAPI(
     ??     (await handleGrokCouponRoutesOnDemand(ctx))
     ??     (await handleAnthropicResetGrantRoutesOnDemand(ctx))
     ??     handleMetricsRoutes(ctx)
+    ??     (await handlePrivacyRoutes(ctx))
     ??     (await handleRoutingAnalyticsRoutes(ctx))
     ??     (await handleRoutingProfileRoutesOnDemand(ctx))
     ??     (await handleProviderRoutes(ctx))
