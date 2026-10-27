@@ -59,13 +59,21 @@ export interface PrivacyStats {
   requests: PrivacyRequestRecord[];
 }
 
+/**
+ * An allowlisted value as the GUI is allowed to know it: a hash-prefix id and a length.
+ *
+ * The original never crosses the wire any more, so the page cannot render it even by mistake.
+ * The id is the same digest a redacted occurrence of that value carries inside its placeholder,
+ * which is also how a row is addressed for deletion.
+ */
+export interface PrivacyAllowValue {
+  id: string;
+  length: number;
+}
+
 export interface PrivacyConfig {
   enabled: boolean;
-  /**
-   * Values the user chose to let through unredacted. They are only ever counted on screen:
-   * no surface renders an element, title, or aria string built from one.
-   */
-  allowValues: string[];
+  allowValues: PrivacyAllowValue[];
 }
 
 export interface PrivacyTestResult {
