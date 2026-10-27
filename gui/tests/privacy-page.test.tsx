@@ -28,7 +28,7 @@ let calls: { url: string; method: string; body: string | undefined }[];
 
 /** What the stats route answers with. Tests reassign it before mounting. */
 let statsBody: (range: string) => unknown;
-let configBody: { enabled: boolean; allowValues: string[] };
+let configBody: { enabled: boolean; allowValues: { id: string; length: number }[] };
 let testBody: unknown;
 
 function populated(range: string) {
@@ -79,6 +79,12 @@ beforeEach(() => {
   statsBody = populated;
   configBody = { enabled: true, allowValues: [] };
   testBody = { masked: "token={{SECRET_1a2b3c4d}}", hits: [{ kind: "token", count: 1 }] };
+  /*
+   * Stands in for the backend's allow-value routes, including the one property that matters:
+   * a value posted here is never part of any response. The ids are fixed so the four digits
+   * the page shows are something a test can name.
+   */
+  const ids = ["4f2a9c10", "b71e0055"];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -87,9 +93,23 @@ beforeEach(() => {
     if (url.includes("/api/privacy/stats")) {
       return json(statsBody(new URL(url).searchParams.get("range") ?? "7d"));
     }
+    if (url.includes("/api/privacy/allow-values")) {
+      if (method === "POST") {
+        const value = (JSON.parse(body ?? "{}") as { value?: string }).value ?? "";
+        const id = ids[configBody.allowValues.length] ?? "ffffffff";
+        configBody = { ...configBody, allowValues: [...configBody.allowValues, { id, length: value.length }] };
+        return json(configBody);
+      }
+      if (method === "DELETE") {
+        const id = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+        configBody = { ...configBody, allowValues: configBody.allowValues.filter(row => row.id !== id) };
+        return json(configBody);
+      }
+    }
     if (url.includes("/api/privacy/config")) {
       if (method === "PUT") {
-        configBody = JSON.parse(body ?? "{}") as typeof configBody;
+        const patch = JSON.parse(body ?? "{}") as { enabled?: boolean };
+        configBody = { ...configBody, enabled: patch.enabled === true };
         return json(configBody);
       }
       return json(configBody);
@@ -187,7 +207,9 @@ test("while redaction is off the card offers to turn it on, and the button write
   await click(buttonBy(en["privacy.empty.disabled.enable"]));
   const write = calls.find(call => call.method === "PUT");
   expect(write?.url).toContain("/api/privacy/config");
-  expect(JSON.parse(write!.body!)).toEqual({ enabled: true, allowValues: [] });
+  // The switch route takes the switch and nothing else; an allow-list field here would mean
+  // the page was holding values it has no business holding.
+  expect(JSON.parse(write!.body!)).toEqual({ enabled: true });
 });
 
 test("switching 7d to 30d asks the backend again for the new range", async () => {
@@ -218,25 +240,68 @@ test("try it posts the text and renders the masked result with its kinds", async
   expect(container.querySelector(".privacy-test-hits")?.textContent).toContain(en["privacy.kind.token"]);
 });
 
-test("an added allow value is sent once and never rendered again", async () => {
-  await mount();
-  await click(buttonBy(en["privacy.settings.open"]));
+const SECRET = `allow-${"z".repeat(18)}`;
 
+async function addAllowValue() {
   const field = container.querySelector(".privacy-settings-form input") as HTMLInputElement;
   // Never typed into a readable control: the box is a password field by construction.
   expect(field.getAttribute("type")).toBe("password");
-  const secret = `allow-${"z".repeat(18)}`;
-  await typeInto(field, secret);
+  await typeInto(field, SECRET);
   await click(buttonBy(en["privacy.settings.allow.add"]));
+}
 
-  const write = calls.find(call => call.method === "PUT");
-  expect(JSON.parse(write!.body!).allowValues).toEqual([secret]);
+test("adding an allow value posts it to the allow-values route and never renders it again", async () => {
+  await mount();
+  await click(buttonBy(en["privacy.settings.open"]));
+  await addAllowValue();
+
+  const posted = calls.find(call => call.url.includes("/api/privacy/allow-values") && call.method === "POST");
+  expect(posted).toBeDefined();
+  expect(JSON.parse(posted!.body!)).toEqual({ value: SECRET });
+  // The switch route is not involved in adding a value.
+  expect(calls.some(call => call.method === "PUT")).toBe(false);
+
   // The value is gone from the page: not in the text, not in any attribute, not in the input.
-  expect(container.textContent).not.toContain(secret);
-  expect(container.innerHTML).not.toContain(secret);
+  expect(container.textContent).not.toContain(SECRET);
+  expect(container.innerHTML).not.toContain(SECRET);
   expect((container.querySelector(".privacy-settings-form input") as HTMLInputElement).value).toBe("");
   // What is left is a count.
   expect(container.textContent).toContain(en["privacy.settings.allow.count"].replace("{count}", "1"));
+});
+
+test("the allow list stays collapsed until asked, then shows a length and four id digits", async () => {
+  configBody = { enabled: true, allowValues: [{ id: "4f2a9c10", length: SECRET.length }] };
+  await mount();
+  await click(buttonBy(en["privacy.settings.open"]));
+
+  // Collapsed on arrival: the count is the whole summary.
+  expect(container.querySelector(".privacy-allow-list")?.hasAttribute("hidden")).toBe(true);
+  expect(container.textContent).toContain(en["privacy.settings.allow.count"].replace("{count}", "1"));
+
+  await click(buttonBy(en["privacy.settings.allow.count"].replace("{count}", "1")));
+  expect(container.querySelector(".privacy-allow-list")?.hasAttribute("hidden")).toBe(false);
+
+  const rows = container.querySelectorAll(".privacy-allow-row");
+  expect(rows).toHaveLength(1);
+  const row = rows[0]!;
+  expect(row.textContent).toContain(en["privacy.settings.allow.length"].replace("{length}", String(SECRET.length)));
+  // Four digits of the id, and the full id is nowhere on screen either.
+  expect(row.querySelector(".privacy-allow-id")?.textContent).toBe("4f2a");
+  expect(container.innerHTML).not.toContain("4f2a9c10");
+  expect(row.textContent).not.toContain(SECRET);
+});
+
+test("removing an allow value calls DELETE with its id", async () => {
+  await mount();
+  await click(buttonBy(en["privacy.settings.open"]));
+  await addAllowValue();
+
+  await click(buttonBy(en["privacy.settings.allow.remove"]));
+
+  const removed = calls.find(call => call.method === "DELETE");
+  expect(removed?.url).toBe(`${apiBase}/api/privacy/allow-values/4f2a9c10`);
+  expect(container.querySelectorAll(".privacy-allow-row")).toHaveLength(0);
+  expect(container.textContent).toContain(en["privacy.settings.allow.empty"]);
 });
 
 test("the by-value tab totals kinds and says why there is nothing else to group by", async () => {
@@ -246,6 +311,17 @@ test("the by-value tab totals kinds and says why there is nothing else to group 
   expect(values.textContent).toContain(en["privacy.kind.password"]);
   expect(values.textContent).toContain(en["privacy.values.note"]);
   expect(container.querySelector(".privacy-request-row")).toBeNull();
+});
+
+test("the collapsed allow list is actually hidden, not just marked hidden", async () => {
+  /*
+   * `hidden` is an attribute the DOM test above can see; whether it HIDES anything is a CSS
+   * question, and the list sets `display: grid`, which outranks the user-agent rule for
+   * `[hidden]`. It shipped visible-while-collapsed once for exactly that reason, so the
+   * override is pinned here rather than left to the next person to rediscover in a browser.
+   */
+  const css = await Bun.file(new URL("../src/pages/privacy/privacy.css", import.meta.url)).text();
+  expect(css).toContain(".privacy-allow-list[hidden] { display: none; }");
 });
 
 test("mock data stays behind the dev flag", () => {
