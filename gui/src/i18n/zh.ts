@@ -4190,6 +4190,8 @@ export const zh: Record<TKey, string> = {
   "privacy.settings.allow.removeOne": "删除放行的值 {id}",
   "privacy.settings.allow.empty": "还没有放行任何值。",
   "privacy.settings.allow.tooLong": "一个值最多 {max} 个字符。",
+  "privacy.settings.allow.addFailed": "没能添加放行的值。",
+  "privacy.settings.allow.removeFailed": "没能删除放行的值。",
   "privacy.test.title": "试一试",
   "privacy.test.placeholder": "粘贴一段文本，看看哪些会被换掉",
   "privacy.test.run": "试一试",

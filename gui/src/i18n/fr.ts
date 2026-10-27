@@ -4158,6 +4158,8 @@ export const fr: Record<TKey, string> = {
   "privacy.settings.allow.removeOne": "Retirer la valeur autorisée {id}",
   "privacy.settings.allow.empty": "Rien n'est laissé passer.",
   "privacy.settings.allow.tooLong": "Une valeur ne peut dépasser {max} caractères.",
+  "privacy.settings.allow.addFailed": "Impossible d'ajouter la valeur autorisée.",
+  "privacy.settings.allow.removeFailed": "Impossible de supprimer la valeur autorisée.",
   "privacy.test.title": "Essayer",
   "privacy.test.placeholder": "Collez du texte pour voir ce qui serait remplacé",
   "privacy.test.run": "Essayer",

@@ -4155,6 +4155,8 @@ export const zhTW: Record<TKey, string> = {
   "privacy.settings.allow.removeOne": "刪除放行的值 {id}",
   "privacy.settings.allow.empty": "還沒有放行任何值。",
   "privacy.settings.allow.tooLong": "一個值最多 {max} 個字元。",
+  "privacy.settings.allow.addFailed": "沒能新增放行的值。",
+  "privacy.settings.allow.removeFailed": "沒能刪除放行的值。",
   "privacy.test.title": "試一試",
   "privacy.test.placeholder": "貼上一段文字，看看哪些會被換掉",
   "privacy.test.run": "試一試",
