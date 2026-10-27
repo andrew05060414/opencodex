@@ -18,8 +18,15 @@ import type {
   PrivacyTestResult,
 } from "./privacy-types";
 
-/** Mutable for the session so the settings panel's writes are visible while mocking. */
-let mockConfig: PrivacyConfig = { enabled: true, allowValues: ["sample-allowed-value"] };
+/**
+ * Mutable for the session so the settings panel's writes are visible while mocking.
+ *
+ * The raw values stay in this module variable and are never returned: `mockPrivacyConfig`
+ * projects them to `{ id, length }`, exactly as the backend does. That is deliberate — mocking
+ * must not be the one mode in which a value could reach the page.
+ */
+let mockEnabled = true;
+let mockAllowValues: string[] = ["sample-allowed-value"];
 
 const CLIENTS = ["multica-agent-sdk", "codex", "claude-code", "cursor", "opencode"];
 const PROVIDERS = ["openai", "anthropic", "deepseek", "moonshot"];
@@ -82,7 +89,7 @@ export function mockPrivacyStats(range: PrivacyRange): PrivacyStats {
     masked: 40 + Math.floor(random() * 300),
   }));
   return {
-    enabled: mockConfig.enabled,
+    enabled: mockEnabled,
     range,
     totals: {
       masked: daily.reduce((sum, day) => sum + day.masked, 0),
@@ -95,14 +102,38 @@ export function mockPrivacyStats(range: PrivacyRange): PrivacyStats {
   };
 }
 
+/** The same projection the backend applies: id and length, never the value. */
 export function mockPrivacyConfig(): PrivacyConfig {
-  return { ...mockConfig, allowValues: [...mockConfig.allowValues] };
+  return {
+    enabled: mockEnabled,
+    allowValues: mockAllowValues.map(value => ({ id: digest(value), length: value.length })),
+  };
 }
 
-export function mockSavePrivacyConfig(next: PrivacyConfig): PrivacyConfig {
-  mockConfig = { enabled: next.enabled, allowValues: [...next.allowValues] };
+export function mockSavePrivacyEnabled(enabled: boolean): PrivacyConfig {
+  mockEnabled = enabled;
   return mockPrivacyConfig();
 }
+
+/** Mirrors the route's 400s and its idempotence, so the panel's error path is exercisable. */
+export function mockAddAllowValue(value: string): PrivacyConfig {
+  if (value.length === 0 || value.length > MOCK_ALLOW_VALUE_MAX_LENGTH) {
+    // Concatenated, not interpolated: the i18n lint rule reads template literals, and this
+    // string is the server's wire message echoed back, not page copy.
+    throw new Error("value must be 1-" + MOCK_ALLOW_VALUE_MAX_LENGTH + " characters");
+  }
+  if (!mockAllowValues.includes(value)) mockAllowValues = [...mockAllowValues, value];
+  return mockPrivacyConfig();
+}
+
+export function mockDeleteAllowValue(id: string): PrivacyConfig {
+  const next = mockAllowValues.filter(value => digest(value) !== id);
+  if (next.length === mockAllowValues.length) throw new Error("not found");
+  mockAllowValues = next;
+  return mockPrivacyConfig();
+}
+
+const MOCK_ALLOW_VALUE_MAX_LENGTH = 4096;
 
 /** Not sha256: a mock placeholder only has to be stable and eight hex digits wide. */
 function digest(value: string): string {

@@ -1,18 +1,27 @@
 /**
  * Settings: the switch, the allow-list, and a scratchpad for trying the redactor.
  *
- * The allow-list is the one place a real secret is typed into this page, so it is also the one
- * place with a rule: the value goes straight into the write and is never rendered again. What
- * the user sees afterwards is a count. The backend returns the values (the page has to send
- * them back on the next write), so "never rendered" is a property of this file, kept here
- * rather than argued about per element.
+ * The allow-list is the one place a real secret is typed into this page, and it is now the only
+ * place one exists at all: the server keeps the value, and every route answers with `{ id,
+ * length }` instead. So the draft is the whole lifetime of a secret here — it goes into one
+ * POST body and is cleared — and the list below can only render a length and four hex digits,
+ * because that is all it is given.
  */
 import { useId, useState } from "react";
 import { Notice, Switch } from "../../ui";
 import type { TFn } from "../../i18n/shared";
-import { runPrivacyTest, savePrivacyConfig } from "./privacy-api";
+import {
+  addPrivacyAllowValue,
+  deletePrivacyAllowValue,
+  PRIVACY_ALLOW_VALUE_MAX_LENGTH,
+  runPrivacyTest,
+  savePrivacyEnabled,
+} from "./privacy-api";
 import { PrivacyKindTag } from "./privacy-requests";
 import type { PrivacyConfig, PrivacyTestResult } from "./privacy-types";
+
+/** Enough to tell two entries apart in a list this short, and far too little to be a clue. */
+const ID_DIGITS = 4;
 
 export interface PrivacySettingsProps {
   apiBase: string;
@@ -23,20 +32,22 @@ export interface PrivacySettingsProps {
 
 export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettingsProps) {
   const allowId = useId();
+  const allowListId = useId();
   const testId = useId();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allowDraft, setAllowDraft] = useState("");
+  const [allowOpen, setAllowOpen] = useState(false);
   const [testDraft, setTestDraft] = useState("");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<PrivacyTestResult | null>(null);
 
-  const write = async (next: PrivacyConfig) => {
+  const write = async (run: () => Promise<PrivacyConfig>) => {
     if (saving) return;
     setSaving(true);
     setError(null);
     try {
-      onSaved(await savePrivacyConfig(apiBase, next, t("privacy.saveFailed")));
+      onSaved(await run());
     } catch (cause) {
       setError(cause instanceof Error && cause.message ? cause.message : t("privacy.saveFailed"));
     } finally {
@@ -44,12 +55,17 @@ export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettings
     }
   };
 
+  const tooLong = allowDraft.trim().length > PRIVACY_ALLOW_VALUE_MAX_LENGTH;
+  const canAdd = allowDraft.trim().length > 0 && !tooLong;
+
   const addAllowValue = async () => {
     const value = allowDraft.trim();
-    if (!value || saving) return;
-    // Clear first: the draft must not survive a failed write as readable text on screen.
+    if (!canAdd || saving) return;
+    // Cleared before the request resolves: a failed write must not leave the value readable
+    // on screen, and there is nothing to restore it from afterwards by design.
     setAllowDraft("");
-    await write({ ...config, allowValues: [...config.allowValues, value] });
+    setAllowOpen(true);
+    await write(() => addPrivacyAllowValue(apiBase, value, t("privacy.saveFailed")));
   };
 
   const runTest = async () => {
@@ -77,13 +93,52 @@ export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettings
           on={config.enabled}
           disabled={saving}
           label={t("privacy.settings.enable")}
-          onClick={() => { void write({ ...config, enabled: !config.enabled }); }}
+          onClick={() => { void write(() => savePrivacyEnabled(apiBase, !config.enabled, t("privacy.saveFailed"))); }}
         />
       </div>
 
       <div className="privacy-settings-block">
         <label className="field-label" htmlFor={allowId}>{t("privacy.settings.allow.title")}</label>
-        <p className="muted text-caption">{t("privacy.settings.allow.count", { count: config.allowValues.length })}</p>
+        <div className="privacy-allow-head">
+          {config.allowValues.length === 0 ? (
+            <p className="muted text-caption">{t("privacy.settings.allow.empty")}</p>
+          ) : (
+            <button
+              type="button"
+              className="link-btn text-caption"
+              aria-expanded={allowOpen}
+              aria-controls={allowListId}
+              onClick={() => setAllowOpen(open => !open)}
+            >
+              {t("privacy.settings.allow.count", { count: config.allowValues.length })}
+              <span className="privacy-allow-toggle">
+                {t(allowOpen ? "privacy.settings.allow.hide" : "privacy.settings.allow.show")}
+              </span>
+            </button>
+          )}
+        </div>
+        {config.allowValues.length > 0 && (
+          <ul id={allowListId} className="privacy-allow-list" hidden={!allowOpen}>
+            {config.allowValues.map(entry => {
+              const shortId = entry.id.slice(0, ID_DIGITS);
+              return (
+                <li key={entry.id} className="privacy-allow-row">
+                  <span className="text-control">{t("privacy.settings.allow.length", { length: entry.length })}</span>
+                  <code className="privacy-allow-id" title={t("privacy.settings.allow.idLabel")}>{shortId}</code>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={saving}
+                    aria-label={t("privacy.settings.allow.removeOne", { id: shortId })}
+                    onClick={() => { void write(() => deletePrivacyAllowValue(apiBase, entry.id, t("privacy.saveFailed"))); }}
+                  >
+                    {t("privacy.settings.allow.remove")}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <form
           className="privacy-settings-form"
           onSubmit={event => { event.preventDefault(); void addAllowValue(); }}
@@ -98,11 +153,15 @@ export function PrivacySettings({ apiBase, config, onSaved, t }: PrivacySettings
             placeholder={t("privacy.settings.allow.placeholder")}
             onChange={event => setAllowDraft(event.target.value)}
           />
-          <button type="submit" className="btn btn-ghost btn-sm" disabled={saving || !allowDraft.trim()}>
+          <button type="submit" className="btn btn-ghost btn-sm" disabled={saving || !canAdd}>
             {t("privacy.settings.allow.add")}
           </button>
         </form>
-        <p className="muted text-caption">{t("privacy.settings.allow.note")}</p>
+        <p className={tooLong ? "text-caption privacy-allow-error" : "muted text-caption"}>
+          {tooLong
+            ? t("privacy.settings.allow.tooLong", { max: PRIVACY_ALLOW_VALUE_MAX_LENGTH })
+            : t("privacy.settings.allow.note")}
+        </p>
       </div>
 
       <div className="privacy-settings-block">
