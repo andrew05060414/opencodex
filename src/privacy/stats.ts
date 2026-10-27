@@ -24,12 +24,35 @@ export class PrivacyStatsStore {
     this.buffer = new Array(this.capacity);
   }
 
-  record(entry: Omit<PrivacyRequestRecord, "id">): void {
-    if (entry.hits.length === 0) return;
-    const record: PrivacyRequestRecord = { ...entry, id: randomUUID() };
+  /** Returns the generated record id (for a later `backfillRoute`), or null if nothing was recorded. */
+  record(entry: Omit<PrivacyRequestRecord, "id">): string | null {
+    if (entry.hits.length === 0) return null;
+    const id = randomUUID();
+    const record: PrivacyRequestRecord = { ...entry, id };
     this.buffer[this.head] = record;
     this.head = (this.head + 1) % this.capacity;
     if (this.count < this.capacity) this.count += 1;
+    return id;
+  }
+
+  /**
+   * Fills in `provider`/`model` once routing has settled, for a record created before that was
+   * known (redaction is mounted ahead of routing, so the request is visible in stats -- as
+   * `provider: "unknown"` -- even if it never reaches a route). A missing id or an id for a
+   * record already evicted by the ring buffer's capacity is a silent no-op: never affects the
+   * request, and stale/duplicate backfills simply do nothing.
+   */
+  backfillRoute(id: string | null | undefined, patch: { provider?: string; model?: string }): void {
+    if (!id) return;
+    for (let i = 0; i < this.count; i += 1) {
+      const idx = (this.head - 1 - i + this.capacity) % this.capacity;
+      const item = this.buffer[idx];
+      if (item && item.id === id) {
+        if (patch.provider !== undefined) item.provider = patch.provider;
+        if (patch.model !== undefined) item.model = patch.model;
+        return;
+      }
+    }
   }
 
   private all(): PrivacyRequestRecord[] {
@@ -109,10 +132,10 @@ export function recordPrivacyHitsBestEffort(entry: {
   model?: string;
   hits: RedactionHit[];
   placeholderHashes: string[];
-}): void {
-  if (entry.hits.length === 0) return;
+}): string | null {
+  if (entry.hits.length === 0) return null;
   try {
-    globalPrivacyStats.record({
+    return globalPrivacyStats.record({
       ts: Date.now(),
       client: entry.client,
       provider: entry.provider,
@@ -122,6 +145,20 @@ export function recordPrivacyHitsBestEffort(entry: {
     });
   } catch (err) {
     console.warn("[opencodex] privacy stats recording failed (request was not affected):", err);
+    return null;
+  }
+}
+
+/**
+ * Best-effort backfill once routing has settled; see `PrivacyStatsStore.backfillRoute`. Never
+ * throws, and a missing/stale/absent id is a silent no-op -- the request is never affected.
+ */
+export function backfillPrivacyRouteBestEffort(id: string | null | undefined, patch: { provider?: string; model?: string }): void {
+  if (!id) return;
+  try {
+    globalPrivacyStats.backfillRoute(id, patch);
+  } catch (err) {
+    console.warn("[opencodex] privacy stats route backfill failed (request was not affected):", err);
   }
 }
 

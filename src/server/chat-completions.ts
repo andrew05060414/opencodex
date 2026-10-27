@@ -40,6 +40,7 @@ import { classifyError, cyberPolicyErrorType, CYBER_POLICY_ERROR_CODE, isCyberPo
 import { redactSecretString } from "../lib/redact";
 import { formatClientRetryAfter, resolveClientRetryAfter } from "../lib/retry-after";
 import {
+  backfillPrivacyRouteBestEffort,
   clientLabelFromHeaders,
   isPrivacyRedactionEnabled,
   privacyOptionsFromConfig,
@@ -236,11 +237,14 @@ async function handleChatCompletionsWithBudget(
   // pipeline, continues from this same (reassigned) `chatBody`. One-way only; no response
   // restoration. Fail closed: a redaction error must never let the original body reach a
   // vendor.
+  // Backfilled once routing settles below (the one place logCtx.provider/model are decided for
+  // an ordinary request) so the stats row shows a real provider/model instead of "unknown".
+  let privacyStatsEventId: string | null = null;
   if (isPrivacyRedactionEnabled(config)) {
     try {
       const outcome = redactClientBody(chatBody, privacyOptionsFromConfig(config));
       chatBody = outcome.body as Rec;
-      recordPrivacyHitsBestEffort({
+      privacyStatsEventId = recordPrivacyHitsBestEffort({
         client: clientLabelFromHeaders(req.headers),
         model: typeof chatBody.model === "string" ? chatBody.model : undefined,
         hits: outcome.hits,
@@ -310,6 +314,7 @@ async function handleChatCompletionsWithBudget(
     logCtx.provider = route.providerName;
     logCtx.routeDecision = route.routeDecision;
     settledRoute = route;
+    backfillPrivacyRouteBestEffort(privacyStatsEventId, { provider: route.providerName, model: route.modelId });
     routeMayChangeCredentialDomain = route.combo !== undefined || route.routeKind === "policy"
       || route.credentialDomainRewrite === true;
     callerAuthorizationRoute = !routeMayChangeCredentialDomain
