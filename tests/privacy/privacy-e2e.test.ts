@@ -9,8 +9,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleChatCompletions } from "../../src/server/chat-completions";
-import { handleClaudeMessages } from "../../src/server/claude-messages";
+import { handleClaudeCountTokens, handleClaudeMessages } from "../../src/server/claude-messages";
 import { handleResponses } from "../../src/server/responses";
+import { globalPrivacyStats } from "../../src/privacy";
 import type { OcxConfig } from "../../src/types";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
@@ -220,6 +221,85 @@ describe("Anthropic Messages (/v1/messages) native passthrough: known issue #2",
       const response = await handleClaudeMessages(req, config, { model: "claude-sonnet-4-6", provider: "anthropic-native" });
       expect(response.status).toBe(503);
       expect(upstream.bodies).toHaveLength(0);
+    } finally { upstream.stop(); }
+  });
+});
+
+describe("Anthropic Messages count_tokens (/v1/messages/count_tokens) native passthrough", () => {
+  test("enabled: the fake upstream never sees the fake secret", async () => {
+    const upstream = fakeUpstream(() => Response.json({ input_tokens: 42 }));
+    try {
+      const apiKey = fakeOpenAiKey("count-tokens-e2e");
+      const config = {
+        providers: {},
+        claudeCode: { anthropicBaseUrl: upstream.url },
+        privacy: { enabled: true },
+      } as unknown as OcxConfig;
+      const body = anthropicBodyFixture("claude-sonnet-4-6", apiKey);
+      const req = new Request("http://localhost/v1/messages/count_tokens", {
+        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer sk-ant-oat01-fixture" },
+        body: JSON.stringify(body),
+      });
+      const response = await handleClaudeCountTokens(req, config);
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(upstream.bodies).toHaveLength(1);
+      expect(JSON.stringify(upstream.bodies[0])).not.toContain(apiKey);
+    } finally { upstream.stop(); }
+  });
+
+  test("fail closed: a redaction error returns 503 and the fake upstream is never called", async () => {
+    const upstream = fakeUpstream();
+    try {
+      const config = {
+        providers: {},
+        claudeCode: { anthropicBaseUrl: upstream.url },
+        privacy: { enabled: true, allowValues: {} },
+      } as unknown as OcxConfig;
+      const req = new Request("http://localhost/v1/messages/count_tokens", {
+        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer sk-ant-oat01-fixture" },
+        body: JSON.stringify(anthropicBodyFixture("claude-sonnet-4-6")),
+      });
+      const response = await handleClaudeCountTokens(req, config);
+      expect(response.status).toBe(503);
+      expect(upstream.bodies).toHaveLength(0);
+    } finally { upstream.stop(); }
+  });
+});
+
+describe("privacy stats: provider/model are backfilled once routing settles (Chat Completions)", () => {
+  test("GET /api/privacy/stats shows the real provider and model, not \"unknown\"", async () => {
+    globalPrivacyStats.reset();
+    const upstream = fakeUpstream(() => Response.json({
+      id: "chatcmpl_backfill", object: "chat.completion",
+      choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+    }));
+    try {
+      const NAME = "native-chat-privacy-backfill";
+      const apiKey = fakeOpenAiKey("chat-backfill-e2e");
+      const config = {
+        port: 0, defaultProvider: NAME,
+        providers: { [NAME]: { adapter: "openai-chat", baseUrl: upstream.url, authMode: "key", apiKey: "fixture-key", allowPrivateNetwork: true } },
+        privacy: { enabled: true },
+      } as unknown as OcxConfig;
+      const req = new Request("http://localhost/v1/chat/completions", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(chatBodyFixture(`${NAME}/test`, apiKey)),
+      });
+      const response = await handleChatCompletions(req, config, { model: "", provider: "" });
+      expect(response.status).toBe(200);
+      await response.text();
+      const { handlePrivacyRoutes } = await import("../../src/server/management/privacy-routes");
+      const statsReq = new Request("http://localhost/api/privacy/stats?range=30d", { method: "GET" });
+      const statsResp = await handlePrivacyRoutes({
+        req: statsReq, url: new URL(statsReq.url), config, deps: {}, version: "test", principal: { kind: "admin" },
+      } as never);
+      const data = await statsResp?.json();
+      expect(data.requests.length).toBeGreaterThan(0);
+      const row = data.requests[0]!;
+      expect(row.provider).toBe(NAME);
+      expect(row.model).toBe("test");
+      expect(row.provider).not.toBe("unknown");
     } finally { upstream.stop(); }
   });
 });
