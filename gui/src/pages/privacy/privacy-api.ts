@@ -95,10 +95,15 @@ export function normalizePrivacyStats(value: unknown, fallbackRange: PrivacyRang
 }
 
 export function normalizePrivacyConfig(value: unknown): PrivacyConfig {
-  const raw = (value ?? {}) as Partial<PrivacyConfig>;
+  const raw = (value ?? {}) as { enabled?: unknown; allowValues?: unknown };
+  const rows = Array.isArray(raw.allowValues) ? raw.allowValues : [];
   return {
     enabled: raw.enabled === true,
-    allowValues: Array.isArray(raw.allowValues) ? raw.allowValues.filter(v => typeof v === "string") : [],
+    // Only `{ id, length }` is on the wire. A row without an id is unusable — it could not be
+    // deleted — so it is dropped rather than rendered as a blank entry.
+    allowValues: rows
+      .map(row => ({ id: str((row ?? {}).id), length: num((row ?? {}).length) }))
+      .filter(row => row.id !== ""),
   };
 }
 
@@ -132,23 +137,62 @@ export async function fetchPrivacyConfig(
   return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
 }
 
-export async function savePrivacyConfig(
+/** The switch, and only the switch: `PUT /api/privacy/config` takes `{ enabled }` alone. */
+export async function savePrivacyEnabled(
   apiBase: string,
-  next: PrivacyConfig,
+  enabled: boolean,
   failMessage: string,
   signal?: AbortSignal,
 ): Promise<PrivacyConfig> {
-  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockSavePrivacyConfig(next);
+  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockSavePrivacyEnabled(enabled);
   const res = await fetch(`${apiBase}/api/privacy/config`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(next),
+    body: JSON.stringify({ enabled }),
     signal,
   });
-  const body = await readJsonOrThrow<unknown>(res, failMessage);
-  // A 204 is a legitimate answer to a write; the request body is then the new truth.
-  return body === undefined ? next : normalizePrivacyConfig(body);
+  return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
 }
+
+/**
+ * Add one allowed value. The raw value is in this request body and nowhere else: the answer is
+ * the projected list, so the caller never gets it back and has nothing to hold on to.
+ * Idempotent server-side; an empty or over-long value is refused with a 400 whose message is
+ * what the caller shows.
+ */
+export async function addPrivacyAllowValue(
+  apiBase: string,
+  value: string,
+  failMessage: string,
+  signal?: AbortSignal,
+): Promise<PrivacyConfig> {
+  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockAddAllowValue(value);
+  const res = await fetch(`${apiBase}/api/privacy/allow-values`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+    signal,
+  });
+  return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
+}
+
+/** Remove one allowed value by the id the list carries. */
+export async function deletePrivacyAllowValue(
+  apiBase: string,
+  id: string,
+  failMessage: string,
+  signal?: AbortSignal,
+): Promise<PrivacyConfig> {
+  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockDeleteAllowValue(id);
+  const res = await fetch(`${apiBase}/api/privacy/allow-values/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    signal,
+  });
+  return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
+}
+
+/** Server-side cap, mirrored so the control can refuse before the round trip. */
+export const PRIVACY_ALLOW_VALUE_MAX_LENGTH = 4096;
 
 export async function runPrivacyTest(
   apiBase: string,
