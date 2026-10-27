@@ -1502,7 +1502,25 @@ export async function handleClaudeCountTokens(
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return anthropicErrorResponse(400, "request body must be a JSON object");
   }
-  const raw = body as Rec;
+  let raw = body as Rec;
+  // Privacy redaction (privacy_contract.md): mounted on the client's original request body,
+  // before the native-passthrough branch (anthropicNativePassthrough) further down, which
+  // sends `raw` to the real upstream verbatim. Fail closed: a redaction error must never let
+  // the original body reach a vendor.
+  if (isPrivacyRedactionEnabled(config)) {
+    try {
+      const outcome = redactClientBody(raw, privacyOptionsFromConfig(config));
+      raw = outcome.body as Rec;
+      recordPrivacyHitsBestEffort({
+        client: clientLabelFromHeaders(req.headers),
+        model: typeof raw.model === "string" ? raw.model : undefined,
+        hits: outcome.hits,
+        placeholderHashes: outcome.placeholderHashes,
+      });
+    } catch {
+      return anthropicErrorResponse(503, "privacy redaction failed; request was not sent", "api_error");
+    }
+  }
   if (typeof raw.model !== "string" || raw.model.length === 0) {
     return anthropicErrorResponse(400, "model is required");
   }
