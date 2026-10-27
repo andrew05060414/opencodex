@@ -11,7 +11,7 @@ import { useDataSurface } from "../data-surface";
 import { DataSurfaceSkeleton, DataSurfaceStatus } from "../components/data-surface";
 import { Notice } from "../ui";
 import { useI18n } from "../i18n/shared";
-import { fetchPrivacyConfig, fetchPrivacyStats, savePrivacyConfig } from "./privacy/privacy-api";
+import { fetchPrivacyConfig, fetchPrivacyStats, savePrivacyEnabled } from "./privacy/privacy-api";
 import { privacyKindColor, privacyKindKey, PRIVACY_KINDS } from "./privacy/privacy-kinds";
 import { PrivacyOverview } from "./privacy/privacy-overview";
 import { PrivacyRequestList, PrivacyValueList } from "./privacy/privacy-requests";
@@ -80,7 +80,7 @@ export default function Privacy({ apiBase }: { apiBase: string }) {
     if (enabling) return;
     setEnabling(true);
     try {
-      setSavedConfig(await savePrivacyConfig(apiBase, { ...config, enabled: true }, t("privacy.saveFailed")));
+      setSavedConfig(await savePrivacyEnabled(apiBase, true, t("privacy.saveFailed")));
       statsResource.refresh();
     } catch {
       // The settings panel owns reporting; opening it puts the failure next to the control.
