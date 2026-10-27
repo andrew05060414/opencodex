@@ -18,7 +18,7 @@ const raw = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
  */
 const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-test("the sidebar is eleven group rows in two tiers, owning every sidebar page once", async () => {
+test("the sidebar is twelve group rows in two tiers, owning every sidebar page once", async () => {
   const { NAV_GROUPS, NAV_TIERS, groupForPage } = await import("../src/nav-groups");
   const { VALID_PAGES } = await import("../src/app-routing");
 
@@ -27,7 +27,7 @@ test("the sidebar is eleven group rows in two tiers, owning every sidebar page o
   expect(NAV_TIERS.map(entry => entry.tier)).toEqual(["daily", "advanced"]);
   // The exact rows, in order. A count alone would pass if a row were swapped for another.
   expect(NAV_GROUPS.map(group => [group.id, group.tier])).toEqual([
-    ["home", "daily"], ["connect", "daily"], ["providers", "daily"], ["models", "daily"], ["accounts", "daily"], ["subagents", "daily"], ["usage-logs", "daily"], ["remote", "daily"],
+    ["home", "daily"], ["connect", "daily"], ["providers", "daily"], ["models", "daily"], ["accounts", "daily"], ["subagents", "daily"], ["usage-logs", "daily"], ["privacy", "daily"], ["remote", "daily"],
     ["proxy", "advanced"], ["advisor", "advanced"], ["advanced", "advanced"],
   ]);
   expect(Object.fromEntries(NAV_GROUPS.map(group => [group.id, [...group.pages]]))).toEqual({
@@ -42,6 +42,9 @@ test("the sidebar is eleven group rows in two tiers, owning every sidebar page o
     "usage-logs": ["usage", "logs", "storage"],
     // Claude is a tab inside the Route page, owned through `embedded`.
     connect: ["integrations", "setup"],
+    // Privacy answers "what did we not send?", which is not a Usage & Logs question, so it
+    // owns a row instead of becoming a fourth member of that switcher.
+    privacy: ["privacy"],
     remote: ["remote", "remote-workspace"],
     // Fine-tuning surfaces stay one click away instead of hiding behind the hub.
     proxy: ["dashboard"],
@@ -57,6 +60,7 @@ test("the sidebar is eleven group rows in two tiers, owning every sidebar page o
   expect(groupForPage("setup")?.id).toBe("connect");
   expect(groupForPage("storage")?.id).toBe("usage-logs");
   expect(groupForPage("dashboard")?.id).toBe("proxy");
+  expect(groupForPage("privacy")?.id).toBe("privacy");
   expect(groupForPage("claude")?.id).toBe("connect");
   expect(groupForPage("remote-workspace")?.id).toBe("remote");
 
