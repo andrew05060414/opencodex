@@ -24,6 +24,13 @@ import {
 import { ADVISOR_INTERNAL_CAPABILITY_HEADER, isInternalCallCapability } from "../lib/local-internal-call-capability";
 import { classifyError, cyberPolicyErrorType, CYBER_POLICY_ERROR_CODE, isCyberPolicyCode, UNDECLARED_TOOL_CALL_ERROR_CODE } from "../lib/errors";
 import { redactSecretString } from "../lib/redact";
+import {
+  clientLabelFromHeaders,
+  isPrivacyRedactionEnabled,
+  privacyOptionsFromConfig,
+  recordPrivacyHitsBestEffort,
+  redactClientBody,
+} from "../privacy";
 import { resolveClientRetryAfter } from "../lib/retry-after";
 import {
   applyReplayRefusalClientHeaders,
@@ -170,6 +177,28 @@ async function handleChatCompletionsWithBudget(
       overflow ? "request_too_large" : undefined,
       overflow ? "translation_buffer_limit" : undefined,
     );
+  }
+
+  // Privacy redaction (privacy_contract.md): mounted on the client's original request body,
+  // before routing decides the native-Chat passthrough or any other branch -- every path
+  // below, including the native lane that returns without going through the Responses
+  // pipeline, continues from this same (reassigned) `chatBody`. One-way only; no response
+  // restoration. Fail closed: a redaction error must never let the original body reach a
+  // vendor.
+  if (isPrivacyRedactionEnabled(config)) {
+    try {
+      const outcome = redactClientBody(chatBody, privacyOptionsFromConfig(config));
+      chatBody = outcome.body as Rec;
+      recordPrivacyHitsBestEffort({
+        client: clientLabelFromHeaders(req.headers),
+        model: typeof chatBody.model === "string" ? chatBody.model : undefined,
+        hits: outcome.hits,
+        placeholderHashes: outcome.placeholderHashes,
+      });
+    } catch {
+      if (logIds) addFinalRequestLog(logIds.requestId, logIds.start, logCtx, 503, { closeReason: "non_stream" });
+      return chatCompletionsErrorResponse(503, "privacy redaction failed; request was not sent", "server_error", "privacy_redaction_failed");
+    }
   }
 
   const requestedModel = chatBody.model as string;

@@ -15,6 +15,13 @@ import {
 } from "./admission-model-scope";
 import { jsonUtf8Bytes } from "../lib/json-byte-size";
 import { redactSecretString } from "../lib/redact";
+import {
+  clientLabelFromHeaders,
+  isPrivacyRedactionEnabled,
+  privacyOptionsFromConfig,
+  recordPrivacyHitsBestEffort,
+  redactClientBody,
+} from "../privacy";
 import { enforceAnthropicImageLimits } from "../adapters/anthropic-image-guard";
 import { normalizeAnthropicImages } from "../adapters/anthropic-image-normalize";
 import { openAIChatSerializesThinking } from "../adapters/openai-chat/messages";
@@ -618,6 +625,28 @@ async function handleClaudeMessagesWithBudget(
   let messagesFeatures: () => Iterable<ProtocolFeature> = () => [];
   try {
     anthropicBody = await readAnthropicBody(req, translatorBudget, resolveInboundBodyLimitBytes(config.maxInboundBodyBytes));
+    // Privacy redaction (privacy_contract.md): mounted on the client's original request
+    // body, before ANY of the processing below -- including the native Anthropic Messages
+    // passthrough further down in this function, which returns without going through the
+    // Responses pipeline. Every path continues from this same (reassigned) `anthropicBody`.
+    // One-way only; no response restoration. Fail closed: a redaction error must never let
+    // the original body reach a vendor.
+    if (isPrivacyRedactionEnabled(config)) {
+      try {
+        const outcome = redactClientBody(anthropicBody, privacyOptionsFromConfig(config));
+        anthropicBody = outcome.body;
+        const bodyModel = isRec(anthropicBody) ? anthropicBody.model : undefined;
+        recordPrivacyHitsBestEffort({
+          client: clientLabelFromHeaders(req.headers),
+          model: typeof bodyModel === "string" ? bodyModel : undefined,
+          hits: outcome.hits,
+          placeholderHashes: outcome.placeholderHashes,
+        });
+      } catch {
+        if (logIds) addFinalRequestLog(logIds.requestId, logIds.start, logCtx, 503, { closeReason: "non_stream" });
+        return anthropicErrorResponse(503, "privacy redaction failed; request was not sent", "api_error");
+      }
+    }
     // Defensive [1m] strip (devlog 138): clients normally remove the context-variant
     // marker themselves; the 1M signal we act on is the anthropic-beta header.
     // Case-insensitive — the CLI matches /\[1m\]/i (audit 021 #7).
