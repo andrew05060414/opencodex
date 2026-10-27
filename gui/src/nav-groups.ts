@@ -15,7 +15,7 @@
  */
 import type { Page } from "./app-routing";
 import type { TKey } from "./i18n/shared";
-import { IconActivity, IconBot, IconBoxes, IconCodex, IconGrid, IconList, IconMonitor, IconPlug, IconRoute, IconServer, IconStar } from "./icons";
+import { IconActivity, IconBot, IconBoxes, IconCodex, IconGrid, IconList, IconMonitor, IconPlug, IconRoute, IconServer, IconShield, IconStar } from "./icons";
 
 export type NavGroupId =
   | "home"
@@ -25,6 +25,7 @@ export type NavGroupId =
   | "subagents"
   | "usage-logs"
   | "connect"
+  | "privacy"
   | "remote"
   | "proxy"
   | "advisor"
@@ -67,6 +68,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   // Which model a helper agent runs on is changed as often as the main model.
   { id: "subagents", tier: "daily", tkey: "nav.subagents", Icon: IconBot, pages: ["subagents"] },
   { id: "usage-logs", tier: "daily", tkey: "nav.usageLogs", Icon: IconActivity, pages: ["usage", "logs", "storage"] },
+  // Privacy answers a different question from Usage ("what did we not send?" rather than
+  // "what did we spend?"), so it is its own row rather than a switcher member under Usage & Logs.
+  { id: "privacy", tier: "daily", tkey: "nav.privacy", Icon: IconShield, pages: ["privacy"] },
   // Remote Link follows Usage & Logs: other machines' traffic shows up in that report.
   { id: "remote", tier: "daily", tkey: "nav.remote", Icon: IconMonitor, pages: ["remote", "remote-workspace"] },
   // Fine-tuning keeps its surfaces visible too; the All settings hub is the searchable index
