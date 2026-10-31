@@ -310,6 +310,36 @@ data: ${JSON.stringify({ type: "message_stop" })}
     expect(getRequestLogEntries().filter(e => e.requestId === requestId)).toHaveLength(1);
   });
 
+  test("a request-selector effort pin keeps the combo child on the bridge", async () => {
+    await seedOAuth(1);
+    const frames = [
+      ["message_start", { type: "message_start", message: { ...MESSAGE_RESPONSE, content: [], usage: { input_tokens: 3, output_tokens: 0 } } }],
+      ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
+      ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } }],
+      ["content_block_stop", { type: "content_block_stop", index: 0 }],
+      ["message_delta", { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } }],
+      ["message_stop", { type: "message_stop" }],
+    ].map(([event, data]) => `event: ${event}
+data: ${JSON.stringify(data)}
+
+`).join("");
+    const sse = () => new Response(frames, { status: 200, headers: { "content-type": "text/event-stream" } });
+    const config = comboConfig({ oauthResponder: sse, apiKeyResponder: sse });
+    config.modelPinnedEfforts = { "combo/pair": "high" };
+    const requestId = `test-native-combo-selector-pin-${crypto.randomUUID()}`;
+    const response = await handleClaudeMessages(new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "combo/pair", max_tokens: 1024, messages: [{ role: "user", content: "hello pin" }] }),
+    }), config, { model: "", provider: "" }, { requestId, start: Date.now() });
+    expect(response.status).toBe(200);
+    await response.text();
+    const rows = getRequestLogEntries().filter(e => e.requestId === requestId);
+    expect(rows).toHaveLength(1);
+    const attempts = (rows[0]!.protocolTrace as { attempts?: Array<{ mode: string }> } | undefined)?.attempts ?? [];
+    expect(attempts.every(attempt => attempt.mode !== "native")).toBe(true);
+  });
+
   test("when candidate 1 returns 500, combo fails over to candidate 2", async () => {
     await seedOAuth(1);
 

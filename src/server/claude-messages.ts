@@ -1259,6 +1259,7 @@ async function handleClaudeMessagesWithBudget(
         req,
         config,
         envelope,
+        selector: nativeSelector,
         requestedModel,
         translatorBudget,
         callerAnthropicBeta: req.headers.get("anthropic-beta"),

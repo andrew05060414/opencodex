@@ -1194,9 +1194,11 @@ export function createNativeMessagesComboSource(input: {
   clientIdentity?: AnthropicClientIdentity;
   sessionKey?: string | null;
   modelScope?: AdmissionModelScope;
+  selector?: NativeMessagesSelector;
 }): ComboProtocolSource {
   return {
     inbound: "messages",
+    ...(input.selector ? { selector: input.selector } : {}),
     envelope: input.envelope,
     dispatchNativeChild: child => runNativeMessagesAttempt({
       req: input.req,

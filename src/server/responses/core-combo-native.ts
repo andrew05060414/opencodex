@@ -39,7 +39,7 @@ import { resolveOpenCodeGoTransport } from "../../providers/opencode-go-transpor
 import { getOrAllocateRequestSessionLane } from "../request-log-conversation";
 import { assertRouteAllowedByScope } from "../admission-model-scope";
 import { isNativeChatRouteEligible } from "../chat-native-eligibility";
-import { isNativeMessagesRouteEligible } from "../messages-native-eligibility";
+import { isNativeMessagesRouteEligible, type NativeMessagesSelector } from "../messages-native-eligibility";
 import { chatCompletionsErrorResponse } from "../../chat/outbound";
 import { anthropicErrorResponse } from "../../claude/outbound";
 import type { FinalRequestLogMeta } from "../inference/final-log";
@@ -83,6 +83,8 @@ export interface NativeComboChildRun {
 /** Supplied by the Chat or Messages ingress for a combo route when native combo candidates are active. */
 export interface ComboProtocolSource {
   readonly inbound: "chat" | "messages";
+  /** The request facts the standalone Messages path judges eligibility with (selector-keyed effort pins). */
+  readonly selector?: NativeMessagesSelector;
   readonly envelope: ProtocolEnvelope;
   /** Runs native child attempt; the response it returns is in the child's wire. */
   dispatchNativeChild(input: NativeComboChildRun): Promise<Response>;
@@ -165,7 +167,7 @@ export function createComboProtocolLanes(input: {
       if (route.provider.adapter !== "anthropic") return undefined;
       const body = envelope.freshBody();
       body.model = selector(target);
-      return isNativeMessagesRouteEligible(route, body, config) ? body : undefined;
+      return isNativeMessagesRouteEligible(route, body, config, source.selector) ? body : undefined;
     }
     return undefined;
   };
