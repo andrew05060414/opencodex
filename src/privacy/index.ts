@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./redact";
 export * from "./stats";
+export * from "./restore";
 
 import type { OcxConfig } from "../types";
 import type { RedactOptions } from "./redact";
@@ -22,6 +23,8 @@ export function privacyOptionsFromConfig(config: OcxConfig | null | undefined): 
   return {
     allowValues: config?.privacy?.allowValues ?? [],
     redactEmails: config?.privacy?.maskEmails === true,
+    // The restore map holds real originals; it is built only when reply restoration is on.
+    collectRestoreMap: config?.privacy?.restoreResponses === true,
   };
 }
 

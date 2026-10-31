@@ -32,6 +32,8 @@ import {
   privacyOptionsFromConfig,
   recordPrivacyHitsBestEffort,
   redactClientBody,
+  registerPrivacyRestore,
+  applyPrivacyRestore,
 } from "../privacy";
 import { enforceAnthropicImageLimits } from "../adapters/anthropic-image-guard";
 import { normalizeAnthropicImages } from "../adapters/anthropic-image-normalize";
@@ -625,7 +627,10 @@ export async function handleClaudeMessages(
   const translatorBudget = createTranslatorBudget();
   try {
     const response = await handleClaudeMessagesWithBudget(req, config, logCtx, translatorBudget, logIds, requestPolicy, ingress);
-    const finalized = carryProxyError(response, finalizeTranslatorBudgetResponse(response, translatorBudget, req.signal));
+    const finalized = carryProxyError(
+      response,
+      applyPrivacyRestore(logCtx, "messages", finalizeTranslatorBudgetResponse(response, translatorBudget, req.signal)),
+    );
     const evidence = comboFailureEvidence(response);
     return normalizeMessagesProxyRefusal(req, evidence === undefined ? finalized : attachComboFailureEvidence(finalized, evidence));
   } catch (error) {
@@ -716,6 +721,7 @@ async function handleClaudeMessagesWithBudget(
       try {
         const outcome = redactClientBody(anthropicBody, privacyOptionsFromConfig(config));
         anthropicBody = outcome.body;
+        registerPrivacyRestore(logCtx, "messages", outcome.restoreMap, config);
         const bodyModel = isRec(anthropicBody) ? anthropicBody.model : undefined;
         // Routing hasn't run yet, so provider/model are still unknown; addFinalRequestLog
         // backfills this row from logCtx once they are (request-log.ts) -- the one point every

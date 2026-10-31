@@ -24,6 +24,7 @@ import { captureHostedAdvisorSpendScope } from "./hosted-advisor-spend";
 import { isPlaintextV2AgentMessagesEnabled } from "../../config/multi-agent-surface";
 import { isUnattendedAgyAcpHttpTurn } from "../../adapters/agy-acp/policy";
 import { withSendAdmissionScope } from "./send-admission";
+import { applyPrivacyRestore } from "../../privacy";
 /**
  * Route one `/v1/responses` request through the adapter pipeline: recovery loop, passthrough
  * wire, image/web-search bridges, and the terminal-guard continuation.
@@ -66,7 +67,8 @@ export async function handleResponses(
       sendBudget: options.sendBudget ?? createInferenceSendBudget(req, logCtx, hostedAdvisorSpendScope?.ceilings),
     }, (req, config, logCtx, options) => withSendAdmissionScope(
       () => handleResponsesInner(req, config, logCtx, options, requestDispatchers)));
-    const finalResponse = ownsBudget ? finalizeOwnedTranslatorBudget(response, translatorBudget, abortSignal) : response;
+    const finalResponse = applyPrivacyRestore(logCtx, "responses",
+      ownsBudget ? finalizeOwnedTranslatorBudget(response, translatorBudget, abortSignal) : response);
     if (!accountLoad.lease) { release(); return finalResponse; }
     return finalizeAccountLease(finalResponse, release);
   } catch (error) {
