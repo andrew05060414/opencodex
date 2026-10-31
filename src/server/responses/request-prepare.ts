@@ -88,6 +88,7 @@ import {
   privacyOptionsFromConfig,
   recordPrivacyHitsBestEffort,
   redactClientBody,
+  registerPrivacyRestore,
 } from "../../privacy";
 import { mapCodexAuthContextErrorToResponse } from "./codex-auth-error";
 import type { OcxParsedRequest } from "../../types";
@@ -278,6 +279,8 @@ export async function prepareResponsesRequest(
     try {
       const outcome = redactClientBody(body, privacyOptionsFromConfig(config));
       body = outcome.body;
+      // Two-way mode only: the first (outermost) entry point to redact owns restoration.
+      registerPrivacyRestore(logCtx, inboundWire === "anthropic" ? "messages" : inboundWire, outcome.restoreMap, config);
       const bodyModel = body && typeof body === "object" && !Array.isArray(body)
         ? (body as { model?: unknown }).model
         : undefined;
