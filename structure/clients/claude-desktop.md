@@ -124,6 +124,8 @@ never prints the proxy value and never records a doctor failure, because the CLI
 still route. An applied, selected picker profile uses Desktop's app-owned fixed egress proxy while that proxy is available, including when missing trust leaves the picker pending and `claude.ai` tunnels relay blindly. Missing trust preserves the profile and its selection. The system-proxy observation applies to picker-off installs and pending installs with no applied picker profile.
 Doctor verifies the selected profile's loopback CONNECT relay directly, independently of picker trust or effectiveness. Off, absent, unselected, unreadable, stale-settings and unavailable-relay cases retain the registry diagnostic; a credential-bearing main intercept proxy does not count as Desktop's egress relay.
 
+Request redaction (`privacy.enabled`) does not cover the picker's `claude.ai:443` relay. That traffic is Desktop's own first-party chat in a private claude.ai format; the relay streams request bodies unchanged and only rewrites the bootstrap response. Redaction covers the Responses, Chat and Messages entry points and the Claude Code `api.anthropic.com` intercept path (including Claude Code processes spawned by Desktop). Sensitive content belongs in the Code tab with an OpenCodex model, not in the claude.ai chat box.
+
 Surfaces: `ocx claude desktop apply [--first-party|--gateway]` in `src/cli/claude-desktop.ts`;
 `ocx claude config set --first-party on|off` and the Claude Code page switch control the CLI intent; `ocx ensure` refreshes a stale or absent env while it is on.
 `POST /api/claude-desktop/apply` with `mode` ∈ `first-party|gateway|static|hybrid|discovery` and

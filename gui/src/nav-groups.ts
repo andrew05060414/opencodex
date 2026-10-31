@@ -15,7 +15,7 @@
  */
 import type { Page } from "./app-routing";
 import type { TKey } from "./i18n/shared";
-import { IconActivity, IconBot, IconBoxes, IconCodex, IconGrid, IconLink, IconMonitor, IconServer } from "./icons";
+import { IconActivity, IconBot, IconBoxes, IconCodex, IconGrid, IconLink, IconMonitor, IconServer, IconShield } from "./icons";
 
 export type NavGroupId =
   | "dashboard"
@@ -25,6 +25,7 @@ export type NavGroupId =
   | "models"
   | "subagents"
   | "usage-logs"
+  | "privacy"
   | "remote";
 
 export interface NavGroup {
@@ -45,6 +46,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   // in the switcher instead of taking a sidebar row of its own.
   { id: "subagents", tkey: "nav.subagents", Icon: IconBot, pages: ["subagents", "advisor"] },
   { id: "usage-logs", tkey: "nav.usageLogs", Icon: IconActivity, pages: ["usage", "logs", "storage"] },
+  // Privacy answers a different question from Usage ("what did we not send?" rather than
+  // "what did we spend?"), so it is its own row rather than a fourth switcher member that
+  // would inherit Usage & Logs' heading.
+  { id: "privacy", tkey: "nav.privacy", Icon: IconShield, pages: ["privacy"] },
   { id: "remote", tkey: "nav.remote", Icon: IconMonitor, pages: ["remote", "remote-workspace"] },
 ];
 
