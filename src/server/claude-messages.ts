@@ -903,7 +903,7 @@ async function handleClaudeMessagesWithBudget(
     logCtx.routeDecision = route.routeDecision;
     settledRoute = route;
     const comboConfig = settledRoute?.combo ? getCombo(config, settledRoute.combo.comboId) : undefined;
-    nativeMessagesCombo = !!comboConfig && !effortRow && comboConfig.targets.some(
+    nativeMessagesCombo = !!comboConfig && !effortRow && !fastRow && comboConfig.targets.some(
       target => resolveProtocolSettings(config, target.provider).rollout.managedMessagesNative,
     );
     if (!envelope && isRec(anthropicBody) && nativeMessagesCombo) {

@@ -242,6 +242,9 @@ export function createComboProtocolLanes(input: {
         provider: targetRoute.provider,
         modelId: targetRoute.modelId,
       });
+      // Native Messages has no effort rewrite yet: keep the bridge when combo effort policy applies.
+      if (source.inbound === "messages"
+        && (initialDecision !== undefined || comboDefaultEffort(config, comboId) != null)) return undefined;
       if (source.inbound === "chat") {
         if (initialDecision) {
           // A validated JEV choice owns only this first dispatch, including explicit no-effort.

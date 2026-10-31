@@ -275,6 +275,41 @@ describe("Native Anthropic Messages support for Combos", () => {
     });
   });
 
+  test("streams a native SSE answer from candidate 2 after candidate 1 returns 429 before any bytes", async () => {
+    await seedOAuth(1);
+    const sse = [
+      `event: message_start
+data: ${JSON.stringify({ type: "message_start", message: { ...MESSAGE_RESPONSE, id: "msg_stream_fallback", content: [], usage: { input_tokens: 3, output_tokens: 0 } } })}
+
+`,
+      `event: message_stop
+data: ${JSON.stringify({ type: "message_stop" })}
+
+`,
+    ].join("");
+    const config = comboConfig({
+      oauthResponder: () => new Response(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "limited" } }), {
+        status: 429, headers: { "content-type": "application/json" },
+      }),
+      apiKeyResponder: () => new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    });
+    const requestId = `test-native-combo-stream-${crypto.randomUUID()}`;
+    const response = await handleClaudeMessages(new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "combo/pair", max_tokens: 1024, stream: true, messages: [{ role: "user", content: "hello stream" }] }),
+    }), config, { model: "", provider: "" }, { requestId, start: Date.now() });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const text = await response.text();
+    expect(text).toContain("msg_stream_fallback");
+    expect(text).toContain("message_stop");
+    expect(sentOAuth).toHaveLength(1);
+    expect(sentApiKey).toHaveLength(1);
+    expect(sentApiKey[0]!.body.stream).toBe(true);
+    expect(getRequestLogEntries().filter(e => e.requestId === requestId)).toHaveLength(1);
+  });
+
   test("when candidate 1 returns 500, combo fails over to candidate 2", async () => {
     await seedOAuth(1);
 
