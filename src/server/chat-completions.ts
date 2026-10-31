@@ -45,6 +45,8 @@ import {
   privacyOptionsFromConfig,
   recordPrivacyHitsBestEffort,
   redactClientBody,
+  registerPrivacyRestore,
+  applyPrivacyRestore,
 } from "../privacy";
 import {
   applyReplayRefusalClientHeaders,
@@ -156,11 +158,11 @@ export async function handleChatCompletions(
   try {
     let response = await handleChatCompletionsWithBudget(req, config, logCtx, translatorBudget, logIds);
     if (isInternalCallCapability(req.headers.get(ADVISOR_INTERNAL_CAPABILITY_HEADER))) response = attachAdvisorReasoning(response, logCtx);
-    return finalizeTranslatorBudgetResponse(
+    return applyPrivacyRestore(logCtx, "chat", finalizeTranslatorBudgetResponse(
       response,
       translatorBudget,
       req.signal,
-    );
+    ));
   } catch (error) {
     translatorBudget.dispose();
     if (isTranslatorBudgetExceededError(error)) {
@@ -243,6 +245,7 @@ async function handleChatCompletionsWithBudget(
     try {
       const outcome = redactClientBody(chatBody, privacyOptionsFromConfig(config));
       chatBody = outcome.body as Rec;
+      registerPrivacyRestore(logCtx, "chat", outcome.restoreMap, config);
       // A translate-and-replay through the Responses pipeline shares this same logCtx and
       // re-enters its redaction mount with an already-redacted body (no new hits, a null id);
       // never clear an outer entry point's id with that.
