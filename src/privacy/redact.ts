@@ -4,10 +4,12 @@ import type { RedactionHit, RedactionKind, RedactionOutcome } from "./types";
 /**
  * Client-request redaction engine.
  *
- * Design (see privacy_contract.md): one-way only, no restoration. The placeholder is a
+ * Design (see privacy_contract.md): one-way by default, no restoration. The placeholder is a
  * deterministic hash of the secret value (`{{SECRET_xxxxxxxx}}`, 8 hex chars of its sha256),
  * so the SAME secret always produces the SAME placeholder across requests and across process
- * restarts without needing any stored mapping -- which is also why there is no restore path.
+ * restarts without needing any stored mapping. Reply-direction restoration (`privacy.restoreResponses`,
+ * ./restore.ts) is opt-in and works from a REQUEST-SCOPED, memory-only map that a caller asks for with
+ * `collectRestoreMap`; without that option nothing here retains an original value.
  *
  * Fields that must never be touched (protocol signatures, encrypted payloads, base64 blobs,
  * and plain structural identifiers) are skipped by key name. A `thinking` block carrying a
@@ -88,6 +90,11 @@ export interface RedactOptions {
   allowValues?: ReadonlySet<string> | readonly string[];
   /** Whether the email rule is active. Default false: email is `kind: "email"` but opt-in. */
   redactEmails?: boolean;
+  /**
+   * Also return the placeholder -> original map on `outcome.restoreMap` (request-scoped, memory
+   * only, for reply-direction restoration). Off by default: the one-way path keeps no originals.
+   */
+  collectRestoreMap?: boolean;
 }
 
 interface RuleMatch {
@@ -168,23 +175,42 @@ class RedactionSession {
   private readonly redactEmails: boolean;
   private readonly hits = new Map<RedactionKind, number>();
   private readonly hashes = new Set<string>();
+  private readonly collect: boolean;
+  private readonly restore = new Map<string, string>();
+  /** Placeholders whose 8-hex prefix collided across two values: never restored (fail-safe). */
+  private readonly ambiguous = new Set<string>();
 
   constructor(options: RedactOptions) {
     this.allow = options.allowValues instanceof Set
       ? options.allowValues
       : new Set(options.allowValues ?? []);
     this.redactEmails = options.redactEmails === true;
+    this.collect = options.collectRestoreMap === true;
   }
 
   outcome(body: unknown): RedactionOutcome {
     const hits: RedactionHit[] = [];
     for (const [kind, count] of this.hits) hits.push({ kind, count });
-    return { body, hits, placeholderHashes: [...this.hashes] };
+    return {
+      body,
+      hits,
+      placeholderHashes: [...this.hashes],
+      ...(this.collect ? { restoreMap: this.restore } : {}),
+    };
   }
 
-  private recordHit(kind: RedactionKind, secretHash: string): void {
+  private recordHit(kind: RedactionKind, secretHash: string, secret: string): void {
     this.hits.set(kind, (this.hits.get(kind) ?? 0) + 1);
     this.hashes.add(secretHash);
+    if (!this.collect) return;
+    const placeholder = `${PLACEHOLDER_PREFIX}${secretHash}${PLACEHOLDER_SUFFIX}`;
+    if (this.ambiguous.has(placeholder)) return;
+    const known = this.restore.get(placeholder);
+    if (known === undefined) this.restore.set(placeholder, secret);
+    else if (known !== secret) {
+      this.restore.delete(placeholder);
+      this.ambiguous.add(placeholder);
+    }
   }
 
   private applyRule(text: string, rule: Rule): string {
@@ -217,7 +243,7 @@ class RedactionSession {
       const placeholder = generatePlaceholder(match.secret);
       const replacement = `${match.prefix}${placeholder}${match.suffix}`;
       result = result.split(match.fullMatch).join(replacement);
-      this.recordHit(match.kind, placeholderHash(placeholder));
+      this.recordHit(match.kind, placeholderHash(placeholder), match.secret);
     }
     return result;
   }
@@ -263,7 +289,7 @@ class RedactionSession {
       return value;
     }
     const placeholder = generatePlaceholder(value);
-    this.recordHit(kind, placeholderHash(placeholder));
+    this.recordHit(kind, placeholderHash(placeholder), value);
     return placeholder;
   }
 

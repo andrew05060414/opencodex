@@ -29,6 +29,12 @@ export interface RedactionOutcome {
   hits: RedactionHit[];
   /** sha256-prefix hashes of the distinct secret values redacted (never the values themselves). */
   placeholderHashes: string[];
+  /**
+   * placeholder -> original value. Present ONLY when the caller asked for it
+   * (`collectRestoreMap`) so reply-direction restoration can run. It holds real secrets: keep it
+   * request-scoped and in memory, and never log, persist, or hand it to stats.
+   */
+  restoreMap?: ReadonlyMap<string, string>;
 }
 
 /** Result of `POST /api/privacy/test`. */
