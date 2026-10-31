@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>OpenCodex 计量</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>OpenCodex 计量</h1><p class="muted">本机流量 · 请求结束后自动更新</p></div>
+      <button id="refresh" type="button" aria-label="刷新计量数据">刷新</button>
+    </header>
+    <div class="scope" role="group" aria-label="统计范围">
+      <button id="session-tab" aria-pressed="true" type="button">本会话</button>
+      <button id="today-tab" aria-pressed="false" type="button">今日全部线路</button>
+    </div>
+    <p id="connection" class="muted" role="status">正在读取本地账本，首次同步需要片刻…</p>
+    <section aria-labelledby="latest-heading">
+      <div class="section-head"><h2 id="latest-heading">最近一次请求</h2><time id="request-time"></time></div>
+      <p id="route" class="route muted">等待账本数据</p>
+      <dl class="measurements">
+        <div class="speed"><dt>生成速度 · 估测</dt><dd><span id="speed">—</span> <span class="unit">tok/s</span></dd></div>
+        <div><dt>首字等待</dt><dd id="ttft">—</dd></div>
+        <div><dt>整轮速度</dt><dd id="e2e">—</dd></div>
+        <div><dt>输入缓存命中</dt><dd id="cache">—</dd></div>
+      </dl>
+      <p id="last-usage" class="muted">有请求记录后显示输入、输出和本轮费用。</p>
+      <p id="last-note" class="muted"></p>
+    </section>
+    <section aria-labelledby="summary-heading">
+      <div class="section-head"><h2 id="summary-heading">本会话累计</h2><span id="request-count" class="muted"></span></div>
+      <dl class="totals">
+        <div><dt>累计 Token</dt><dd id="tokens">—</dd></div>
+        <div><dt>用量费用估算</dt><dd id="cost">—</dd></div>
+        <div><dt>实际扣费</dt><dd>未接入账单</dd></div>
+      </dl>
+      <p id="coverage" class="muted"></p>
+      <p id="scope-note" class="muted">累计 Token 包含每次请求重复发送的上下文，不代表当前上下文占用。</p>
+    </section>
+    <section aria-labelledby="routes-heading">
+      <h2 id="routes-heading">本会话线路</h2>
+      <div id="routes" class="routes"><p class="muted">等待数据</p></div>
+    </section>
+    <details>
+      <summary>最近请求明细</summary>
+      <div class="table-scroll"><table><thead><tr><th>时间／线路</th><th>生成 tok/s</th><th>缓存</th><th>估算 USD</th></tr></thead><tbody id="history"></tbody></table></div>
+    </details>
+    <details>
+      <summary>这些数字怎么算</summary>
+      <div class="explanation">
+        <p>生成速度用 OpenCodex 记录的生成窗口估测，包含模型报告的思考 Token；整轮速度还包含首字等待。窗口不足一秒时不显示生成速度。</p>
+        <p>缓存只采用上游实际报告的数据。未知或为协议兼容而补出的零值显示为“—”，不会当作零命中。</p>
+        <p>费用复用 OpenCodex 的定价：优先采用已有线路自定义单价，其余按 API 标价估算；组合线路按每次尝试分别计算。订阅流量的 API 等价金额不代表实际扣费。</p>
+        <p>估算金额只覆盖能匹配价格且有用量的数据。未计价与未报告用量的请求分别列出；实际扣款以服务商账单为准。修改 OpenCodex 单价后，重启本计量进程以重算。</p>
+        <p>本会话通过会话 ID 与 OpenCodex 账本的摘要值匹配。切换 Codex 聊天不会自动切换此面板；可让助手为目标会话打开对应的计量地址。</p>
+      </div>
+    </details>
+    <footer><span id="sync-time">尚未同步</span><span>仅本机读取 · 每 2 秒检查</span></footer>
+  </main>
+</body>
+</html>
