@@ -36,6 +36,7 @@ both `--adapter` and `--base-url`.
 | `resets` | `--limit <n>`, `--json` | List recently detected quota-window resets. |
 | `presets` | `--json` | List dashboard provider presets. |
 | `account-mode` | `pool`, `direct`, `--json` | Select pooled or direct Codex account routing. |
+| `import-cc-switch` | `--source <FILE>`, `--provider <id>`, `--apply`, `--restore`, `--allow-private-network`, `--json` | Preview, selectively apply, or restore keyless provider entries from a CC-Switch SQLite database (`cc-switch.db`) or legacy JSON file. |
 
 ```bash
 ocx provider list --json
@@ -219,6 +220,27 @@ be stdin. Each input has a 4 MiB limit and a 30-second read deadline. The combin
 serialized `{baseline,next}` request must also fit 4 MiB. Interactive stdin,
 special files, conflicting flags, invalid fields and unconfirmed removals are
 refused before mutation with exit 2. Input errors never echo the submitted values.
+
+### Keyless CC-Switch provider import
+
+```bash
+ocx provider import-cc-switch --source ~/.cc-switch/cc-switch.db
+ocx stop
+ocx provider import-cc-switch --source ~/.cc-switch/cc-switch.db --provider my-provider --apply
+# Start the proxy in another terminal (or run ocx ensure), then add credentials:
+ocx start
+printf '%s\n' "$API_KEY" | ocx account add-key my-provider
+
+# Separate rollback path (stop the proxy first; removes unedited keyless entries only):
+ocx stop
+ocx provider import-cc-switch --restore
+```
+
+`ocx provider import-cc-switch` projects values **only** from an explicit allowlist of non-secret metadata fields (provider IDs, app types, base URLs, wire dialects, and default models) from a plain regular CC-Switch SQLite database or legacy JSON file. Source and embedded-config bytes are read transiently to scan the input, while secret fields, free-text display names, and TOML comments are skipped at the byte level, never decoded into strings, written, or logged, and transient byte buffers are zeroed in `finally`. Narrow base-URL path rules (`http(s)://host[:port]` with an empty path or 1–4 lowercase `[a-z0-9._-]` API path segments such as `/v1`, `/api/v1`, or `/compatible-mode/v1`) and identifier/model syntax checks act as defense in depth and reject non-conforming values without echoing them. Source files are opened once with `O_NOFOLLOW | O_NONBLOCK` descriptor verification and deserialized read-only in memory for SQLite without temporary files; SQLite files with multiple hard links (`nlink > 1`) are refused so sidecar checks cannot be bypassed via an alias path, and if a sibling `-wal` or `-journal` file is non-empty, import refuses and asks you to close CC-Switch (or checkpoint the database) and retry. Only import from a trusted local CC-Switch source, and verify every printed ID, model, and `baseUrl` before adding credentials:
+
+- **Preview (default):** requires `--source <FILE>`, writes nothing, and reports discovered, eligible, conflicting, and invalid entries.
+- **Apply (`--apply`):** requires `--source <FILE>` and a stopped proxy (`ocx stop`), and is refused on a Remote Link Child. Repeat `--provider <id>` to import only selected entries, or pass `--allow-private-network` to permit loopback or private-network base URLs. Even without a prior preview, `--apply` prints every imported provider ID, default model, and destination URL before writing keyless provider entries and recording a rollback journal at `$OPENCODEX_HOME/cc-switch-provider-import-journal.json` (`stdout` in text mode, `stderr` in `--json` mode); a second apply is refused while an active journal exists. Verify the printed entries, start the proxy (`ocx start` in another terminal or `ocx ensure`), and add credentials with `printf '%s\n' "$API_KEY" | ocx account add-key <provider>` (piped stdin) or `ocx login <provider>`.
+- **Restore (`--restore`):** separate rollback path (not a continuation of adding credentials) that requires a stopped proxy (`ocx stop`), is refused on a Remote Link Child, and takes no `--source`, `--provider`, or `--allow-private-network`. It inspects `auth.json` read-only at the byte level (failing closed if unreadable or malformed) and removes only providers from the active journal that still match their imported keyless state and are not selected as `defaultProvider` or referenced by routing, combos, fallback policy, OAuth accounts, or API keys.
 
 ## Authentication
 
@@ -872,6 +894,8 @@ separately billed sends add to the request spend. Credits are never estimated fr
 With two or more Kiro accounts logged in, request-rate, confirmed monthly-quota, and
 confirmed suspension refusals can rotate before output. Monthly exhaustion excludes only
 that login until reset or evidence expiry; completed service clears an older verdict.
+Quota refusals include the exact `MONTHLY_REQUEST_COUNT` and `OVERAGE_REQUEST_LIMIT_EXCEEDED`
+reasons on HTTP 400 or 429. Plans allowing overage can keep serving after the monthly gauge reaches 100%.
 Reactive rotation remains available when proactive account preference is off. Accounts are added one at a time —
 `ocx account login kiro` hands off to the Kiro CLI and appends the new account to the pool. In the dashboard, Login and Add account also offer Builder ID, Google, and GitHub device login alongside the Kiro CLI choice; native device login adds an account without signing the CLI out.
 Users of one organization (IAM Identity Center) profile share its profile ARN, so a Kiro CLI account is identified by that profile together with the email `kiro-cli whoami` reports for the session. Two users of the same organization therefore stay separate accounts, and signing the same user in again updates that user's account. When `kiro-cli whoami` reports no user, the profile alone identifies the account as before. If that profile already has an account with a known user, such a login only refreshes the account whose stored Kiro CLI session it continues; any other login is refused instead of replacing an account, and an Add account login switches the Kiro CLI back to its previous session. Run `kiro-cli whoami` to confirm the signed-in user, then retry. Reauthenticating an account saved before its user was known records the user that signs in, unless that user already has another account of the same profile.

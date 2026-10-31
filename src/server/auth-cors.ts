@@ -1,5 +1,5 @@
 import { providerRelativeSendPathConfigError } from "../config/provider-relative-send-path";
-import { contextTierRecordConfigError, modelCapabilitiesConfigError } from "../config/provider-validation";
+import { contextTierRecordConfigError, modelCapabilitiesConfigError, providerInputModalitiesConfigError } from "../config/provider-validation";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { initialModelSelection } from "../providers/initial-model-selection";
 import { extractAccountId } from "../oauth/chatgpt";
@@ -53,6 +53,7 @@ let _corsOrigin = "http://localhost:10100";
 // Listener identity is process-local. Never infer this trust from forwarded headers: the
 // request handler marks a Request only after resolving the actual Bun Server instance.
 const trustedHubManagementRequests = new WeakSet<Request>();
+export function isTrustedHubManagementRequest(req: Request): boolean { return trustedHubManagementRequests.has(req); }
 
 export function markTrustedHubManagementRequest(req: Request): void {
   trustedHubManagementRequests.add(req);
@@ -432,10 +433,11 @@ function mintContextPrincipal(kind: string, keyId: string, credential: string): 
     .digest("hex");
 }
 
-export type DataPlaneAdmission =
+export type DataPlaneAdmission = (
   | { kind: "configured"; keyId: string; source: DataPlaneAdmissionSource; contextPrincipalId?: string }
   | { kind: "environment"; source: DataPlaneAdmissionSource; contextPrincipalId?: string }
-  | { kind: "loopback"; source: "loopback" };
+  | { kind: "loopback"; source: "loopback" }
+) & { readonly callerPolicy?: import("../types/admission-policy").CapturedAdmissionPolicy };
 
 /**
  * Which admission secret `token` is, or null when it is none of them.
@@ -511,6 +513,28 @@ export function resolveContextPrincipal(req: Request, config: OcxConfig, admissi
     if (principal) return principal;
   }
   return undefined;
+}
+
+/** Stable structural replay identity. This does not replace process-local opaque-state ownership. */
+export function resolveDurableReplayPrincipal(
+  req: Request,
+  config: Pick<OcxConfig, "apiKeys">,
+  admission: DataPlaneAdmission | undefined,
+  signingKey: Uint8Array,
+): string | undefined {
+  if (!admission || signingKey.length !== 32) return undefined;
+  // The managed client sends this dedicated local credential; a thread id, User-Agent,
+  // loopback address or upstream bearer never establishes structural replay ownership.
+  const token = req.headers.get("x-opencodex-api-key")?.trim();
+  if (!token) return undefined;
+  const resolved = resolveDataPlaneAdmissionSecret(token, config, "dedicated");
+  if (!resolved) return undefined;
+  if (admission.kind !== "loopback" && (admission.kind !== resolved.kind
+    || (admission.kind === "configured" && (resolved.kind !== "configured" || admission.keyId !== resolved.keyId)))) return undefined;
+  return createHmac("sha256", signingKey)
+    .update("opencodex.structural-replay-principal.v1\0")
+    .update(JSON.stringify([resolved.kind, resolved.kind === "configured" ? resolved.keyId : "", token]))
+    .digest("hex");
 }
 
 /** Whether `token` is a data-plane admission secret. */
@@ -747,7 +771,7 @@ export function providerManagementConfigError(
   }
   const contextTiersError = contextTierRecordConfigError(raw.modelContextTiers);
   if (contextTiersError) return contextTiersError;
-  const capabilitiesError = modelCapabilitiesConfigError(raw.modelCapabilities);
+  const capabilitiesError = providerInputModalitiesConfigError(raw.inputModalities) ?? modelCapabilitiesConfigError(raw.modelCapabilities);
   if (capabilitiesError) return capabilitiesError;
   const pinsError = providerReasoningPinsConfigError(raw);
   if (pinsError) return pinsError;
@@ -1065,6 +1089,7 @@ const PROVIDER_CONFIG_FIELD_POLICY = {
   annotateEmptyToolOutputs: "editor",
   supportsServiceTier: "editor",
   modelSupportsServiceTier: "editor",
+  promoteAdditionalTools: "editor",
   preserveResponsesReasoningContent: "editor",
   preserveResponsesInputItemIds: "editor",
   preserveResponsesMessageMetadata: "editor",
@@ -1110,6 +1135,7 @@ const PROVIDER_CONFIG_FIELD_POLICY = {
   modelContextWindows: "editor",
   modelContextTiers: "editor",
   modelInputModalities: "editor",
+  inputModalities: "editor",
   modelCapabilities: "editor",
   modelMaxInputTokens: "runtime",
   modelAutoCompactTokenLimits: "editor",
@@ -1169,6 +1195,7 @@ const PROVIDER_CONFIG_FIELD_POLICY = {
   terminalContinuationGuard: "editor",
   openaiChatEofTolerance: "editor",
   foldDeveloperRoleToSystem: "editor",
+  singleLeadingSystemMessage: "editor",
   promptCacheKey: "editor",
   chatServiceTier: "editor",
   responsesItemIdRepair: "editor",

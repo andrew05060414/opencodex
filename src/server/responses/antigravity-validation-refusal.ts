@@ -1,5 +1,6 @@
 import { ANTIGRAVITY_VALIDATION_REQUIRED_PREFIX, safeAntigravityHttpErrorMessage } from "../../adapters/google-errors";
 import { readBoundedResponseBody } from "../../lib/bounded-body";
+import { hasAntigravityModelNotFoundProvenance } from "../../adapters/antigravity-refusal";
 
 /** Match only the normalized Antigravity validation-refusal marker. */
 export function hasAntigravityValidationRefusalMarker(text: string): boolean {
@@ -33,20 +34,7 @@ async function inspectValidationRefusal(response: Response, signal: AbortSignal 
   }
 }
 
-/** Whether an upstream 404 is Google CCA denying access to a model for this account. */
+/** Only original-body, model-specific Google adapter evidence qualifies for account rotation. */
 export async function isAntigravityModelNotFoundRefusal(response: Response, signal?: AbortSignal): Promise<boolean> {
-  if (response.status !== 404 || signal?.aborted) return false;
-  try {
-    const body = await readBoundedResponseBody(response.clone(), {
-      maxBytes: 4096,
-      totalTimeoutMs: 2000,
-      firstByteTimeoutMs: 1000,
-      inactivityTimeoutMs: 1000,
-      signal,
-    });
-    return !signal?.aborted && body.displaySafe && !body.truncated && !body.timedOut && !body.oversized
-      && /Requested entity was not found/i.test(body.text);
-  } catch {
-    return false;
-  }
+  return response.status === 404 && !signal?.aborted && hasAntigravityModelNotFoundProvenance(response);
 }

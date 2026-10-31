@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { constants, createHash, createPublicKey, publicEncrypt } from "node:crypto";
 import { createZedAdapter, zedEventStream, type ZedProvider } from "../../src/adapters/zed";
+import { translateZedOpenAiStream } from "../../src/adapters/zed-openai-stream";
+import { createTranslatorBudget } from "../../src/lib/translator-budget";
+import { releaseCompactionCiphertextLease } from "../../src/responses/compaction";
 import { setIcaclsRunnerForTests, resetHardenedStateForTests } from "../../src/lib/windows-secret-acl";
 import { getValidAccessTokenSnapshot } from "../../src/oauth";
 import { saveCredential } from "../../src/oauth/store";
@@ -443,6 +446,28 @@ describe("Zed OpenAI tool relay", () => {
     expect(rawBefore).toContain("reasoning");
   });
 
+  test("a current tool_search_output stays current after a replayed wrapper is lifted", async () => {
+    catalogFetch();
+    const lookup = { type: "function", name: "lookup", parameters: { type: "object", properties: {} } };
+    const parsed = parseRequest({
+      model: "gpt-6.1-sol",
+      input: [
+        { type: "additional_tools", tools: [{ type: "function", name: "old_tool", parameters: { type: "object", properties: {} } }] },
+        { type: "tool_search_output", call_id: "search", status: "completed", execution: "client", tools: [lookup] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "now" }] },
+      ],
+      tools: [],
+      stream: true,
+    });
+    parsed._zedAuthContext = { userId: "user-1" };
+    parsed._replayPrefixLen = 1;
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    const request = await adapter.buildRequest(parsed);
+    const body = JSON.parse(request.body).provider_request;
+    expect(JSON.stringify(body.input)).not.toContain("old_tool");
+    expect(body.tools.map((tool: { name?: string }) => tool.name)).toEqual(["lookup"]);
+  });
+
   async function relay(frames: unknown[]): Promise<unknown[]> {
     catalogFetch();
     const parsed = parseRequest({ model: "gpt-6.1-sol", input: "hello", stream: true });
@@ -572,6 +597,7 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "a" },
       { type: "tool_call_delta", arguments: "{\"x\":" },
+      { type: "heartbeat" },
       { type: "tool_call_delta", arguments: "1}" },
       { type: "tool_call_end" },
       { type: "tool_call_start", id: "call_b", name: "b" },
@@ -595,6 +621,7 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "apply_patch" },
       { type: "tool_call_delta", arguments: "left" },
+      { type: "heartbeat" },
       { type: "tool_call_delta", arguments: " side" },
       { type: "tool_call_end" },
       { type: "tool_call_start", id: "call_b", name: "apply_patch" },
@@ -622,10 +649,11 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "a" },
       { type: "tool_call_delta", arguments: "{\"x\":" },
-      { type: "tool_call_end" },
+      { type: "heartbeat" },
+      { type: "tool_call_end", incomplete: true },
       { type: "tool_call_start", id: "call_b", name: "b" },
       { type: "tool_call_delta", arguments: "{\"y\":2}" },
-      { type: "tool_call_end" },
+      { type: "tool_call_end", incomplete: true },
       { type: "incomplete", reason: "max_output_tokens" },
     ]);
   });
@@ -646,8 +674,8 @@ describe("Zed OpenAI tool relay", () => {
     expect(events).toEqual([
       { type: "tool_call_start", id: "call_a", name: "a" },
       { type: "tool_call_delta", arguments: "{\"x\":" },
-      { type: "tool_call_end" },
-      { type: "done" },
+      { type: "tool_call_end", incomplete: true },
+      { type: "incomplete", reason: "adapter_eof" },
     ]);
   });
 
@@ -733,6 +761,7 @@ describe("Zed OpenAI tool relay", () => {
         { type: "response.output_item.added", item: { id: "fc_a", type: "function_call", call_id: "call_a", name: "a", arguments: "" } },
         { type: "response.function_call_arguments.delta", item_id: "fc_a", delta: "{\"x\":1}" },
         { type: "response.function_call_arguments.done", item_id: "fc_a", arguments: "{\"x\":1}" },
+        { type: "response.completed", response: { output: [] } },
       ])).body, budget)) events.push(event);
       expect(events).toHaveLength(5);
       expect(budget.snapshot().currentBytes).toBe(0);

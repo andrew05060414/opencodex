@@ -1,7 +1,7 @@
 import { canInferVendorContext } from "./vendor-context";
 import { effectiveProviderAlias, effectiveProviderAliasDecision } from "../../providers/default-aliases";
 import { initialModelSelectionPending } from "../../providers/initial-model-selection";
-import { supportsConfiguredUltraFast } from "./configured-tiers";
+import { supportsConfiguredFlex, supportsConfiguredUltraFast } from "./configured-tiers";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
@@ -102,7 +102,7 @@ import type {
   CatalogTrustedOpenAiApiPolicySnapshot,
 } from "../convergence-types";
 import type { CatalogGatherProviderAuthOutcome, CatalogGatherProviderModelOutcome, GatherFlightCapture, ModelsAuthResolverFactory } from "./gather-capture";
-import { applyProviderConfigHints, configuredAutoCompactTokenLimit, configuredMaxInputTokens, configuredModelDisplayName, configuredReasoningSummarySupport, modelInputModalities, routedMaxOutputTokens, withVisionSidecarInput } from "./model-hints";
+import { applyProviderConfigHints, configuredAutoCompactTokenLimit, configuredMaxInputTokens, configuredModelDisplayName, configuredReasoningSummarySupport, copyReasoningHintSource, modelInputModalities, routedMaxOutputTokens, withVisionSidecarInput } from "./model-hints";
 import { resolveComboCatalogMember } from "./combo-member";
 import { captureGatherFlight, captureTrustedOpenAiApiPolicy, gatherFlightKey, keyedGatherBytesIdentity, withCanonicalOpenAiForwardAuthDefault } from "./gather-capture";
 import { fetchProviderModelsWithAuth, observedModelsAuthResolver, refreshingModelsAuthResolver } from "./provider-models";
@@ -366,6 +366,7 @@ async function gatherRoutedModelsUncached(
       const supported = serviceTierSupportFromPolicy(policy);
       if (supported !== undefined) model.supportsServiceTier = supported;
       model.supportsUltraFastTier = supportsConfiguredUltraFast(policy);
+      model.supportsFlexTier = supportsConfiguredFlex(policy);
       if (supported === true && policy.fastTierDescription !== undefined) model.fastTierDescription = policy.fastTierDescription;
     }
   }
@@ -664,6 +665,7 @@ async function gatherRoutedModelsUncached(
       ...(cm.defaultReasoningEffort ? { defaultReasoningEffort: cm.defaultReasoningEffort } : {}),
       ...(typeof supportsServiceTier === "boolean" ? { supportsServiceTier } : {}),
       supportsUltraFastTier: supportsConfiguredUltraFast(fastPolicy),
+      supportsFlexTier: supportsConfiguredFlex(fastPolicy),
       ...(supportsServiceTier === true && fastPolicy?.fastTierDescription !== undefined
         ? { fastTierDescription: fastPolicy.fastTierDescription }
         : {}),
@@ -827,10 +829,11 @@ async function gatherRoutedModelsUncached(
       const budget = clampAutoCompactTokenLimit(window, model.maxInputTokens,
         Math.min(model.autoCompactTokenLimit ?? Infinity,
           configuredAutoCompactTokenLimit(enrichedByName.get(model.provider), model.id) ?? Infinity, autoCompactTokenLimit));
-      const budgeted = { ...model, contextWindow: window, autoCompactTokenLimit: budget,
-        ...(defaulted ? { contextWindowDefaulted: true } : {}) };
-      const named = displayName && !model.displayName ? { ...budgeted, displayName } : budgeted;
-      return inactive ? { ...named, quotaInactiveReason: inactive } : named;
+      const budgeted = copyReasoningHintSource(model, { ...model, contextWindow: window, autoCompactTokenLimit: budget,
+        ...(defaulted ? { contextWindowDefaulted: true } : {}) });
+      const named = displayName && !model.displayName
+        ? copyReasoningHintSource(budgeted, { ...budgeted, displayName }) : budgeted;
+      return inactive ? copyReasoningHintSource(named, { ...named, quotaInactiveReason: inactive }) : named;
     }),
     comboOmissions: localOmissions,
     providerAuthOutcomes: localProviderAuthOutcomes,
@@ -977,7 +980,7 @@ export function augmentRoutedModelsWithMetadata(
           : undefined;
         const liveWindow = typeof existing.contextWindow === "number" && existing.contextWindow > 0;
         if (liveWindow || publishedWindow === undefined) continue;
-        const seeded: CatalogModel = { ...existing, contextWindow: publishedWindow };
+        const seeded = copyReasoningHintSource(existing, { ...existing, contextWindow: publishedWindow });
         out[existingIndex] = providers?.[provider]
           ? applyProviderConfigHints(
             provider,
@@ -1001,21 +1004,18 @@ export function augmentRoutedModelsWithMetadata(
         ...(typeof meta.maxTokens === "number" && meta.maxTokens > 0 ? { maxOutputTokens: meta.maxTokens } : {}),
         ...(Array.isArray(meta.input) && meta.input.length > 0 ? { inputModalities: [...meta.input] } : {}),
       };
-      out.push({
-        ...model,
-        ...(providers?.[provider]
-          ? applyProviderConfigHints(
-            provider,
-            providers[provider],
-            model,
-            contextCap,
-            metadataModelIdCaseFoldByProvider?.get(provider),
-            undefined,
-            metadataConfigDirByProvider?.get(provider),
-            includeVisionSidecar,
-          )
-          : {}),
-      });
+      out.push(providers?.[provider]
+        ? applyProviderConfigHints(
+          provider,
+          providers[provider],
+          model,
+          contextCap,
+          metadataModelIdCaseFoldByProvider?.get(provider),
+          undefined,
+          metadataConfigDirByProvider?.get(provider),
+          includeVisionSidecar,
+        )
+        : model);
     }
   }
   return out;

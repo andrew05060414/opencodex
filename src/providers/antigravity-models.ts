@@ -621,6 +621,9 @@ export function parseAntigravityAvailableModels(
   if (!models || !sorts) return null;
 
   const ids: string[] = [];
+  // Disabled and duplicate ids cannot consume the enabled-model budget, but raw work is bounded.
+  const rawLimit = MODEL_DISCOVERY_MAX_MODELS * 4;
+  let rawCount = 0;
   for (const sort of sorts) {
     const groups = antigravityRecord(sort)?.groups;
     if (!Array.isArray(groups)) return null;
@@ -631,7 +634,7 @@ export function parseAntigravityAvailableModels(
         if (!isValidModelDiscoveryModelId(id)
           || !Object.hasOwn(models, id)
           || !antigravityRecord(models[id])
-          || ids.length >= limit) return null;
+          || ++rawCount > rawLimit) return null;
         ids.push(id);
       }
     }
@@ -643,7 +646,7 @@ export function parseAntigravityAvailableModels(
     && Object.hasOwn(models, "gemini-3.1-flash-image")
     && antigravityRecord(models["gemini-3.1-flash-image"])
     && !ids.includes("gemini-3.1-flash-image")) {
-    if (ids.length >= limit) return null;
+    if (++rawCount > rawLimit) return null;
     ids.push("gemini-3.1-flash-image");
   }
   // Newer CCA responses identify tiered Flash models through this index instead of
@@ -655,7 +658,7 @@ export function parseAntigravityAvailableModels(
       if (!isValidModelDiscoveryModelId(id)
         || !Object.hasOwn(models, id)
         || !antigravityRecord(models[id])
-        || ids.length >= limit) return null;
+        || ++rawCount > rawLimit) return null;
       const baseId = id.endsWith("-tiered") ? id.slice(0, -"-tiered".length) : id;
       if (ids.some(agentId =>
         agentId === id
@@ -670,6 +673,7 @@ export function parseAntigravityAvailableModels(
   for (const wireId of ids) {
     const info = antigravityRecord(models[wireId]);
     if (!info || info.disabled === true || wireId.endsWith("-disabled") || available.has(wireId)) continue;
+    if (available.size >= limit) return null;
     // Compatibility aliases are deliberately routed to NEWER wire ids for saved
     // selections. CCA keeps serving retired generations (3.5/3.6 Flash tiers) in its
     // agent list long after they stop being the model anyone should pick, so admitting

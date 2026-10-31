@@ -4,6 +4,7 @@ import { chmodSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { compactionRecoveryConfigError } from "./schema/compaction-recovery";
 import { nativeReasoningRetentionConfigError } from "./schema/native-reasoning-retention";
+import { workflowBudgetConfigError } from "./schema/workflow-budget";
 import { desktopCompatibilityConfigError } from "./schema/desktop-compatibility";
 import { blockedModelRedirectsError } from "./schema/blocked-model-redirects";
 import { mainAccountHardLockFallbackError } from "./schema/main-account-hard-lock-fallback";
@@ -16,6 +17,7 @@ import {
   autoReviewModelOverridesConfigError,
   autoReviewModelTargetConfigError,
   modelCapabilitiesConfigError,
+  providerInputModalitiesConfigError,
   sanitizeModelCapabilitiesForLoad,
   modelDisplayNamesConfigError,
 } from "./provider-validation";
@@ -136,6 +138,7 @@ export function warnDegradedCompactionRouting(rawParsed: unknown, validated: Ocx
  */
 export function warnDegradedTopLevelOptIns(rawParsed: unknown, validated: OcxConfig): void {
   if (nativeReasoningRetentionConfigError(rawParsed)) console.warn("⚠️  invalid nativeReasoningRetention disabled; model and account switch allowances remain off");
+  if (workflowBudgetConfigError(rawParsed)) console.warn("⚠️  invalid workflowBudget ignored; the built-in workflow ceilings stay in force");
   setCodexWsReuseAcrossTurns(validated.codexWsReuseAcrossTurns === true);
   const retentionWarning = degradedReasoningRetentionWarning(rawParsed, validated);
   if (retentionWarning) console.warn(retentionWarning);
@@ -359,6 +362,10 @@ export function sanitizeCapabilityDeclarationsForLoad(parsed: unknown): void {
   for (const [name, value] of Object.entries(providers)) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const provider = value as Record<string, unknown>;
+    if (providerInputModalitiesConfigError(provider.inputModalities) !== null) {
+      console.warn(`config.json provider ${JSON.stringify(redactSecretString(name))} has malformed inputModalities; restricting input modalities to text`);
+      provider.inputModalities = ["text"];
+    }
     if (provider.modelCapabilities === undefined) continue;
     if (modelCapabilitiesConfigError(provider.modelCapabilities) !== null) {
       console.warn(`config.json provider ${JSON.stringify(redactSecretString(name))} has malformed modelCapabilities; retaining valid axes and restricting malformed input modalities to text`);

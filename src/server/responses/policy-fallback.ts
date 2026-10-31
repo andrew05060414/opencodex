@@ -1,5 +1,6 @@
 import { comboFailureDecision } from "../../combos/failover";
 import { readBoundedResponseBody } from "../../lib/bounded-body";
+import { isVerifiedModelNotInPlanResponse } from "../../lib/errors";
 import { isNonReplayableResponse } from "../../lib/upstream-retry";
 import { finishRequestAttempt, type RequestLogContext } from "../request-log";
 import { linkRequestSessionLane } from "../request-log-conversation";
@@ -14,6 +15,7 @@ import { parseSyntheticRowId } from "../fast-row";
 import { routeConcreteModel } from "../../router";
 import { isPolicyCandidateRefusal, policyWireDestination, type PolicyRequestScope } from "./policy-request-scope";
 import { fallbackTriggerForStatus, guardFallbackHop } from "../../routing/fallback-policy";
+import { captureAdmissionPolicy } from "../capture-admission-policy";
 
 type CoreHandler = typeof handleResponsesCore;
 type CoreOptions = Parameters<CoreHandler>[3];
@@ -130,7 +132,11 @@ async function shouldHopPolicyCandidate(response: Response, signal?: AbortSignal
   try {
     const inspected = await readBoundedResponseBody(response.clone(), { signal });
     const text = inspected.displaySafe && !inspected.truncated ? inspected.text : "";
-    return comboFailureDecision(response.status, text, { code: errorCodeFromText(text) }) === "hop";
+    return comboFailureDecision(response.status, text, {
+      code: errorCodeFromText(text),
+      // A passthrough candidate returns its upstream body unchanged, so the code is not provenance.
+      verifiedPlanRefusal: isVerifiedModelNotInPlanResponse(response),
+    }) === "hop";
   } catch {
     return false;
   }
@@ -177,6 +183,7 @@ export async function handleResponsesWithPolicyFallback(
   let rawBody: Record<string, unknown> | null = null;
   const coreOptions: CoreOptions = {
     ...options,
+    advisorAdmissionPolicy: options.advisorAdmissionPolicy ?? captureAdmissionPolicy(config, options.admission, options.admissionScope),
     policyRequestScope: policyScope,
     openAiSidecarAuth: options.openAiSidecarAuth === undefined
       ? captureExplicitOpenAiCallerAuth(req.headers, config) : options.openAiSidecarAuth,
