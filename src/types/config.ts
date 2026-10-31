@@ -472,6 +472,16 @@ export interface OcxPrivacyConfig {
   enabled?: boolean;
   /** Exact-match original values that client-request redaction must leave untouched. */
   allowValues?: string[];
+  /**
+   * Two-way mode: restore the placeholders a model echoes back to the original values, for the
+   * client that sent them. Requires `enabled`. Default off (redaction stays one-way).
+   */
+  restoreResponses?: boolean;
+  /**
+   * With `restoreResponses`, also restore placeholders inside tool-call arguments. Default off:
+   * a restored value there is something a tool can execute or transmit.
+   */
+  restoreToolArguments?: boolean;
 }
 
 export interface OcxLinkTransportConfig {

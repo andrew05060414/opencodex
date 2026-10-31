@@ -119,6 +119,9 @@ export const configSchema = z.object({
     // `.catch(undefined)`, which is safe: an unreadable allowlist means nothing is
     // allowed through, never the opposite.
     allowValues: z.array(z.string()).optional(),
+    // Opt-in two-way mode (reply restoration); a malformed value drops the block, i.e. one-way.
+    restoreResponses: z.boolean().optional(),
+    restoreToolArguments: z.boolean().optional(),
   }).strict().optional().catch(undefined),
   skills: skillsConfigSchema.optional().catch(undefined),
   // Malformed hand edits disable this opt-in exporter. Live writes reject them in diagnostics.ts.

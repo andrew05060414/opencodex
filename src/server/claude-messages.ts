@@ -21,6 +21,8 @@ import {
   privacyOptionsFromConfig,
   recordPrivacyHitsBestEffort,
   redactClientBody,
+  registerPrivacyRestore,
+  applyPrivacyRestore,
 } from "../privacy";
 import { enforceAnthropicImageLimits } from "../adapters/anthropic-image-guard";
 import { normalizeAnthropicImages } from "../adapters/anthropic-image-normalize";
@@ -553,11 +555,11 @@ export async function handleClaudeMessages(
 ): Promise<Response> {
   const translatorBudget = createTranslatorBudget();
   try {
-    return finalizeTranslatorBudgetResponse(
+    return applyPrivacyRestore(logCtx, "messages", finalizeTranslatorBudgetResponse(
       await handleClaudeMessagesWithBudget(req, config, logCtx, translatorBudget, logIds, requestPolicy, ingress),
       translatorBudget,
       req.signal,
-    );
+    ));
   } catch (error) {
     translatorBudget.dispose();
     throw error;
@@ -635,6 +637,7 @@ async function handleClaudeMessagesWithBudget(
       try {
         const outcome = redactClientBody(anthropicBody, privacyOptionsFromConfig(config));
         anthropicBody = outcome.body;
+        registerPrivacyRestore(logCtx, "messages", outcome.restoreMap, config);
         const bodyModel = isRec(anthropicBody) ? anthropicBody.model : undefined;
         // Routing hasn't run yet, so provider/model are still unknown; addFinalRequestLog
         // backfills this row from logCtx once they are (request-log.ts) -- the one point every
