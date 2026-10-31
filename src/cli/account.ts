@@ -66,6 +66,7 @@ const ACCOUNT_USAGE = `Usage:
   ocx account clear-cooldown <provider> <account-id|alias|main> [--json]
   ocx account add-key <provider> [--label <label>] [--json]
   ocx account import <provider> --format <format> (--file <path>|--stdin) [--json]
+  ocx account export (--file <path>|--stdout --yes) [--format full|cockpit-tools] [--force] [--json]
   ocx account import-orca --source <orca-data-directory> --registry <orca-data.json> [--apply] [--json]
   ocx account login <provider> [--id <account-id>] [--reauth] [--open-browser on|off] [--add-account on|off] [--code -] [--no-wait] [--json]
   ocx account pool <provider> [--enabled on|off] [--threshold N] [--strategy NAME] [--sticky N] [--quota-window W] [--json]
@@ -495,6 +496,12 @@ export async function cmdAccount(args: string[], deps: AccountDeps = {}): Promis
     if (sub === "clear-cooldown") return await cmdClearCooldown(rest, deps);
     if (sub === "add-key") return await cmdAddKey(rest, deps);
     if (sub === "import") return await cmdImport(rest, deps);
+    if (sub === "export") {
+      // Local-only by design: this file is the first reader of the plaintext credential stores,
+      // so it must not run through the management client or require a live proxy.
+      const { cmdAccountExport } = await import("./account-export");
+      return await cmdAccountExport(rest);
+    }
     if (sub === "import-orca") {
       const { cmdOrcaImport } = await import("./account-orca-import");
       return await cmdOrcaImport(rest);

@@ -27,7 +27,7 @@ These answer in the CLI head and never reach the proxy, so they work with nothin
 |---|---|
 | [lifecycle](01_surface_lifecycle.md) | 14 |
 | [providers-models](01_surface_providers-models.md) | 49 |
-| [accounts](01_surface_accounts.md) | 42 |
+| [accounts](01_surface_accounts.md) | 43 |
 | [agents-routing](01_surface_agents-routing.md) | 67 |
 | [integrations](01_surface_integrations.md) | 41 |
 | [observe-system](01_surface_observe-system.md) | 96 |
@@ -582,6 +582,10 @@ Original invocation order. These headings preserve links to the previous single-
 ### `ocx account import`
 
 [State-changing task](01_surface_accounts.md#ocx-account-import)
+
+### `ocx account export`
+
+[Read-oriented task](01_surface_accounts.md#ocx-account-export)
 
 ### `ocx account reauth`
 
@@ -1501,6 +1505,6 @@ Original invocation order. These headings preserve links to the previous single-
 
 ## Counts
 
-- declared capabilities: 363
+- declared capabilities: 364
 - of those, state-changing: 222
 - head-resolved invocations: 2

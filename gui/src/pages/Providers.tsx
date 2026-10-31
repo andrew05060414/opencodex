@@ -29,6 +29,10 @@ import { canCreateJevAutoFrom } from "../jev-decision-service";
 import { useProviderSettingsDeepLink } from "./providers-deep-link";
 import { subscribeKiroDeviceFinal } from "../kiro-device-login-finalizer";
 import type { BrowserLaunch } from "../oauth-browser-launch";
+import AccountExportDialog, { type AccountExportOutcome, type ExportAccountRow } from "../components/account-export-dialog";
+import { codexPoolProviderKey } from "../account-export-command";
+import { oauthAccountDisplayLabel } from "../provider-workspace/auth";
+import { IconDownload } from "../icons";
 
 /** The page's real refresh tickets: only the captured report epoch and account read can settle them. */
 // oxlint-disable-next-line react/only-export-components -- keep the page-owned coordinator and its direct race tests in the authorized owner.
@@ -225,6 +229,9 @@ export default function Providers({ apiBase }: { apiBase: string }) {
   const [statusTone, setStatusTone] = useState<NoticeTone>("err");
   /** Bumped on every notify so repeated identical success toasts restart the dismiss timer. */
   const [statusRevision, setStatusRevision] = useState(0);
+  // Account credentials are not provider-scoped, so the entry point is the page head rather than
+  // any one provider card. The dialog owns the format choice and the disclosure step.
+  const [accountExportOpen, setAccountExportOpen] = useState(false);
   const [oauthProviders, setOauthProviders] = useState<string[]>([]);
   const [oauthStatus, setOauthStatus] = useState<Record<string, import("./providers-shared").OAuthStatus>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -277,6 +284,13 @@ export default function Providers({ apiBase }: { apiBase: string }) {
   }, [notify, t]);
 
   useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
+
+  const onAccountExported = useCallback((outcome: AccountExportOutcome) => {
+    if (!outcome.ok) return;
+    notify(outcome.files > 1
+      ? t("pws.exportedMany", { count: String(outcome.files) })
+      : t("pws.exported", { filename: outcome.filename }), true);
+  }, [notify, t]);
 
   // Success toasts are transient; errors stay until the next notify or dismiss.
   useEffect(() => {
@@ -535,6 +549,37 @@ export default function Providers({ apiBase }: { apiBase: string }) {
 
   const addModalAccountRows = buildAddModalAccountRows(config, oauthProviders, t);
   const accountLoginStatus = buildAccountLoginStatus(config, oauthStatusWithCodex);
+
+  /**
+   * Every credential the page can already see, keyed by the id the server selection accepts.
+   * Built from the live rosters (not a new read) so it matches the account cards beside it,
+   * including aliases renamed a moment ago.
+   */
+  // Deliberately not useMemo: this sits after an early return, so a hook here would be
+  // conditional. The roster is small and the dialog only reads it while open.
+  const exportAccountRows: ExportAccountRow[] = (() => {
+    const rows: ExportAccountRow[] = [];
+    for (const [provider, set] of Object.entries(pools.accountSets)) {
+      for (const account of set.accounts) {
+        rows.push({
+          key: `${provider}:${account.id}`,
+          provider,
+          group: provider,
+          label: oauthAccountDisplayLabel(set.accounts, account, t),
+        });
+      }
+    }
+    for (const account of codexPool.accounts) {
+      const id = account.isMain ? "main" : account.id;
+      rows.push({
+        key: `${codexPoolProviderKey()}:${id}`,
+        provider: codexPoolProviderKey(),
+        group: codexPoolProviderKey(),
+        label: account.alias || account.email || id,
+      });
+    }
+    return rows;
+  })();
   const isForwardProvider = (name: string) => config.providers[name]?.authMode === "forward";
 
   const onAccountLogin = async (provider: string, addAccount = false) => {
@@ -602,12 +647,23 @@ export default function Providers({ apiBase }: { apiBase: string }) {
     <>
       <div className="page-head">
         <h2>{t("nav.providers")}</h2>
-        <div className="row">
+        <div className="row page-head-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => setAccountExportOpen(true)}>
+            <IconDownload width={14} height={14} aria-hidden="true" />{" "}{t("pws.exportButton")}
+          </button>
           <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}><IconPlus />{t("prov.add")}</button>
         </div>
       </div>
       {status && (
         <ToastNotice tone={statusTone} onDismiss={clearStatus} dismissLabel={t("common.close")}>{status}</ToastNotice>
+      )}
+      {accountExportOpen && (
+        <AccountExportDialog
+          apiBase={apiBase}
+          accounts={exportAccountRows}
+          onClose={() => setAccountExportOpen(false)}
+          onExported={onAccountExported}
+        />
       )}
       <ProviderWorkspaceShell
         onRemoveProvider={removeProvider}
