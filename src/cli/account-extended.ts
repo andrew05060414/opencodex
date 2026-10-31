@@ -56,7 +56,8 @@ const EXTENDED_USAGE = `Usage:
   ocx account remove <provider> <id|alias|main> --yes [--json]
   ocx account clear-cooldown <provider> <id|alias|main> [--json]
   ocx account add-key <provider> [--label <label>] [--json]
-  ocx account import <provider> --format <format> (--file <path>|--stdin) [--json]`;
+  ocx account import <provider> --format <format> (--file <path>|--stdin) [--json]
+  ocx account export (--file <path>|--stdout --yes) [--format full|cockpit-tools] [--force] [--json]`;
 const PIPE_GUIDANCE = `Pipe the API key on stdin, for example:
   ocx account add-key <provider> <<< "$MY_KEY"
   security find-generic-password -w <item> | ocx account add-key <provider>`;

@@ -374,6 +374,10 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "POST", path: "/api/oauth/accounts/clear-cooldown", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/accounts/import", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/accounts/probe", module: "server/management/oauth-account-routes", mutates: false },
+  // Only bearer surface that returns refresh tokens. Requires an operator-mediated session
+  // (pairing or trusted Tailscale identity); automatic loopback bootstrap and the admin token are
+  // refused. The CLI equivalent is `ocx account export`, which writes the same document locally.
+  { method: "POST", path: "/api/oauth/accounts/export", module: "server/management/account-export-routes", mutates: false, mechanism: "path-constant", exempt: { reason: "session-only", why: "Credential export requires a current paired or trusted-Tailscale dashboard session; automatic loopback bootstrap, admin tokens and CLI capability principals are refused. The CLI writes the same document locally via ocx account export." } },
   { method: "POST", path: "/api/oauth/login", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/login/cancel", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/login/code", module: "server/management/oauth-account-routes", mutates: true },

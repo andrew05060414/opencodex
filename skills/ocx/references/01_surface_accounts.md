@@ -8,7 +8,7 @@
 Use these declarations to choose a task, then check its flags and authority before execution.
 Non-mutating probes may still contact providers, consume quota or refresh caches.
 
-Declared capabilities: 44.
+Declared capabilities: 45.
 
 ### `ocx account login`
 
@@ -596,6 +596,30 @@ State-changing: yes. JSON mode: `envelope`.
 | `--json` | boolean | Emit sanitized per-record import outcomes. |
 
 - Human-controlled credential handoff: choose exactly one source. Unsupported providers/formats are refused before source I/O. Partial failures or unsupported records return nonzero; do not echo the document.
+
+### `ocx account export`
+
+Usage: `ocx account export (--file <path>|--stdout --yes) [--provider <name>]... [--account <provider:id|alias>]... [--format <format>] [--force] [--json]`
+
+Write the local OAuth and Codex credential stores to an owner-only JSON file.
+
+State-changing: no. JSON mode: `payload`.
+
+Drives no management route.
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--file` | string | Destination file; exclusive with --stdout. Refuses an existing path unless --force. |
+| `--provider` | string | Repeatable. Export only these providers; `openai` means the Codex pool. |
+| `--account` | string | Repeatable. <provider>:<account-id-or-alias>; a Codex account uses openai:<id\|main>. |
+| `--format` | string | full, cockpit-tools, codex-auth (Codex CLI/Switcher auth.json, one account), claude-credentials (Claude Code envelope, one account), or cliproxyapi (one typed file per account). |
+| `--force` | boolean | Replace an existing regular file. Never replaces a link or directory. |
+| `--stdout` | boolean | Write the document to stdout; requires --yes because it prints refresh tokens. |
+| `--yes` | boolean | Confirm the --stdout secret disclosure. |
+| `--json` | boolean | Emit a secret-free receipt with counts and the written path. |
+
+- Reads auth.json, codex-accounts.json and the native Codex auth.json directly; no management request and no token refresh, so it works while the proxy is stopped. Selection is optional: no flag exports everything, a provider narrows by family, and an account narrows to one credential. Formats addressing a single credential refuse a multi-account selection instead of choosing one. When a format yields several files they are written beside --file with that name as their prefix; --stdout accepts only single-file formats.
+- Provider API keys stay in config.json and belong to `ocx config export`. Orca-linked Codex accounts are reported as omitted instead of copying another app's rotating grant. The output contains refresh tokens; keep it out of transcripts and version control.
 
 ### `ocx account reauth`
 

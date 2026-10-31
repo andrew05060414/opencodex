@@ -99,6 +99,23 @@ export const ACCOUNT_CAPABILITIES: readonly Capability[] = [
     details: ["Human-controlled credential handoff: choose exactly one source. Unsupported providers/formats are refused before source I/O. Partial failures or unsupported records return nonzero; do not echo the document."],
   },
   {
+    command: ["account", "export"], summary: "Write the local OAuth and Codex credential stores to an owner-only JSON file.",
+    usage: "ocx account export (--file <path>|--stdout --yes) [--provider <name>]... [--account <provider:id|alias>]... [--format <format>] [--force] [--json]",
+    routes: [],
+    flags: [
+      { name: "--file", value: "string", summary: "Destination file; exclusive with --stdout. Refuses an existing path unless --force." },
+      { name: "--provider", value: "string", summary: "Repeatable. Export only these providers; `openai` means the Codex pool." },
+      { name: "--account", value: "string", summary: "Repeatable. <provider>:<account-id-or-alias>; a Codex account uses openai:<id|main>." },
+      { name: "--format", value: "string", summary: "full, cockpit-tools, codex-auth (Codex CLI/Switcher auth.json, one account), claude-credentials (Claude Code envelope, one account), or cliproxyapi (one typed file per account)." },
+      { name: "--force", value: "boolean", summary: "Replace an existing regular file. Never replaces a link or directory." },
+      { name: "--stdout", value: "boolean", summary: "Write the document to stdout; requires --yes because it prints refresh tokens." },
+      { name: "--yes", value: "boolean", summary: "Confirm the --stdout secret disclosure." },
+      { name: "--json", value: "boolean", summary: "Emit a secret-free receipt with counts and the written path." },
+    ],
+    mutates: false, json: "payload",
+    details: ["Reads auth.json, codex-accounts.json and the native Codex auth.json directly; no management request and no token refresh, so it works while the proxy is stopped. Selection is optional: no flag exports everything, a provider narrows by family, and an account narrows to one credential. Formats addressing a single credential refuse a multi-account selection instead of choosing one. When a format yields several files they are written beside --file with that name as their prefix; --stdout accepts only single-file formats.", "Provider API keys stay in config.json and belong to `ocx config export`. Orca-linked Codex accounts are reported as omitted instead of copying another app's rotating grant. The output contains refresh tokens; keep it out of transcripts and version control."],
+  },
+  {
     command: ["account","reauth"],
     summary: "Reauthenticate a provider account through the existing login flow.",
     usage: "ocx account reauth <provider> [--id <account-id>] [--device] [--code -] [--no-wait] [--open-browser <on|off>] [--json]",

@@ -595,7 +595,7 @@ List and switch provider accounts and API-key pools through the running proxy. T
 surface is:
 
 ```text
-Usage: ocx account <list|history|current|use|clear|refresh|auto-switch|alias|priority|pause|resume|reset-affinity|pause-exhausted|strategy|sticky|remove|clear-cooldown|add-key|import|import-orca|login|reauth|code|cancel|reset-credits|grok-reset-coupons|main> ...
+Usage: ocx account <list|history|current|use|clear|refresh|auto-switch|alias|priority|pause|resume|reset-affinity|pause-exhausted|strategy|sticky|remove|clear-cooldown|add-key|import|export|import-orca|login|reauth|code|cancel|reset-credits|grok-reset-coupons|main> ...
 
 list [provider]     Codex account pool, OAuth accounts and API keys (identifiers shown masked as the API returns them).
 history openai <pool-account-id> [--limit <1-200>]  Recent routing decisions for one Codex pool account.
@@ -619,6 +619,7 @@ login/reauth/code/cancel  Run browser or manual-code auth from a headless shell.
 reset-credits <id|main> [--consume --yes]  Inspect or consume Codex reset credits.
 grok-reset-coupons [<id>] [--consume --yes] [--token-id <token-id>] [--operation-id <uuid>]  Inspect or redeem Grok reset coupons.
 import <provider> --format <format> (--file <path>|--stdin)  Import credentials from a named external format.
+export (--file <path>|--stdout --yes) [--format full|cockpit-tools] [--force]  Write the local credential stores to a JSON file.
 import-orca --source <dir> --registry <file> [--apply]  Preview or apply imports from Orca-managed Codex homes.
 main <doctor|list|register|add|reauth|switch|recover>  Manage the Codex App login the pool calls 'main'.
 Switching the active account takes effect immediately; running threads move on their next request, and in-flight requests keep the account they captured.
@@ -626,7 +627,8 @@ A selection-order change applies from the next unbound request and never moves a
 ```
 
 Account subcommands require the proxy to be running and auto-resolve its recorded runtime port,
-except `import-orca`: preview is local-only, and `import-orca --apply` requires the proxy to be stopped.
+except `export` (always local, works while the proxy is stopped) and `import-orca`: preview is
+local-only, and `import-orca --apply` requires the proxy to be stopped.
 Successful operations exit 0. Invalid usage, an unknown provider or account/key id, an unreachable
 proxy, or an API failure normally exits 1. For `reset-affinity`, HTTP 404 exits 4 and HTTP 409 exits 5; other API failures and unconfirmed results exit 1. Credential fields are displayed exactly as the management API
 returns them (including its masking); raw API keys and OAuth tokens are never returned. Display
@@ -651,6 +653,89 @@ and the plan/label column falls back across plan, masked email, label, and maske
   "quota": null
 }
 ```
+
+### `ocx account export --file <path> [--provider <name>]... [--account <provider:id>]... [--format <format>] [--force] [--json]`
+
+Write the stored OAuth and Codex credentials to one JSON file. The command reads `auth.json`,
+`codex-accounts.json`, and the native `$CODEX_HOME/auth.json` directly. It sends no management
+request, refreshes no token, and works while the proxy is stopped.
+
+```powershell
+# Everything: OAuth accounts, Codex Pool accounts, and the signed-in Codex login.
+ocx account export --file .\ocx-accounts.json
+
+# Only Claude accounts.
+ocx account export --file .\claude.json --provider anthropic
+
+# Only Codex: the pool plus the signed-in login, which is separate from every OAuth provider.
+ocx account export --file .\codex.json --provider openai
+
+# One account, in a format another tool reads.
+ocx account export --file .\auth.json --account openai:main --format codex-auth
+ocx account export --file .\claude-1.json --account anthropic:work --format claude-credentials
+
+# The Cockpit Tools Antigravity shape accepted by `ocx account import`.
+ocx account export --file .\antigravity.json --format cockpit-tools
+```
+
+Selection is optional and composes: no flag exports everything, `--provider` narrows to a family,
+and `--account <provider>:<id-or-alias>` narrows to one credential. `openai` is the Codex pool;
+`openai:main` is the signed-in `$CODEX_HOME/auth.json` login and `openai:<id>` is one pool account.
+Both flags repeat, so `--provider anthropic --provider openai` exports just those two families.
+
+| `--format` | Shape | Notes |
+| --- | --- | --- |
+| `full` (default) | `{version, exportedAt, oauth, codex, nativeCodex?, omitted}` | This project's document; every field a destination needs, no runtime state. |
+| `cockpit-tools` | `[{email, refresh_token, project_id?}]` | Antigravity only; exactly what `ocx account import` consumes. |
+| `codex-auth` | `{auth_mode, OPENAI_API_KEY, tokens, last_refresh}` | One Codex credential; the file Codex CLI and Codex Switcher keep at `~/.codex/auth.json`. |
+| `claude-credentials` | `{claudeAiOauth: {accessToken, refreshToken, expiresAt, scopes}}` | One Claude credential; the envelope Claude Code writes to `.credentials.json`. |
+| `cliproxyapi` | One top-level file per credential, discriminated by `type` | `type` is `codex`, `claude`, `antigravity`, `xai` or `generic`; put the files in a CLIProxyAPI `auth-dir`. |
+
+`codex-auth` and `claude-credentials` describe exactly one credential, so they refuse a selection
+holding several instead of silently exporting the first. `cliproxyapi` writes one file per selected
+account; with several files, each is written beside `--file` using that name as a prefix
+(`bundle-codex-main.json`), because `--stdout` can only carry a single JSON document.
+
+`--format full` writes `oauth`, `codex`, and, when that file holds an OAuth grant,
+`nativeCodex`. Each OAuth account keeps its refresh token, access token, expiry, and the provider
+fields a destination needs (`email`, `accountId`, `projectId`, `apiBaseUrl`). Runtime state such as
+plan, validation dates, quota history, pause and cooldown does not travel.
+
+`--format cockpit-tools` writes the flat array that `ocx account import` consumes: `email`,
+`refresh_token`, and `project_id` when one is stored. Rows missing an acceptable email or refresh
+token are skipped because the importer would reject them.
+
+The file is created with owner-only permissions and is never overwritten unless `--force` is
+present. A directory or link at the target path is refused. `--stdout` writes the document to
+standard output and therefore requires `--yes`; prefer a file when a shell history or transcript
+could capture the output. `--json` prints a receipt with counts and the written path only, never
+tokens, emails, or account IDs.
+
+Three things are deliberately absent and named in the document's `omitted` list: provider API keys
+and API-key pools (they live in `config.json`, so use `ocx config export` for those), secrets held
+in the OS credential store (only the reference is local), and Codex accounts linked to an external
+Orca auth file, whose rotating grant stays with Orca. On a destination, relink those with
+`ocx account import-orca`. Treat the exported file as a live credential: it grants the same
+upstream access as the source machine until those tokens are revoked or refreshed.
+
+### Dashboard: **Export accounts**
+
+The **Providers** page header has an **Export accounts** button that writes the same documents
+through `POST /api/oauth/accounts/export`. It lists every account the page can already see, so one
+Codex account, one Claude account, or any combination can be exported on its own; ticking nothing
+exports everything. All five CLI formats are offered, and the refresh-token warning is on screen
+before anything is sent. The result is handed to the browser as a download — one file for `full`
+and `cockpit-tools`, one per account for `cliproxyapi`. The response is `Cache-Control: no-store`
+and is never written to the usage log.
+
+This surface is stricter than the rest of the dashboard. It requires a current **paired** or
+**trusted Tailscale-identity** session; the automatic loopback session a page gets just by loading
+the dashboard is refused, as are the admin token and CLI capability principals. The reason is the
+payload: a stored API key reveals one key, while this reveals grants that outlive the proxy.
+A refused button says so and points at `ocx account export` rather than pretending the network
+failed; the dialog then shows the exact CLI command for the selected format with a copy button, so
+an unpaired local dashboard can still finish the job. The document itself never appears in the
+dialog, the page, or the usage log — only the browser download.
 
 ### `ocx account import-orca --source <orca-data-directory> --registry <orca-data.json> [--apply] [--json]`
 
