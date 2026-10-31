@@ -257,6 +257,14 @@ for (const lane of ["native", "responses"] as const) {
   }, 30_000);
 }
 
+test("native: jevEffortMode client keeps a nested-only caller effort as the wire effort", async () => {
+  const f = fixture("native", "typesafe", "low");
+  Object.assign(f.config.combos!.auto!, { jevEffortMode: "client" });
+  const { response } = await send("native", f.config, { reasoning_effort: undefined, reasoning: { effort: "high" } });
+  expect(response.status).toBe(200);
+  expect(f.inference.bodies[0]!.reasoning_effort).toBe("high");
+}, 30_000);
+
 test("jevEffortMode defaults to decide so an existing JEV combo keeps overriding effort", () => {
   const f = fixture("native", "typesafe", "low");
   expect(f.config.combos!.auto!.jevEffortMode).toBeUndefined();

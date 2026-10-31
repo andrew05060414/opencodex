@@ -258,9 +258,14 @@ function applyComboEffort(
 ): void {
   const combo = getCombo(config, comboId);
   if (!combo) return;
+  // Same precedence as the Chat inbound parser: `reasoning_effort` first, nested `reasoning.effort` second.
+  const nested = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+    ? (body.reasoning as Rec).effort
+    : undefined;
   const hadEffort = Object.hasOwn(body, "reasoning_effort");
+  const callerEffort = hadEffort ? body.reasoning_effort : nested;
   const shaped = concreteComboRequestBody(
-    hadEffort ? { reasoning: { effort: body.reasoning_effort } } : {},
+    hadEffort || nested !== undefined ? { reasoning: { effort: callerEffort } } : {},
     target,
     comboDefaultEffort(config, comboId),
     supportedLadderFor({ provider: targetRoute.provider, modelId: targetRoute.modelId }),

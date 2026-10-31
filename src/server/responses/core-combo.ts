@@ -1055,7 +1055,7 @@ export async function executeComboResponses(
         : combo.defaultEffortMode,
     );
     if (initialJevDecision) {
-      delete childBody.service_tier;
+      if (jevEffortApplies) delete childBody.service_tier;
       if (jevEffortApplies && initialJevDecision.effort !== null) {
         const childReasoning = childBody.reasoning;
         const preservedReasoning = childReasoning && typeof childReasoning === "object" && !Array.isArray(childReasoning)
@@ -1221,7 +1221,7 @@ export async function executeComboResponses(
         onResponseComplete: callbackGate.onResponseComplete,
       });
       // Both lanes applied the initial choice before provider pins/caps; retain those transitions.
-      restoreOriginalRequestedEffort(childLog, initialJevDecision?.effort);
+      restoreOriginalRequestedEffort(childLog, jevEffortApplies ? initialJevDecision?.effort : undefined);
     } catch (error) {
       callbackGate.discard();
       if (options.abortSignal?.aborted) {
