@@ -71,6 +71,7 @@ import { handleModelRoutes } from "./management/model-routes";
 import { handleClaudeInterceptRoutes } from "./management/claude-intercept-routes";
 import { handleAgentSettingsRoutes } from "./management/agent-settings-routes";
 import { handleOauthAccountRoutes } from "./management/oauth-account-routes";
+import { handleAccountExportRoutes } from "./management/account-export-routes";
 import { handleComboRoutes } from "./management/combo-routes";
 import { handleDecisionRoutes } from "./management/decision-routes";
 import { handleSystemRoutes } from "./management/system-routes";
@@ -372,6 +373,9 @@ export async function handleManagementAPI(
   try {
     routed = await handleClaudeInterceptRoutes(ctx)
     ??     handleSessionRoutes(ctx)
+    // Local credential export must answer before the account routes, whose own dispatch
+    // comments describe model routes preceding the account handler on overlapping paths.
+    ??     (await handleAccountExportRoutes(ctx))
     ??     (await handleLinkRoutesOnDemand(ctx))
     ??     (await handleRemoteWorkspaceRoutesOnDemand(ctx))
     ??     (await handleConfigRoutes(ctx))
