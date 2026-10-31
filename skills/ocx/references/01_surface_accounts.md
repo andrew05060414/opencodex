@@ -8,11 +8,11 @@
 Use these declarations to choose a task, then check its flags and authority before execution.
 Non-mutating probes may still contact providers, consume quota or refresh caches.
 
-Declared capabilities: 43.
+Declared capabilities: 45.
 
 ### `ocx account login`
 
-Usage: `ocx account login <provider> [--id <account-id>] [--reauth] [--device] [--method <builder-id|google|github>] [--code -] [--no-wait] [--open-browser <on|off>] [--add-account <on|off>] [--accept-antigravity-risk] [--json]`
+Usage: `ocx account login <provider> [--id <account-id>] [--reauth] [--device] [--method <builder-id|google|github>] [--code -] [--no-wait] [--open-browser <on|off>] [--add-account <on|off>] [--json]`
 
 Log in to an OAuth provider; Kiro can add a native device account.
 
@@ -38,10 +38,8 @@ State-changing: yes. JSON mode: `payload`.
 | `--json` | boolean | Emit the command result as JSON; xAI --device requires --no-wait. |
 | `--open-browser` | string | on or off for browser-capable login; rejected for explicit/native device flows. |
 | `--add-account` | string | Fresh generic OAuth login only: on forces a fresh flow, off permits existing import preference. Not supported with reauth/Codex/Kiro method. |
-| `--accept-antigravity-risk` | boolean | google-antigravity only: accept the Google account-ban risk without the interactive y/N prompt. |
 
 - openai, codex and chatgpt address the Codex pool. Native main uses the separate account main reauth flow.
-- google-antigravity (login and reauth) prints an account-ban warning and needs a y answer on a terminal or --accept-antigravity-risk; otherwise it is refused before any request. Agent-driven runs are refused even with the flag (AGENTS_INSTALL.md).
 - Login is a human authorization handoff. Codes, verification material and credentials must not be copied into agent transcripts. Legacy argv code input warns about exposure; use stdin.
 - No --live flag is implemented. Provider OAuth --id requires --reauth; --method is Kiro add-only.
 - Omitted options preserve each flow's existing defaults. Explicit browser flags are refused for Codex device, known native-device providers and native Kiro method; add-account is refused for reauth/Codex/Kiro method.
@@ -559,9 +557,28 @@ State-changing: yes. JSON mode: `envelope`.
 
 - API-key providers only. Requires non-TTY stdin and reads one secret line; never put plaintext keys in command arguments or agent transcripts. This imports an upstream credential, not an OpenCodex access-key creation workflow.
 
+### `ocx account probe`
+
+Usage: `ocx account probe google-antigravity [<account-id|alias>] [--json]`
+
+Test stored accounts one by one with their own tokens, read-only.
+
+State-changing: no. JSON mode: `payload`.
+
+| Method | Route |
+|---|---|
+| GET | `/api/oauth/accounts` |
+| POST | `/api/oauth/accounts/probe` |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--json` | boolean | Emit per-account status, HTTP code, reason and quota windows. |
+
+- Statuses: ok, paused, token_expired, suspended, verification_required, rate_limited, permission_denied, error. Sends one retrieveUserQuotaSummary request per account with its stored token; paused accounts are skipped without a request, and expired tokens are reported, never refreshed. Only google-antigravity is supported.
+
 ### `ocx account import`
 
-Usage: `ocx account import google-antigravity --format cockpit-tools (--file <path>|--stdin) [--accept-antigravity-risk] [--json]`
+Usage: `ocx account import google-antigravity --format cockpit-tools (--file <path>|--stdin) [--json]`
 
 Import Google Antigravity accounts from a bounded Cockpit Tools document.
 
@@ -576,11 +593,33 @@ State-changing: yes. JSON mode: `envelope`.
 | `--format` | string | Only cockpit-tools is supported. |
 | `--file` | string | Bounded source document; exclusive with --stdin. |
 | `--stdin` | boolean | Read the document from non-TTY stdin. |
-| `--accept-antigravity-risk` | boolean | Accept the Google account-ban risk without the y/N prompt; required with --stdin. |
 | `--json` | boolean | Emit sanitized per-record import outcomes. |
 
 - Human-controlled credential handoff: choose exactly one source. Unsupported providers/formats are refused before source I/O. Partial failures or unsupported records return nonzero; do not echo the document.
-- Prints the Antigravity account-ban warning before reading the source; --file on a terminal asks y/N, otherwise --accept-antigravity-risk is required. Agent-driven runs are refused even with the flag (AGENTS_INSTALL.md).
+
+### `ocx account export`
+
+Usage: `ocx account export (--file <path>|--stdout --yes) [--provider <name>]... [--account <provider:id|alias>]... [--format <format>] [--force] [--json]`
+
+Write the local OAuth and Codex credential stores to an owner-only JSON file.
+
+State-changing: no. JSON mode: `payload`.
+
+Drives no management route.
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--file` | string | Destination file; exclusive with --stdout. Refuses an existing path unless --force. |
+| `--provider` | string | Repeatable. Export only these providers; `openai` means the Codex pool. |
+| `--account` | string | Repeatable. <provider>:<account-id-or-alias>; a Codex account uses openai:<id\|main>. |
+| `--format` | string | full, cockpit-tools, codex-auth (Codex CLI/Switcher auth.json, one account), claude-credentials (Claude Code envelope, one account), or cliproxyapi (one typed file per account). |
+| `--force` | boolean | Replace an existing regular file. Never replaces a link or directory. |
+| `--stdout` | boolean | Write the document to stdout; requires --yes because it prints refresh tokens. |
+| `--yes` | boolean | Confirm the --stdout secret disclosure. |
+| `--json` | boolean | Emit a secret-free receipt with counts and the written path. |
+
+- Reads auth.json, codex-accounts.json and the native Codex auth.json directly; no management request and no token refresh, so it works while the proxy is stopped. Selection is optional: no flag exports everything, a provider narrows by family, and an account narrows to one credential. Formats addressing a single credential refuse a multi-account selection instead of choosing one. When a format yields several files they are written beside --file with that name as their prefix; --stdout accepts only single-file formats.
+- Provider API keys stay in config.json and belong to `ocx config export`. Orca-linked Codex accounts are reported as omitted instead of copying another app's rotating grant. The output contains refresh tokens; keep it out of transcripts and version control.
 
 ### `ocx account reauth`
 
