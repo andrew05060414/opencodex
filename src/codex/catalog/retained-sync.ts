@@ -323,9 +323,10 @@ function writeRetainedCatalogSync({
 
   // Hide disabled models from Codex, then feature the chosen subagent models (native OR routed)
   // by giving them the lowest priority — see buildCatalogEntries for why priority, not array order.
+  // Decouple subagentModels from global catalog priorities (#PX-1276).
   const enabledGo = filterCatalogVisibleModels(goModels, config);
-  const featured = config.subagentModels ?? [];
-  const orderedGoModels = orderForSubagents(enabledGo, featured); // stable tie-break among equal priorities
+  const featured: string[] = [];
+  const orderedGoModels = enabledGo;
   const suppressedSyntheticMaxSlugs = suppressedSyntheticMaxCatalogSlugs(
     config,
     orderedGoModels,
