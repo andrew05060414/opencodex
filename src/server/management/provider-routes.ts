@@ -883,6 +883,7 @@ function providerRoutingQuota(config: OcxConfig, name: string, now: number): Pro
 }
 
 export async function handleProviderRoutes(ctx: ManagementContext): Promise<Response | null> {
+  if (ctx.url.pathname === "/api/providers/rename" && ctx.req.method === "POST") return (await import("./provider-rename")).handleProviderRename(ctx);
   const { req, url, config, deps, principal, convergeCodexCatalog, syncClaudeAgentDefsBestEffort } = ctx;
 
   if (url.pathname === "/api/provider-quotas" && req.method === "GET") {
