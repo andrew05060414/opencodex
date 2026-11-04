@@ -6,6 +6,10 @@ import type { TKey } from "./en";
  * Turkish i18n catalog. Must match the `TKey` set (compile-checked).
  */
 export const tr: Record<TKey, string> = {
+  "models.visionRefusal": "Sunucu görüntüyü reddettiği için görüntü kabul edemiyor olarak işaretlendi. Bu oturumda görüntüler Vision Sidecar ile açıklanır. Yeniden başlatma işareti temizler.",
+  "models.visionRefusalClear": "Otomatik işareti temizle",
+  "models.visionRefusalError": "Otomatik görüntü işareti doğrulanamadı. Temizlemeyi yeniden deneyin.",
+  "logs.detail.attempt.recovery.visionRefusal": "Görüntü reddedildi → açıklama",
     "pws.firstResponse.title": "İlk yanıt durumu",
   "pws.firstResponse.stepProvider": "Sağlayıcı",
   "pws.firstResponse.stepModels": "Modeller",

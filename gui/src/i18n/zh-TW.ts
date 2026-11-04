@@ -3,6 +3,10 @@ import type { TKey } from "./en";
 
 /** Traditional Chinese (Taiwan) UI strings — keys must match `en.ts` 1:1. */
 export const zhTW: Record<TKey, string> = {
+  "models.visionRefusal": "上游拒收圖片後，已自動標記為無法看圖。本次執行將透過 Vision Sidecar 轉述，重新啟動會清除此標記。",
+  "models.visionRefusalClear": "撤銷自動標記",
+  "models.visionRefusalError": "無法確認自動識圖標記的狀態，請重試撤銷。",
+  "logs.detail.attempt.recovery.visionRefusal": "圖片遭拒，改用轉述",
     "pws.firstResponse.title": "首次回應進度",
   "pws.firstResponse.stepProvider": "供應商",
   "pws.firstResponse.stepModels": "模型",

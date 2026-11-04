@@ -5,6 +5,10 @@ import type { TKey } from "./en";
  * Japanese i18n catalog; must match the `TKey` set (compile-checked).
  */
 export const ja: Record<TKey, string> = {
+  "models.visionRefusal": "上流が画像を拒否したため、画像非対応として自動登録しました。このセッションでは Vision Sidecar が画像を説明します。再起動で解除されます。",
+  "models.visionRefusalClear": "自動登録を解除",
+  "models.visionRefusalError": "画像の自動登録状態を確認できませんでした。解除を再試行してください。",
+  "logs.detail.attempt.recovery.visionRefusal": "画像拒否 → 画像説明",
     "pws.firstResponse.title": "初回応答の進行状況",
   "pws.firstResponse.stepProvider": "プロバイダー",
   "pws.firstResponse.stepModels": "モデル",

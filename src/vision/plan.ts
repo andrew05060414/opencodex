@@ -15,6 +15,7 @@ import { normalizeVisionReasoningForModel } from "./reasoning";
 import { inheritedAnthropicInstance, resolveSidecarAuth, resolveAnthropicHelperInstance, resolveAnthropicSidecarAuth, withAnthropicHelperRefusal } from "../sidecar/auth";
 import { DEFAULT_VISION_TIMEOUT_MS, MAX_VISION_TIMEOUT_MS, MIN_VISION_TIMEOUT_MS } from "./timeout-bounds";
 import { carriesImages } from "./image-rewrite";
+import { visionRefusal } from "./refusals";
 
 const DEFAULT_VISION_MODEL = "gpt-5.6-luna";
 const DEFAULT_ANTHROPIC_VISION_MODEL = "claude-sonnet-5";
@@ -126,6 +127,8 @@ export function requiresVisionPreprocessing(
   modelId: string,
   providerName?: string,
 ): boolean {
+  if (providerName && config.providers[providerName]
+    && visionRefusal(providerName, config.providers[providerName], modelId)) return true;
   const runtimeDeclared = Object.hasOwn(provider.modelCapabilities ?? {}, modelId)
     ? provider.modelCapabilities?.[modelId]?.inputModalities
     : undefined;

@@ -93,6 +93,7 @@ import {
   anthropicFastRefused,
 } from "./core-opaque-recovery";
 import { createAnthropicThinkingRecovery } from "./anthropic-thinking-recovery";
+import { createVisionRefusalRecovery } from "./vision-refusal-recovery";
 import { shouldAttemptImageTierRetry } from "../image-retry";
 import {
   isTransientConsoleGoUploadRejection,
@@ -598,12 +599,7 @@ export async function prepareAdapterExchange(
   // Shared with the terminal-guard continuation below: an image-tier reduction that let the
   // main request clear a 413 must not be forgotten on the very next continuation build.
   // Recovery helpers also serve initial HTTP-200 adapter errors during delivery.
-    // Recovery loop: multi-key 429 failover + at most ONE opaque-state rebuild and ONE
-    // anthropic 413 tightened retry
-    // (devlog/260714_image_normalization_pipeline/030). One mutable activeAdapter serves
-    // both paths so a 429→413 sequence never rebuilds against a stale pre-rotation
-    // adapter, and imageTierBias — once armed — rides EVERY subsequent rebuild so a
-    // 413→429 rotation cannot silently undo the tightening.
+    // Image tier bias survives credential rotations and every rebuilt request.
     let imageRetryAttempted = false;
     const opaqueBlobRecoveryGuard: OpaqueBlobRecoveryGuard = { attempted: false };
     const thinkingSignatureRecovery = createAnthropicThinkingRecovery(
@@ -915,8 +911,17 @@ export async function prepareAdapterExchange(
         },
       });
     };
-   // Keep recovery kinds in sync with the native Responses `passthroughRecovery:` loop above.
+   const recoverVision = createVisionRefusalRecovery(requestContext, requestState, { adapter: transportState.activeAdapter, isPassthrough: false });
    recovery: for (;;) {
+      if (await recoverVision(upstreamResponse, !sendBudgetExhausted(
+        transientSendCapFor(transientRetryPolicyFor(route.provider)?.attempts, sendBudgetState.targetSendsUsed)))) {
+        void upstreamResponse.body?.cancel().catch(() => {});
+        invalidateSameTargetRequest();
+        const result = await rebuildAndRefetch("vision-refusal");
+        if ("failed" in result) return result.failed;
+        upstreamResponse = result;
+        continue recovery;
+      }
       const modelRotation = await antigravityDenial.recover(upstreamResponse,
         transportState.replayOAuthCredentialSnapshot ?? transportState.sentOAuthSnapshot, {
           config, model: route.modelId, enabled: antigravityPoolActivated && transportState.activeAdapter.name === "google",

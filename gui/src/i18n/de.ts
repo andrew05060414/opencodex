@@ -6,6 +6,10 @@ import type { TKey } from "./en";
  * German i18n catalog, generated from en.ts. Must match the `TKey` set (compile-checked).
  */
 export const de: Record<TKey, string> = {
+  "models.visionRefusal": "Nach einer Bildablehnung automatisch als nicht bildfähig markiert. Bilder werden in dieser Sitzung über Vision Sidecar beschrieben. Ein Neustart löscht die Markierung.",
+  "models.visionRefusalClear": "Automatische Markierung löschen",
+  "models.visionRefusalError": "Die automatische Bildmarkierung konnte nicht bestätigt werden. Erneut löschen.",
+  "logs.detail.attempt.recovery.visionRefusal": "Bild abgelehnt → Bildbeschreibung",
     "pws.firstResponse.title": "Fortschritt bis zur ersten Antwort",
   "pws.firstResponse.stepProvider": "Anbieter",
   "pws.firstResponse.stepModels": "Modelle",

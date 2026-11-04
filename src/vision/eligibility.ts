@@ -27,6 +27,7 @@ import { nativeInputModalities } from "../codex/catalog/metadata";
 import { SUPPORTED_NATIVE_OPENAI_SLUGS } from "../codex/catalog/native-models";
 import { enrichProviderFromRegistry, registryInputModalitiesForDestination } from "../providers/derive";
 import { isCanonicalOpenAiForwardProvider } from "../providers/openai-tiers-destination";
+import { visionRefusal } from "./refusals";
 
 /**
  * The wire protocols `planVisionSidecar` can dispatch to (#2188 roadmap 170
@@ -213,6 +214,7 @@ function isVisionSidecarConsumerWithCache(
 ): boolean {
   const provider = enrichedProviderForVision(config, providerName, cache);
   if (provider === undefined) return false;
+  if (visionRefusal(providerName, provider, modelId)) return true;
   // Documented precedence, highest first: the dedicated per-model capability axis, then the
   // operator's own custom row, then the provider-level hints. Reading the custom row ahead of
   // `modelCapabilities` would let it override the more specific axis.
@@ -264,6 +266,8 @@ function modelAcceptsImageInputWithCache(
   candidate: VisionCandidateModel,
   cache: EnrichedProviderCache,
 ): boolean | undefined {
+  const configured = config.providers[candidate.provider];
+  if (configured && visionRefusal(candidate.provider, configured, candidate.id)) return false;
   if (candidate.native === true || (candidate.provider === "openai" && SUPPORTED_NATIVE_OPENAI_SLUGS.has(candidate.id))) {
     const nativeProvider = enrichedProviderForVision(config, candidate.provider, cache);
     const declared = Object.hasOwn(nativeProvider?.modelCapabilities ?? {}, candidate.id)

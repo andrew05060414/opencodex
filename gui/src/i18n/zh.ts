@@ -5,6 +5,10 @@ import type { TKey } from "./en";
  * Chinese i18n catalog; must match the `TKey` set (compile-checked).
  */
 export const zh: Record<TKey, string> = {
+  "models.visionRefusal": "上游拒收图片后，已自动标记为看不了图。本次运行将通过 Vision Sidecar 转述，重启会清除此标记。",
+  "models.visionRefusalClear": "撤销自动标记",
+  "models.visionRefusalError": "无法确认自动识图标记的状态，请重试撤销。",
+  "logs.detail.attempt.recovery.visionRefusal": "图片被拒，改走转述",
     "pws.firstResponse.title": "首次响应进度",
   "pws.firstResponse.stepProvider": "提供商",
   "pws.firstResponse.stepModels": "模型",
