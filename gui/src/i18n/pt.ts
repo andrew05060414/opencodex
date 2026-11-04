@@ -7,6 +7,10 @@ import type { TKey } from "./en";
  * Technical terms and model identifiers intentionally remain English.
  */
 export const pt: Record<TKey, string> = {
+  "models.visionRefusal": "Marcado automaticamente como incapaz de receber imagens após uma recusa do servidor. O Vision Sidecar descreve imagens nesta sessão. Reiniciar remove a marca.",
+  "models.visionRefusalClear": "Limpar marca automática",
+  "models.visionRefusalError": "Não foi possível confirmar a marca automática. Tente limpá-la novamente.",
+  "logs.detail.attempt.recovery.visionRefusal": "Imagem recusada → descrição",
     "pws.firstResponse.title": "Progresso até a primeira resposta",
   "pws.firstResponse.stepProvider": "Provedor",
   "pws.firstResponse.stepModels": "Modelos",

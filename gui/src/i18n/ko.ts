@@ -5,6 +5,10 @@ import type { TKey } from "./en";
  * Korean i18n catalog; must match the `TKey` set (compile-checked).
  */
 export const ko: Record<TKey, string> = {
+  "models.visionRefusal": "상위 서버가 이미지를 거부하여 이미지 미지원으로 자동 표시했습니다. 이번 세션에서는 Vision Sidecar가 이미지를 설명합니다. 재시작하면 표시가 지워집니다.",
+  "models.visionRefusalClear": "자동 표시 해제",
+  "models.visionRefusalError": "자동 이미지 표시 상태를 확인하지 못했습니다. 해제를 다시 시도하세요.",
+  "logs.detail.attempt.recovery.visionRefusal": "이미지 거부 → 이미지 설명",
     "pws.firstResponse.title": "첫 응답 진행 상태",
   "pws.firstResponse.stepProvider": "제공자",
   "pws.firstResponse.stepModels": "모델",

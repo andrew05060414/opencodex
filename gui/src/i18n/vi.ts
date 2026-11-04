@@ -7,6 +7,10 @@ import type { TKey } from "./en";
  * Technical terms and model identifiers intentionally remain English.
  */
 export const vi: Record<TKey, string> = {
+  "models.visionRefusal": "Đã tự động đánh dấu không nhận ảnh sau khi máy chủ từ chối. Vision Sidecar mô tả ảnh trong phiên này. Khởi động lại sẽ xóa dấu.",
+  "models.visionRefusalClear": "Xóa dấu tự động",
+  "models.visionRefusalError": "Không thể xác nhận dấu ảnh tự động. Hãy thử xóa lại.",
+  "logs.detail.attempt.recovery.visionRefusal": "Ảnh bị từ chối → mô tả ảnh",
     "pws.firstResponse.title": "Tiến trình phản hồi đầu tiên",
   "pws.firstResponse.stepProvider": "Nhà cung cấp",
   "pws.firstResponse.stepModels": "Mô hình",

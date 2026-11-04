@@ -42,6 +42,7 @@ export async function prepareResponsesSidecarAuth(
     | "translatorBudget"
   >,
   transportState: Pick<ResponsesTransport, "adapter" | "isPassthrough">,
+  recovery: { preserveImagesWithoutPlan?: boolean } = {},
 ) {
   const { options, config, req } = requestContext;
   const { parsed, route, translatorBudget } = requestState;
@@ -150,7 +151,7 @@ export async function prepareResponsesSidecarAuth(
       // outcome already consumed it, so this generation-bound release is a safe no-op.
       if (!needsOpenAiSearch) openAiSidecar?.releaseProbeLease?.();
     }
-  } else if (requiresVisionPreprocessing(config, route.provider, route.modelId, route.providerName)) {
+  } else if (!recovery.preserveImagesWithoutPlan && requiresVisionPreprocessing(config, route.provider, route.modelId, route.providerName)) {
     // Image capability is not positively proven but no sidecar plan is dispatchable: fail closed.
     // Never forward raw image bytes to an unverified upstream.
     stripImagesInPlace(parsed, translatorBudget);
@@ -158,6 +159,7 @@ export async function prepareResponsesSidecarAuth(
   }
 
   return {
+    visionPlan,
     openAiSidecar,
     routedCompaction,
     preserveCompactionPrefix,

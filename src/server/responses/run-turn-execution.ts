@@ -58,6 +58,7 @@ import { WEB_SEARCH_TOOL_NAME } from "../../web-search/synthetic-tool";
 import { orderDevinMessagesOutput } from "../../claude/devin-output-order";
 import { unboundPoolSpendRefusalMessage } from "../workflow-refusal";
 import { claudeUsagePreflight } from "../../adapters/claude-cli/usage-admission";
+import { createVisionRefusalRecovery } from "./vision-refusal-recovery";
 
 // LOCAL PATCH (runturn-websearch): top-level fields route binding or the
 // adapter itself may write during a turn. Iteration-local `turnParsed` objects
@@ -415,8 +416,13 @@ export async function executeResponsesRunTurn(
     // search loop can buffer each turn's events before deciding to intercept.
     const wsFirstParsed = wsPlan ? runTurnWebSearchInitialParsed(parsed) : parsed;
     const runTurn = async (): Promise<void> => runTurnAttempt(queue, undefined, true, wsFirstParsed, initialPacingSlot);
+    const hasImageInput = parsed.context.messages.some(message => Array.isArray(message.content)
+      && message.content.some(part => part.type === "image"));
+    const recoverVision = createVisionRefusalRecovery(requestContext, requestState, {
+      adapter: transportState.adapter, isPassthrough: false,
+    });
     const runTurnFailoverArmed = () =>
-      route.provider.authMode === "oauth"
+      hasImageInput || route.provider.authMode === "oauth"
       || (transportState.runTurnAdapter.name === "qoder" && hasKeyPoolFailover(route.provider))
       || !!(transportState.genericFailoverAccountId
         && isGenericOAuthFailoverEnabled(config, route.providerName));
@@ -577,6 +583,20 @@ export async function executeResponsesRunTurn(
     const recoverRunTurnAdapterOnPreflightError = async (
       error: Extract<AdapterEvent, { type: "error" }>,
     ): Promise<AttemptRecoveryKind | undefined> => {
+      const status = error.status ?? adapterFailureFromMessage(error.message).httpStatus;
+      if ([400, 415, 422].includes(status)) {
+        const refusal = Response.json({ error: { message: error.message } }, { status });
+        let hop: ReturnType<typeof reserveCredentialHop> | undefined;
+        try {
+          if (await recoverVision(refusal, () => {
+            hop = reserveCredentialHop("repair", `${route.providerName}|${route.modelId}|vision-refusal`);
+            return hop.allowed;
+          })) {
+            sendBudgetState.pendingHopPermit = hop?.permit;
+            return "vision-refusal";
+          }
+        } finally { if (sendBudgetState.pendingHopPermit !== hop?.permit) hop?.permit?.release(); }
+      }
       const keyRecovery = await recoverRunTurnKey(error);
       if (keyRecovery) return keyRecovery;
       if (await recoverRunTurnAdapterOnPreflight401(error)) return "oauth-401";

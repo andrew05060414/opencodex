@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import ModelVisionRefusal from "./ModelVisionRefusal";
 import { confirmAction } from "../action-dialogs";
 import { createBoundedFetch, type BoundedFetch } from "../bounded-fetch";
 import { readJsonOrThrow } from "../fetch-json";
@@ -302,6 +303,7 @@ export default function ModelSettingsDialog({ row, apiBase, onRefresh, onFeedbac
             <code className="mono text-control">{row.namespaced}</code>
           </div>
 
+          <ModelVisionRefusal apiBase={apiBase} provider={row.provider} modelId={row.id} />
           <label className="text-label models-field">
             {t("models.customFieldContext")}
             <div className="row models-field-row">

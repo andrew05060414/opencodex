@@ -5,6 +5,10 @@ import type { TKey } from "./en";
  * French i18n catalog. Must match the `TKey` set.
  */
 export const fr: Record<TKey, string> = {
+  "models.visionRefusal": "Marqué automatiquement comme incapable de recevoir des images après un refus du fournisseur. Vision Sidecar décrit les images pour cette session. Un redémarrage efface cette marque.",
+  "models.visionRefusalClear": "Effacer la marque automatique",
+  "models.visionRefusalError": "Impossible de confirmer la marque automatique. Réessayez de l’effacer.",
+  "logs.detail.attempt.recovery.visionRefusal": "Image refusée → description visuelle",
     "pws.firstResponse.title": "Progression vers la première réponse",
   "pws.firstResponse.stepProvider": "Fournisseur",
   "pws.firstResponse.stepModels": "Modèles",

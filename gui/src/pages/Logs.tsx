@@ -357,6 +357,7 @@ const RECOVERY_KIND_KEYS = {
   "oauth-account-429": "logs.detail.attempt.recovery.oauthAccount429",
   "oauth-account-402": "logs.detail.attempt.recovery.oauthAccount402",
   "image-413": "logs.detail.attempt.recovery.image413",
+  "vision-refusal": "logs.detail.attempt.recovery.visionRefusal",
   "empty-completion": "logs.detail.attempt.recovery.emptyCompletion",
   "console-go-upload-retry": "logs.detail.attempt.recovery.consoleGoUpload",
   "opaque-blob-rejection": "logs.detail.attempt.recovery.opaqueBlobRejection",

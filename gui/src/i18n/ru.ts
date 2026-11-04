@@ -5,6 +5,10 @@ import type { TKey } from "./en";
  * Russian i18n catalog; must match the `TKey` set (compile-checked).
  */
 export const ru: Record<TKey, string> = {
+  "models.visionRefusal": "После отказа сервера модель автоматически отмечена как не принимающая изображения. В этом сеансе изображения описывает Vision Sidecar. Перезапуск сбрасывает отметку.",
+  "models.visionRefusalClear": "Сбросить автоматическую отметку",
+  "models.visionRefusalError": "Не удалось проверить автоматическую отметку. Повторите сброс.",
+  "logs.detail.attempt.recovery.visionRefusal": "Отказ изображения → описание",
     "pws.firstResponse.title": "Готовность к первому ответу",
   "pws.firstResponse.stepProvider": "Провайдер",
   "pws.firstResponse.stepModels": "Модели",

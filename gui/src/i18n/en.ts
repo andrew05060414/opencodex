@@ -7,6 +7,10 @@
  * `{var}` are plain interpolations.
  */
 export const en = {
+  "models.visionRefusal": "Automatically marked as unable to accept images after an upstream refusal. Images use Vision Sidecar for this session. Restarting clears this mark.",
+  "models.visionRefusalClear": "Clear automatic mark",
+  "models.visionRefusalError": "Could not confirm the automatic image capability mark. Try clearing it again.",
+  "logs.detail.attempt.recovery.visionRefusal": "Image refusal → vision description",
     "pws.firstResponse.title": "First-response progress",
   "pws.firstResponse.stepProvider": "Provider",
   "pws.firstResponse.stepModels": "Models",

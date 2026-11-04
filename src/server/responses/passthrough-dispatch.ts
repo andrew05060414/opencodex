@@ -176,6 +176,7 @@ import { isTransientConsoleGoUploadRejection } from "../../providers/opencode-ze
 import { planReasoningEffortDowngrade } from "../../providers/reasoning-metadata";
 import { unboundPoolSpendRefusalResponse } from "../workflow-refusal";
 import { guardPassthroughCompletion, parseOutboundRequestBody } from "./passthrough-completion";
+import { createVisionRefusalRecovery } from "./vision-refusal-recovery";
 
 /** Transfer an uncommitted Copilot exchange to the existing translated pipeline without new admission. */
 export interface PassthroughAdapterHandoff { kind: "adapter-handoff" }
@@ -1199,8 +1200,15 @@ export async function preparePassthroughExchange(
       }
     };
 
-    // Keep recovery kinds in sync with the generic `recovery:` loop below.
+    const recoverVision = createVisionRefusalRecovery(requestContext, requestState, { adapter: transportState.adapter, isPassthrough: true });
     passthroughRecovery: for (;;) {
+      if (await recoverVision(upstreamResponse, !sendBudgetExhausted(transientSendAttempts()))) {
+        void upstreamResponse.body?.cancel().catch(() => {});
+        const result = await rebuildAndRefetch("vision-refusal");
+        if ("failed" in result) return result.failed;
+        upstreamResponse = result;
+        continue passthroughRecovery;
+      }
       if (wasAccountAutoPaused(upstreamResponse) && route.provider.authMode !== "forward") {
         const recovered = await recoverAutoPausedAccount({ requestKey: transportState, reserve: reserveCredentialHop,
           remaining: transientSendCapFor(transientRetryPolicyFor(route.provider)?.attempts, sendBudgetState.targetSendsUsed),
@@ -1794,10 +1802,7 @@ export async function preparePassthroughExchange(
         if (sendBudgetState.ambiguousResendSpent) upstreamResponse = settleOperatorReplacement(upstreamResponse);
       }
     }
-    // Console Go (opencode-zen / opencode-go) intermittently rejects a body it accepts seconds
-    // later with 400 invalid_request_error / "Invalid upload request." Replay the byte-identical
-    // request once after the exact gateway rejection. Single-shot guard.
-    // This recovery reuses the captured request; other recovery kinds still rebuild.
+    // Console Go's transient upload refusal replays the captured request without rebuilding.
     if (!consoleGoUploadRetryGuard.attempted) {
       const uploadRejectionBody = await consoleGoUploadRejectionBody(
         upstreamResponse,
@@ -1825,11 +1830,7 @@ export async function preparePassthroughExchange(
         continue passthroughRecovery;
       }
     }
-    // Reasoning-effort downgrade: a rung the catalog still advertises can be refused upstream --
-    // the metadata records the model's ladder, not this account's entitlement (a Muse Code
-    // subscription gates max on muse-spark-1.3-contributor, for example). Learn the refusal so
-    // later turns clamp before dispatch, then replay once at the next lower published rung
-    // instead of failing the turn; requestedEffort/effectiveEffort keep both values in usage.
+    // Account entitlement can refuse a reasoning rung the model's catalog advertises.
     if (!reasoningEffortDowngradeGuard.attempted) {
       const rejectionText = await reasoningEffortRejectionText(
         upstreamResponse,

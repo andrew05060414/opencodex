@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { handleVisionRefusalRoutes } from "./vision-refusal-routes";
 import { readFileSync } from "node:fs";
 import { shouldInjectApiAuthHeader } from "../../codex/loopback-target";
 import { isExportModelNames, supportsAliasModelNames } from "../../clients/config-export/model-names";
@@ -194,6 +195,8 @@ function summarizeExportedModels(client: ExportClientId, document: unknown): { m
 }
 
 export async function handleModelRoutes(ctx: ManagementContext): Promise<Response | null> {
+  const visionRefusalResponse = handleVisionRefusalRoutes(ctx);
+  if (visionRefusalResponse) return visionRefusalResponse;
   const { req, url, config, deps, convergeCodexCatalog, syncClaudeAgentDefsBestEffort } = ctx;
   // A handler persists the exact config object passed in. Production defaults to
   // the real store; tests that pass an in-memory fixture inject a no-op/spy. Do not
