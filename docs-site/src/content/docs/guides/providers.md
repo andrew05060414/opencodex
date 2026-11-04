@@ -13,6 +13,18 @@ These links preserve the preset's referral parameters. Sponsor information is sh
 the configured provider name, adapter and endpoint match the preset; it never changes routing,
 account selection or defaults.
 
+## Rename a provider and configure Vertex ADC
+
+In a provider's Settings tab, edit its name and choose **Rename**. The proxy preserves API keys
+and updates configured model routes, combos, subagent models and Claude Desktop assignments
+without restarting. Account-backed OAuth and ChatGPT forward providers keep their identity.
+The destination must be an unused custom name, not a built-in provider ID.
+
+When adding Google Vertex AI, select **Use local gcloud credentials** to use Application Default
+Credentials on the proxy host. Enter the Google Cloud project and Vertex location. Authenticate
+on that host with `gcloud auth application-default login` first. The form saves without an API key;
+unchecking this option restores API-key authentication.
+
 ## OpenAI account modes
 
 | Provider id | Use | Credential/account rule |

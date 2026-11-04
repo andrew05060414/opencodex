@@ -170,6 +170,7 @@ export default function AddProviderModal({
           ? baseUrlForChoice(p.baseUrlChoices, choiceId, p.baseUrl)
           : p.baseUrl,
         responsesPath: p.responsesPath,
+        googleMode: p.id === "google-vertex" || p.id === "vertex" ? "vertex" : undefined,
         authMode: p.auth,
         apiKey: "",
         apiKeyTransport: undefined,
