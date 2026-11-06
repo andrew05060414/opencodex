@@ -395,3 +395,41 @@ describe("management routes: GET/PUT /api/privacy/config, allow-values, POST /ap
     expect(dates).toEqual([...dates].sort());
   });
 });
+
+describe("redactPlainText: name-based credential rule does not mask code identifiers", () => {
+  // Built at runtime (see fixtures/secrets.ts): a literal would trip the gitleaks pre-commit hook.
+  const mixedValue = "q7" + "Zk3" + "Lm9" + "Xp2" + "Rt8" + "Vb4";
+  const identifierLines = [
+    'res.input_tokens = usage("input_tokens")',
+    "api_key = get_api_key(config.name)",
+    'foreign_keys="TranslationEditionSet",',
+    'STORAGE_KEY = "pxread-library-prefs-v2";',
+    "max_output_tokens=MAX_OUTPUT_TOKENS,",
+    "confidence: Optional[int] = None",
+    "monkeypatch: pytest.MonkeyPatch,",
+    'PIXIV_SESSION_COOKIE_ENV_KEY = "PXREAD_PIXIV_SESSION_COOKIE"',
+  ];
+  for (const line of identifierLines) {
+    it(`leaves ${JSON.stringify(line)} alone`, () => {
+      const outcome = redactPlainText(line);
+      expect(outcome.hits).toEqual([]);
+      expect(outcome.body).toBe(line);
+    });
+  }
+
+  it("still masks credential-shaped values assigned to a credential-named variable", () => {
+    for (const line of [
+      "MY_APP_SECRET=" + "z".repeat(24),
+      "API_" + "TOKEN=" + mixedValue,
+      "DB_" + "PASSWORD=" + mixedValue,
+    ]) {
+      expect(redactPlainText(line).hits.length).toBe(1);
+    }
+  });
+
+  it("classifies a named assignment by its name (token / password / api_key), not 'other'", () => {
+    expect(redactPlainText("API_" + "TOKEN=" + mixedValue).hits).toEqual([{ kind: "token", count: 1 }]);
+    expect(redactPlainText("DB_" + "PASSWORD=" + mixedValue).hits).toEqual([{ kind: "password", count: 1 }]);
+    expect(redactPlainText("SERVICE_" + "KEY=" + mixedValue).hits).toEqual([{ kind: "api_key", count: 1 }]);
+  });
+});
