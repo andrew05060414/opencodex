@@ -326,11 +326,19 @@ describe("combo catalog capability intersection", () => {
     expect(adaptive?.reasoningEfforts).toEqual(["low", "medium", "high"]);
     expect(adaptive?.defaultReasoningEffort).toBe("medium");
 
-    // Adaptive only drops EMPTY ladders; non-empty ones still intersect normally.
+    // Adaptive drops EMPTY ladders and publishes the UNION of the rest, ordered by rank, so a
+    // narrow low/medium/high lane cannot cap a combo whose other lane reaches xhigh/max.
     expect(deriveComboCatalogModel(
-      "adaptive-intersect",
+      "adaptive-union",
       normalizedCombo({ defaultEffort: "medium", reasoningEffortMode: "adaptive" }),
-      [memberA, { ...memberB, reasoningEfforts: ["medium", "high"] }],
+      [memberA, { ...memberB, reasoningEfforts: ["max", "xhigh", "medium", "high"] }],
+    )?.reasoningEfforts).toEqual(["low", "medium", "high", "xhigh", "max"]);
+
+    // Strict keeps the intersection: every lane must serve the advertised rung as is.
+    expect(deriveComboCatalogModel(
+      "strict-intersect",
+      normalizedCombo({ defaultEffort: "medium", reasoningEffortMode: "strict" }),
+      [memberA, { ...memberB, reasoningEfforts: ["medium", "high", "xhigh", "max"] }],
     )?.reasoningEfforts).toEqual(["medium", "high"]);
 
     // Every target empty under adaptive still yields no ladder — there is nothing to keep.

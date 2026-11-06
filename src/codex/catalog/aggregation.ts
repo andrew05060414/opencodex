@@ -78,6 +78,19 @@ export function intersectStrings(values: readonly string[][]): string[] {
   return [...new Set(values[0])].filter(value => rest.every(set => set.has(value)));
 }
 
+function unionEfforts(ladders: readonly string[][]): string[] {
+  const all = [...new Set(ladders.flat())];
+  // Known rungs sort by rank; anything the ranker does not know keeps first-seen order at the end.
+  const rank = (effort: string): number => {
+    const value = codexEffortRank(effort);
+    return value < 0 ? Number.MAX_SAFE_INTEGER : value;
+  };
+  return all
+    .map((effort, index) => ({ effort, index }))
+    .sort((a, b) => rank(a.effort) - rank(b.effort) || a.index - b.index)
+    .map(item => item.effort);
+}
+
 /**
  * The catalog's view of a combo's default effort. Delegates to the shared leaf
  * resolver so the request path (src/combos/request.ts) cannot drift from what the
@@ -147,9 +160,15 @@ export function deriveComboCatalogModel(
   const advertisedLadders = combo.reasoningEffortMode === "adaptive"
     ? knownLadders.filter(ladder => ladder.length > 0)
     : knownLadders;
+  // Adaptive publishes the UNION of the surviving ladders, ordered by rank. One narrow lane
+  // (antigravity's low/medium/high) must not cap a combo whose other lanes reach xhigh/max; the
+  // request path snaps the chosen rung to each target's own ladder (`concreteComboRequestBody`).
+  // Strict keeps the intersection: every target must be able to serve the advertised rung as is.
   const reasoningEfforts = advertisedLadders.length === 0
     ? []
-    : intersectStrings(advertisedLadders);
+    : combo.reasoningEffortMode === "adaptive"
+      ? unionEfforts(advertisedLadders)
+      : intersectStrings(advertisedLadders);
   const contextWindow = Math.min(...members.map(member => member.contextWindow!));
   const limitingMembers = members.filter(member => member.contextWindow === contextWindow);
   const hasLimitingContextCapMetadata = limitingMembers.some(

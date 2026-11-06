@@ -76,6 +76,13 @@ export function concreteComboRequestBody(
     || (reasoningEffortMode === "adaptive" && targetReasoningEfforts === undefined)) {
     stripUnsupportedReasoningControls(clone);
   }
+  // Adaptive combos advertise the UNION of their targets' ladders, so a caller can ask for a rung
+  // this particular target does not have (xhigh against a low/medium/high-only lane). Snap it to
+  // the highest rung at or below, the same rule the default effort uses, instead of forwarding a
+  // value the target would reject or silently ignore.
+  if (reasoningEffortMode === "adaptive" && targetReasoningEfforts !== undefined && targetReasoningEfforts.length > 0) {
+    clampCallerEffortToTargetLadder(clone, targetReasoningEfforts);
+  }
   if (!defaultEffort || !isCodexReasoningEffort(defaultEffort)) return clone;
   const reasoning = clone.reasoning;
   const reasoningRecord = reasoning && typeof reasoning === "object" && !Array.isArray(reasoning)
@@ -128,6 +135,22 @@ export function concreteComboRequestBody(
     };
   }
   return clone;
+}
+
+function clampCallerEffortToTargetLadder(body: Record<string, unknown>, ladder: readonly string[]): void {
+  const reasoning = body.reasoning;
+  if (reasoning && typeof reasoning === "object" && !Array.isArray(reasoning)) {
+    const effort = (reasoning as Record<string, unknown>).effort;
+    if (typeof effort === "string" && isCodexReasoningEffort(effort) && !ladder.includes(effort)) {
+      const clamped = resolveEffortAtOrBelow(effort, ladder);
+      if (clamped) body.reasoning = { ...(reasoning as Record<string, unknown>), effort: clamped };
+    }
+  }
+  const flat = body.reasoning_effort;
+  if (typeof flat === "string" && isCodexReasoningEffort(flat) && !ladder.includes(flat)) {
+    const clamped = resolveEffortAtOrBelow(flat, ladder);
+    if (clamped) body.reasoning_effort = clamped;
+  }
 }
 
 function stripUnsupportedReasoningControls(body: Record<string, unknown>): void {

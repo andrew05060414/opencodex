@@ -297,6 +297,22 @@ describe("combo request cloning", () => {
     expect(concrete.input).not.toBe(raw.input);
   });
 
+  test("adaptive combos snap a caller effort the target lacks to its highest rung at or below", () => {
+    const ask = (effort: string, ladder: string[], mode: "strict" | "adaptive") => (
+      concreteComboRequestBody({ model: "combo/x", reasoning: { effort } }, target, null, ladder, mode).reasoning
+    );
+    // The union ladder lets a caller pick xhigh/max; a low/medium/high-only lane gets `high`.
+    expect(ask("xhigh", ["low", "medium", "high"], "adaptive")).toEqual({ effort: "high" });
+    expect(ask("max", ["low", "medium", "high"], "adaptive")).toEqual({ effort: "high" });
+    // A rung the target has is untouched, and a wider lane receives the original request.
+    expect(ask("medium", ["low", "medium", "high"], "adaptive")).toEqual({ effort: "medium" });
+    expect(ask("xhigh", ["low", "medium", "high", "xhigh", "max"], "adaptive")).toEqual({ effort: "xhigh" });
+    // Strict combos only ever advertise the intersection, so nothing is rewritten there.
+    expect(ask("xhigh", ["low", "medium", "high"], "strict")).toEqual({ effort: "xhigh" });
+    const flat = concreteComboRequestBody({ model: "combo/x", reasoning_effort: "max" }, target, null, ["low", "high"], "adaptive");
+    expect(flat.reasoning_effort).toBe("high");
+  });
+
   test("combo target capability strips unsupported client reasoning controls", () => {
     expect(concreteComboRequestBody({ model: "combo/x", reasoning: null }, target, "high", []).reasoning).toBeNull();
     expect(concreteComboRequestBody(
