@@ -109,7 +109,34 @@ interface Rule {
   kind: RedactionKind;
   /** Must be a fresh RegExp with the `g` flag; never reused across calls (lastIndex state). */
   pattern: () => RegExp;
-  extract?: (m: RegExpExecArray) => { fullMatch: string; secret: string; prefix?: string; suffix?: string };
+  /** Return null to skip a match that the pattern caught but that is not a secret. */
+  extract?: (m: RegExpExecArray) => { fullMatch: string; secret: string; prefix?: string; suffix?: string; kind?: RedactionKind } | null;
+}
+
+/**
+ * Is the VALUE half of a `name = value` match plausibly a credential, rather than a code
+ * identifier that merely sits next to a name containing key/token/secret/password? Real
+ * transcripts of source files, diffs and tool output hit the name rule constantly with
+ * `api_key = get_api_key(...)`, `foreign_keys="TranslationEdition"`, `STORAGE_KEY = "pxread-x"`,
+ * `max_output_tokens=MAX_OUTPUT`, `confidence: Optional[int]`; masking those only corrupts the code
+ * the model is reading. Values with a recognisable secret SHAPE (sk-, ghp_, JWT, Bearer ...) never get
+ * here: they have their own rules above.
+ *
+ * A value is kept as a secret when it is not shaped like an identifier:
+ *  - not followed by `(` or `[` (a call or a generic/index expression);
+ *  - not snake_case / SCREAMING_SNAKE / kebab-case / a dotted path;
+ *  - with a digit: accepted (random tokens almost always carry digits);
+ *  - without a digit: only a long (>=20) single-case run of letters, so camelCase / PascalCase
+ *    names and short words are left alone.
+ */
+export function looksLikeSecretValue(value: string, following: string): boolean {
+  if (following.startsWith("(") || following.startsWith("[")) return false;
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(value)) return false; // snake_case
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value)) return false; // SCREAMING_SNAKE (env var names)
+  if (/^[a-z]+(?:-[a-z0-9]+)+$/i.test(value) && !/[A-Z].*\d|\d.*[A-Z]/.test(value)) return false; // kebab-case
+  if (/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value)) return false; // dotted path
+  if (/\d/.test(value)) return true;
+  return value.length >= 20 && (/^[a-z]+$/.test(value) || /^[A-Z]+$/.test(value));
 }
 
 const RULES: Rule[] = [
@@ -149,13 +176,16 @@ const RULES: Rule[] = [
     kind: "other",
     pattern: () => /(["']?[A-Za-z][A-Za-z0-9_-]*?(?:key|secret|token|password|passwd|pwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([A-Za-z0-9+/_.~-]{8,})\2/gi,
     extract: (m) => {
+      const secret = m[3]!;
+      const following = (m.input ?? "").slice(m.index + m[0].length, m.index + m[0].length + 1);
+      if (!looksLikeSecretValue(secret, following)) return null;
       const label = m[0]!.toLowerCase();
       const kind: RedactionKind = label.includes("password") || label.includes("passwd") || label.includes("pwd")
         ? "password"
         : label.includes("token")
           ? "token"
           : "api_key";
-      return { fullMatch: m[0], secret: m[3]!, prefix: `${m[1]}${m[2] ?? ""}`, suffix: m[2] ?? "" };
+      return { fullMatch: m[0], secret, prefix: `${m[1]}${m[2] ?? ""}`, suffix: m[2] ?? "", kind };
     },
   },
 ];
@@ -219,11 +249,14 @@ class RedactionSession {
     let m: RegExpExecArray | null;
     while ((m = regex.exec(text)) !== null) {
       let secret: string;
+      let kind: RedactionKind = rule.kind;
       let prefix = "";
       let suffix = "";
       let fullMatch = m[0];
       if (rule.extract) {
         const ext = rule.extract(m);
+        if (!ext) continue;
+        kind = ext.kind ?? rule.kind;
         secret = ext.secret;
         prefix = ext.prefix ?? "";
         suffix = ext.suffix ?? "";
@@ -232,7 +265,7 @@ class RedactionSession {
         secret = m[0];
       }
       if (!secret || isAlreadyPlaceholder(secret)) continue;
-      matches.push({ fullMatch, secret, prefix, suffix, kind: rule.kind });
+      matches.push({ fullMatch, secret, prefix, suffix, kind });
       // Prevent a zero-length match (shouldn't occur with these patterns) from looping forever.
       if (m[0].length === 0) regex.lastIndex += 1;
     }
