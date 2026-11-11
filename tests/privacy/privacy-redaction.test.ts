@@ -434,6 +434,24 @@ describe("redactPlainText: name-based credential rule does not mask code identif
   });
 });
 
+describe("redaction leaves usage counters and the opaque prompt_cache_key alone", () => {
+  it("does not mask a numeric value assigned to a *_tokens counter", () => {
+    expect(redactPlainText('"cache_read_tokens": 32559727, "cache_write_tokens": 0').hits).toEqual([]);
+    expect(redactPlainText("total_tokens=1200000").hits).toEqual([]);
+  });
+
+  it("still masks a non-numeric value on a token-named field", () => {
+    expect(redactPlainText("session_token = " + "a1b2c3d4".repeat(2)).hits).toEqual([{ kind: "token", count: 1 }]);
+  });
+
+  it("does not mask prompt_cache_key", () => {
+    const body = { prompt_cache_key: crypto.randomUUID(), input: "hi" };
+    const outcome = redactClientBody(body);
+    expect(outcome.hits).toEqual([]);
+    expect(outcome.body).toEqual(body);
+  });
+});
+
 describe("reveal mode (privacy.revealValues): originals kept in memory for the operator, off by default", () => {
   it("returns no samples unless collectSamples is requested", () => {
     const outcome = redactPlainText(`curl -H "Authorization: Bearer ${fakeBearerToken()}"`);
