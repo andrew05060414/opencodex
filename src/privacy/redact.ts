@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RedactionHit, RedactionKind, RedactionOutcome } from "./types";
+import type { RedactionHit, RedactionKind, RedactionOutcome, RedactionSample } from "./types";
 
 /**
  * Client-request redaction engine.
@@ -95,6 +95,23 @@ export interface RedactOptions {
    * only, for reply-direction restoration). Off by default: the one-way path keeps no originals.
    */
   collectRestoreMap?: boolean;
+  /**
+   * Also return each redacted original with a little context on `outcome.samples`, so the
+   * operator can check what was masked (`privacy.revealValues`). Holds real secrets: memory
+   * only, off by default, never part of the one-way path.
+   */
+  collectSamples?: boolean;
+}
+
+/** Per-request ceiling on retained samples, and the context kept on each side of a match. */
+const MAX_SAMPLES_PER_REQUEST = 30;
+const SAMPLE_CONTEXT_RADIUS = 40;
+
+/** `text` around one match, flattened to a single line, for reveal-mode context. */
+function sampleWindow(text: string, index: number, length: number): string {
+  const from = Math.max(0, index - SAMPLE_CONTEXT_RADIUS);
+  const to = Math.min(text.length, index + length + SAMPLE_CONTEXT_RADIUS);
+  return text.slice(from, to).replace(/\s+/g, " ");
 }
 
 interface RuleMatch {
@@ -103,6 +120,8 @@ interface RuleMatch {
   prefix: string;
   suffix: string;
   kind: RedactionKind;
+  /** Offset of `fullMatch` in the text the rule ran over (reveal-mode context only). */
+  index: number;
 }
 
 interface Rule {
@@ -206,6 +225,9 @@ class RedactionSession {
   private readonly hits = new Map<RedactionKind, number>();
   private readonly hashes = new Set<string>();
   private readonly collect: boolean;
+  private readonly sampling: boolean;
+  private readonly samples: RedactionSample[] = [];
+  private readonly sampleKeys = new Set<string>();
   private readonly restore = new Map<string, string>();
   /** Placeholders whose 8-hex prefix collided across two values: never restored (fail-safe). */
   private readonly ambiguous = new Set<string>();
@@ -216,6 +238,7 @@ class RedactionSession {
       : new Set(options.allowValues ?? []);
     this.redactEmails = options.redactEmails === true;
     this.collect = options.collectRestoreMap === true;
+    this.sampling = options.collectSamples === true;
   }
 
   outcome(body: unknown): RedactionOutcome {
@@ -226,12 +249,25 @@ class RedactionSession {
       hits,
       placeholderHashes: [...this.hashes],
       ...(this.collect ? { restoreMap: this.restore } : {}),
+      ...(this.sampling ? { samples: this.samples } : {}),
     };
   }
 
-  private recordHit(kind: RedactionKind, secretHash: string, secret: string): void {
+  private recordHit(
+    kind: RedactionKind,
+    secretHash: string,
+    secret: string,
+    context?: { text: string; source: RedactionSample["source"] },
+  ): void {
     this.hits.set(kind, (this.hits.get(kind) ?? 0) + 1);
     this.hashes.add(secretHash);
+    if (this.sampling && context && this.samples.length < MAX_SAMPLES_PER_REQUEST) {
+      const key = `${kind}\u0000${secret}`;
+      if (!this.sampleKeys.has(key)) {
+        this.sampleKeys.add(key);
+        this.samples.push({ kind, value: secret, context: context.text, source: context.source });
+      }
+    }
     if (!this.collect) return;
     const placeholder = `${PLACEHOLDER_PREFIX}${secretHash}${PLACEHOLDER_SUFFIX}`;
     if (this.ambiguous.has(placeholder)) return;
@@ -265,7 +301,7 @@ class RedactionSession {
         secret = m[0];
       }
       if (!secret || isAlreadyPlaceholder(secret)) continue;
-      matches.push({ fullMatch, secret, prefix, suffix, kind });
+      matches.push({ fullMatch, secret, prefix, suffix, kind, index: m.index });
       // Prevent a zero-length match (shouldn't occur with these patterns) from looping forever.
       if (m[0].length === 0) regex.lastIndex += 1;
     }
@@ -276,7 +312,12 @@ class RedactionSession {
       const placeholder = generatePlaceholder(match.secret);
       const replacement = `${match.prefix}${placeholder}${match.suffix}`;
       result = result.split(match.fullMatch).join(replacement);
-      this.recordHit(match.kind, placeholderHash(placeholder), match.secret);
+      this.recordHit(
+        match.kind,
+        placeholderHash(placeholder),
+        match.secret,
+        this.sampling ? { text: sampleWindow(text, match.index, match.fullMatch.length), source: "pattern" } : undefined,
+      );
     }
     return result;
   }
@@ -317,12 +358,17 @@ class RedactionSession {
    * "宁可误报，不要漏报" (privacy_contract.md): a short, low-entropy value is still left
    * alone via MIN_NAMED_SECRET_LEN, so an enum-like `"keyType": "ec"` is not touched.
    */
-  private redactNamedValue(value: string, kind: RedactionKind): string {
+  private redactNamedValue(value: string, kind: RedactionKind, fieldName: string): string {
     if (value.length < MIN_NAMED_SECRET_LEN || isAlreadyPlaceholder(value) || this.allow.has(value)) {
       return value;
     }
     const placeholder = generatePlaceholder(value);
-    this.recordHit(kind, placeholderHash(placeholder), value);
+    this.recordHit(
+      kind,
+      placeholderHash(placeholder),
+      value,
+      this.sampling ? { text: `field "${fieldName}"`, source: "field" } : undefined,
+    );
     return placeholder;
   }
 
@@ -343,7 +389,7 @@ class RedactionSession {
         if (isSkippedKey(key)) { result[key] = v; continue; }
         if (inlineMedia && key.toLowerCase() === "data") { result[key] = v; continue; }
         if (typeof v === "string" && SENSITIVE_NAME_PATTERN.test(key)) {
-          result[key] = this.redactNamedValue(v, kindForFieldName(key));
+          result[key] = this.redactNamedValue(v, kindForFieldName(key), key);
           continue;
         }
         result[key] = this.redactValue(v);
