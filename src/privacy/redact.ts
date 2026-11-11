@@ -57,6 +57,9 @@ function isAlreadyPlaceholder(value: string): boolean {
 const SKIPPED_KEYS = new Set([
   // Structural identifiers -- never secrets, and rewriting them breaks protocol dispatch.
   "id", "call_id", "tool_use_id", "name", "model", "type", "role",
+  // Client-chosen opaque cache/session identifier (Codex sends a UUID); its field name says "key",
+  // but it is not a credential and masking it only inflates the redaction counts.
+  "prompt_cache_key",
   // Protocol signatures / encrypted payloads -- must round-trip byte-for-byte.
   "signature", "thoughtsignature", "thought_signature", "encrypted_content", "encryptedcontent",
   // Base64 / data-URL blobs for images and files.
@@ -196,6 +199,8 @@ const RULES: Rule[] = [
     pattern: () => /(["']?[A-Za-z][A-Za-z0-9_-]*?(?:key|secret|token|password|passwd|pwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([A-Za-z0-9+/_.~-]{8,})\2/gi,
     extract: (m) => {
       const secret = m[3]!;
+      // `cache_read_tokens: 32559727`, `total_tokens=1200000`: a usage counter, not a credential.
+      if (/^\d+$/.test(secret) && /tokens["']?\s*[:=]\s*$/i.test(m[1]!)) return null;
       const following = (m.input ?? "").slice(m.index + m[0].length, m.index + m[0].length + 1);
       if (!looksLikeSecretValue(secret, following)) return null;
       const label = m[0]!.toLowerCase();
