@@ -709,6 +709,7 @@ async function handleClaudeMessagesWithBudget(
           model: typeof bodyModel === "string" ? bodyModel : undefined,
           hits: outcome.hits,
           placeholderHashes: outcome.placeholderHashes,
+          samples: outcome.samples,
         });
         if (privacyEventId) logCtx.privacyEventId = privacyEventId;
       } catch {
@@ -1715,6 +1716,7 @@ async function handleClaudeCountTokensInner(
         model: typeof raw.model === "string" ? raw.model : undefined,
         hits: outcome.hits,
         placeholderHashes: outcome.placeholderHashes,
+        samples: outcome.samples,
       });
     } catch {
       return anthropicErrorResponse(503, "privacy redaction failed; request was not sent", "api_error");

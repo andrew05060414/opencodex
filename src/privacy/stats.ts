@@ -1,17 +1,29 @@
 import { randomUUID } from "node:crypto";
-import type { PrivacyRequestRecord, RedactionHit, RedactionKind, PrivacyStatsRange, PrivacyStatsSummary } from "./types";
+import type { PrivacyRequestRecord, RedactionHit, RedactionKind, RedactionSample, PrivacyStatsRange, PrivacyStatsSummary } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UNKNOWN_CLIENT = "unknown";
 const UNKNOWN_PROVIDER = "unknown";
 const UNKNOWN_MODEL = "unknown";
 
+/** One distinct redacted original, as served by reveal mode. Holds a real secret. */
+export interface PrivacyRevealedValue extends RedactionSample {
+  /** How many retained requests carried this value. */
+  requests: number;
+  lastSeen: string;
+  client: string;
+  provider: string;
+  model: string;
+}
+
 /**
  * In-memory ring buffer of requests that had at least one redaction. Per
  * privacy_contract.md: memory only, never persisted to disk, capped at the most
  * recent 2000 requests. A record never carries the original secret value or any
  * prefix of it -- only its kind, a count, and the sha256-prefix hash the redactor
- * already computed for the placeholder.
+ * already computed for the placeholder. The one exception is the opt-in reveal mode
+ * (`privacy.revealValues`): then a record also keeps `samples` (the originals), still
+ * memory only, and only `revealedValues()` ever reads them.
  */
 export class PrivacyStatsStore {
   private readonly capacity: number;
@@ -65,11 +77,52 @@ export class PrivacyStatsStore {
     return out; // newest first
   }
 
+  /** Forget every retained original (reveal mode turned off) without touching counts or hashes. */
+  dropSamples(): void {
+    for (let i = 0; i < this.count; i += 1) {
+      const item = this.buffer[i];
+      if (item) delete item.samples;
+    }
+  }
+
   reset(): void {
     this.head = 0;
     this.count = 0;
     this.buffer.length = 0;
     this.buffer.length = this.capacity;
+  }
+
+  /**
+   * Reveal mode: the distinct originals redacted in the window, newest first, with how many
+   * retained requests carried each. Serves `GET /api/privacy/values`; only the records that
+   * were captured with `privacy.revealValues` on contribute.
+   */
+  revealedValues(range: PrivacyStatsRange, limit: number, now: number = Date.now()): PrivacyRevealedValue[] {
+    const since = now - (range === "30d" ? 30 : 7) * DAY_MS;
+    const byValue = new Map<string, PrivacyRevealedValue>();
+    for (const record of this.all()) { // newest first
+      if (record.ts < since || !record.samples) continue;
+      for (const sample of record.samples) {
+        const key = `${sample.kind}\u0000${sample.value}`;
+        const seen = byValue.get(key);
+        if (seen) {
+          seen.requests += 1;
+          continue;
+        }
+        byValue.set(key, {
+          kind: sample.kind,
+          value: sample.value,
+          context: sample.context,
+          source: sample.source,
+          requests: 1,
+          lastSeen: new Date(record.ts).toISOString(),
+          client: record.client ?? UNKNOWN_CLIENT,
+          provider: record.provider ?? UNKNOWN_PROVIDER,
+          model: record.model ?? UNKNOWN_MODEL,
+        });
+      }
+    }
+    return [...byValue.values()].slice(0, Math.max(0, limit));
   }
 
   summary(range: PrivacyStatsRange, enabled: boolean, now: number = Date.now()): PrivacyStatsSummary {
@@ -132,6 +185,8 @@ export function recordPrivacyHitsBestEffort(entry: {
   model?: string;
   hits: RedactionHit[];
   placeholderHashes: string[];
+  /** Reveal mode only (`privacy.revealValues`). */
+  samples?: RedactionSample[];
 }): string | null {
   if (entry.hits.length === 0) return null;
   try {
@@ -142,6 +197,7 @@ export function recordPrivacyHitsBestEffort(entry: {
       model: entry.model,
       hits: entry.hits,
       placeholderHashes: entry.placeholderHashes,
+      ...(entry.samples && entry.samples.length > 0 ? { samples: entry.samples } : {}),
     });
   } catch (err) {
     console.warn("[opencodex] privacy stats recording failed (request was not affected):", err);

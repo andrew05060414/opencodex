@@ -290,6 +290,7 @@ export async function prepareResponsesRequest(
         model: typeof bodyModel === "string" ? bodyModel : undefined,
         hits: outcome.hits,
         placeholderHashes: outcome.placeholderHashes,
+        samples: outcome.samples,
       });
       if (privacyEventId) logCtx.privacyEventId = privacyEventId;
     } catch {

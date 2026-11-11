@@ -25,6 +25,8 @@ export function privacyOptionsFromConfig(config: OcxConfig | null | undefined): 
     redactEmails: config?.privacy?.maskEmails === true,
     // The restore map holds real originals; it is built only when reply restoration is on.
     collectRestoreMap: config?.privacy?.restoreResponses === true,
+    // Real originals again, kept in memory for the operator's own `/api/privacy/values` view.
+    collectSamples: config?.privacy?.revealValues === true,
   };
 }
 

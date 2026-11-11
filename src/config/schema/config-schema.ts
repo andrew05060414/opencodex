@@ -134,6 +134,9 @@ export const configSchema = z.object({
     // Opt-in two-way mode (reply restoration); a malformed value drops the block, i.e. one-way.
     restoreResponses: z.boolean().optional(),
     restoreToolArguments: z.boolean().optional(),
+    // Opt-in reveal mode: keep the original of each redacted value in memory so the operator can
+    // list them through the admin-token route `GET /api/privacy/values`. Off by default.
+    revealValues: z.boolean().optional(),
   }).strict().optional().catch(undefined),
   skills: skillsConfigSchema.optional().catch(undefined),
   // Malformed hand edits disable this opt-in exporter. Live writes reject them in diagnostics.ts.

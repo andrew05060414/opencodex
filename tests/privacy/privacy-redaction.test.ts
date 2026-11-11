@@ -275,7 +275,7 @@ describe("management routes: GET/PUT /api/privacy/config, allow-values, POST /ap
     expect(JSON.stringify(data)).not.toContain(kept);
   });
 
-  it("PUT /api/privacy/config accepts only { enabled } and never touches allowValues", async () => {
+  it("PUT /api/privacy/config accepts only { enabled, revealValues } and never touches allowValues", async () => {
     const kept = fakeOpenAiKey("put-untouched");
     const config = { privacy: { enabled: false, allowValues: [kept] } } as never;
     const putReq = new Request("http://localhost/api/privacy/config", {
@@ -285,7 +285,7 @@ describe("management routes: GET/PUT /api/privacy/config, allow-values, POST /ap
     const putResp = await handlePrivacyRoutes(ctxFor(putReq, config));
     expect(putResp?.status).toBe(200);
     const data = await putResp?.json();
-    expect(data).toEqual({ enabled: true, allowValues: [{ id: secretValueId(kept), length: kept.length }] });
+    expect(data).toEqual({ enabled: true, revealValues: false, allowValues: [{ id: secretValueId(kept), length: kept.length }] });
     expect((config as { privacy: { allowValues: string[] } }).privacy.allowValues).toEqual([kept]);
   });
 
@@ -431,5 +431,79 @@ describe("redactPlainText: name-based credential rule does not mask code identif
     expect(redactPlainText("API_" + "TOKEN=" + mixedValue).hits).toEqual([{ kind: "token", count: 1 }]);
     expect(redactPlainText("DB_" + "PASSWORD=" + mixedValue).hits).toEqual([{ kind: "password", count: 1 }]);
     expect(redactPlainText("SERVICE_" + "KEY=" + mixedValue).hits).toEqual([{ kind: "api_key", count: 1 }]);
+  });
+});
+
+describe("reveal mode (privacy.revealValues): originals kept in memory for the operator, off by default", () => {
+  it("returns no samples unless collectSamples is requested", () => {
+    const outcome = redactPlainText(`curl -H "Authorization: Bearer ${fakeBearerToken()}"`);
+    expect(outcome.hits.length).toBeGreaterThan(0);
+    expect(outcome.samples).toBeUndefined();
+  });
+
+  it("with collectSamples, lists each original once with its context and the rule source", () => {
+    const secret = fakeOpenAiKey("reveal-a");
+    const text = `first ${secret} then again ${secret} and a field`;
+    const outcome = redactPlainText(text, { collectSamples: true });
+    expect(outcome.samples).toHaveLength(1);
+    const sample = outcome.samples![0]!;
+    expect(sample.value).toBe(secret);
+    expect(sample.kind).toBe("api_key");
+    expect(sample.source).toBe("pattern");
+    expect(sample.context).toContain("first");
+    expect(sample.context.length).toBeLessThanOrEqual(secret.length + 2 * 40);
+    // The redacted body itself is unchanged by reveal mode.
+    expect(JSON.stringify(outcome.body)).not.toContain(secret);
+  });
+
+  it("names the field when a credential-named JSON field was masked by name", () => {
+    const value = fakePassword("reveal-field");
+    const outcome = redactClientBody({ messages: [], password: value }, { collectSamples: true });
+    expect(outcome.samples).toEqual([{ kind: "password", value, context: 'field "password"', source: "field" }]);
+  });
+
+  it("stats store aggregates distinct originals newest-first, and dropSamples forgets them", () => {
+    const store = new PrivacyStatsStore({ capacity: 10 });
+    const a = fakeOpenAiKey("agg-a");
+    const b = fakeOpenAiKey("agg-b");
+    const sample = (value: string) => ({ kind: "api_key" as const, value, context: `ctx ${value}`, source: "pattern" as const });
+    store.record({ ts: 1_000, client: "c", provider: "p", model: "m", hits: [{ kind: "api_key", count: 1 }], placeholderHashes: ["h1"], samples: [sample(a)] });
+    store.record({ ts: 2_000, client: "c", provider: "p", model: "m", hits: [{ kind: "api_key", count: 2 }], placeholderHashes: ["h1", "h2"], samples: [sample(a), sample(b)] });
+    const values = store.revealedValues("7d", 10, 3_000);
+    expect(values.map((v) => v.value)).toEqual([a, b]);
+    expect(values.find((v) => v.value === a)!.requests).toBe(2);
+    expect(values.find((v) => v.value === b)!.requests).toBe(1);
+    store.dropSamples();
+    expect(store.revealedValues("7d", 10, 3_000)).toEqual([]);
+    expect(store.summary("7d", true, 3_000).totals.masked).toBe(3);
+  });
+
+  it("privacyOptionsFromConfig only asks for samples when revealValues is on", () => {
+    expect(privacyOptionsFromConfig({ privacy: { enabled: true } } as never).collectSamples).toBe(false);
+    expect(privacyOptionsFromConfig({ privacy: { enabled: true, revealValues: true } } as never).collectSamples).toBe(true);
+  });
+
+  it("GET /api/privacy/values is empty while off, lists originals while on, and PUT revealValues:false drops them", async () => {
+    const secret = fakeOpenAiKey("route-reveal");
+    globalPrivacyStats.reset();
+    globalPrivacyStats.record({
+      ts: Date.now(), hits: [{ kind: "api_key", count: 1 }], placeholderHashes: ["hx"],
+      samples: [{ kind: "api_key", value: secret, context: "ctx", source: "pattern" }],
+    });
+    const off = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/values"), { privacy: { enabled: true } }));
+    expect(await off?.json()).toEqual({ reveal: false, values: [] });
+
+    const config = { privacy: { enabled: true, revealValues: true } };
+    const on = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/values?kind=api_key"), config));
+    const body = await on?.json();
+    expect(body.reveal).toBe(true);
+    expect(body.values[0].value).toBe(secret);
+
+    const put = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/config", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ revealValues: false }),
+    }), config));
+    expect(put?.status).toBe(200);
+    expect(globalPrivacyStats.revealedValues("7d", 10)).toEqual([]);
+    globalPrivacyStats.reset();
   });
 });

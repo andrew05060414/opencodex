@@ -23,6 +23,22 @@ export interface RedactionHit {
   count: number;
 }
 
+/**
+ * One redacted value as the operator sees it in reveal mode (`privacy.revealValues`).
+ * Unlike every other record in this module it CARRIES the original secret: it exists only when
+ * the operator opted in, lives in memory only, and is served solely by the admin-token
+ * management route `GET /api/privacy/values`.
+ */
+export interface RedactionSample {
+  kind: RedactionKind;
+  /** The original value that was replaced by a placeholder. */
+  value: string;
+  /** A short window of the surrounding text (pattern rules) or `field "<name>"` (field-name rule). */
+  context: string;
+  /** What fired: a text pattern, or a JSON field whose NAME looked like a credential. */
+  source: "pattern" | "field";
+}
+
 /** Result of running the redactor over one client request body. */
 export interface RedactionOutcome {
   body: unknown;
@@ -35,6 +51,8 @@ export interface RedactionOutcome {
    * request-scoped and in memory, and never log, persist, or hand it to stats.
    */
   restoreMap?: ReadonlyMap<string, string>;
+  /** Original values with context. Present ONLY when the caller asked for it (`collectSamples`). */
+  samples?: RedactionSample[];
 }
 
 /** Result of `POST /api/privacy/test`. */
@@ -52,6 +70,8 @@ export interface PrivacyRequestRecord {
   model?: string;
   hits: RedactionHit[];
   placeholderHashes: string[];
+  /** Reveal mode only (`privacy.revealValues`); absent otherwise. Holds real originals. */
+  samples?: RedactionSample[];
 }
 
 export type PrivacyStatsRange = "7d" | "30d";
