@@ -29,7 +29,8 @@ function allowValuesView(config: ManagementContext["config"]): Array<{ id: strin
  * Management API routes for privacy redaction (privacy_contract.md):
  * - GET    /api/privacy/stats?range=7d|30d
  * - GET    /api/privacy/config
- * - PUT    /api/privacy/config                 (`{ enabled: boolean }` only)
+ * - PUT    /api/privacy/config                 (`{ enabled?: boolean, revealValues?: boolean }`)
+ * - GET    /api/privacy/values?range=&limit=&kind=   (reveal mode only: the originals, admin token)
  * - POST   /api/privacy/test
  * - POST   /api/privacy/allow-values            (`{ value: string }`)
  * - DELETE /api/privacy/allow-values/{id}
@@ -50,8 +51,22 @@ export async function handlePrivacyRoutes(ctx: ManagementContext): Promise<Respo
     return jsonResponse(summary, 200, req, config);
   }
 
+  // Reveal mode (opt-in `privacy.revealValues`): the originals the redactor replaced, for the
+  // operator to check for false positives. Behind the same admin token as every management
+  // route; with the flag off nothing was retained, so the answer is an empty list.
+  if (url.pathname === "/api/privacy/values" && req.method === "GET") {
+    const reveal = config.privacy?.revealValues === true;
+    if (!reveal) return jsonResponse({ reveal: false, values: [] }, 200, req, config);
+    const kind = url.searchParams.get("kind");
+    const limitRaw = Number(url.searchParams.get("limit") ?? "100");
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 1000) : 100;
+    const all = globalPrivacyStats.revealedValues(parseRange(url), 1000);
+    const values = (kind ? all.filter((value) => value.kind === kind) : all).slice(0, limit);
+    return jsonResponse({ reveal: true, values }, 200, req, config);
+  }
+
   if (url.pathname === "/api/privacy/config" && req.method === "GET") {
-    return jsonResponse({ enabled: config.privacy?.enabled === true, allowValues: allowValuesView(config) }, 200, req, config);
+    return jsonResponse({ enabled: config.privacy?.enabled === true, revealValues: config.privacy?.revealValues === true, allowValues: allowValuesView(config) }, 200, req, config);
   }
 
   if (url.pathname === "/api/privacy/config" && req.method === "PUT") {
@@ -83,13 +98,25 @@ async function handlePutConfig(ctx: ManagementContext): Promise<Response> {
     return jsonResponse({ error: "invalid JSON body" }, 400, req, config);
   }
   if (!isPlainRecord(raw)) return jsonResponse({ error: "body must be a JSON object" }, 400, req, config);
-  const body = raw as { enabled?: unknown };
-  if (typeof body.enabled !== "boolean") {
+  const body = raw as { enabled?: unknown; revealValues?: unknown };
+  if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
     return jsonResponse({ error: "enabled must be a boolean" }, 400, req, config);
   }
-  config.privacy = { ...config.privacy, enabled: body.enabled };
+  if (body.revealValues !== undefined && typeof body.revealValues !== "boolean") {
+    return jsonResponse({ error: "revealValues must be a boolean" }, 400, req, config);
+  }
+  if (body.enabled === undefined && body.revealValues === undefined) {
+    return jsonResponse({ error: "enabled must be a boolean" }, 400, req, config);
+  }
+  config.privacy = {
+    ...config.privacy,
+    ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
+    ...(body.revealValues === undefined ? {} : { revealValues: body.revealValues }),
+  };
   saveConfigPreservingClaudeCode(config);
-  return jsonResponse({ enabled: config.privacy.enabled === true, allowValues: allowValuesView(config) }, 200, req, config);
+  // Turning reveal off must not leave the originals sitting in memory.
+  if (body.revealValues === false) globalPrivacyStats.dropSamples();
+  return jsonResponse({ enabled: config.privacy.enabled === true, revealValues: config.privacy.revealValues === true, allowValues: allowValuesView(config) }, 200, req, config);
 }
 
 async function handleTest(ctx: ManagementContext): Promise<Response> {

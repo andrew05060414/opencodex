@@ -257,6 +257,7 @@ async function handleChatCompletionsWithBudget(
         model: typeof chatBody.model === "string" ? chatBody.model : undefined,
         hits: outcome.hits,
         placeholderHashes: outcome.placeholderHashes,
+        samples: outcome.samples,
       });
       if (privacyEventId) logCtx.privacyEventId = privacyEventId;
     } catch {
