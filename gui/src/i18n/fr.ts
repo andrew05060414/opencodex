@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -130,6 +131,7 @@ export const fr: Record<TKey, string> = {
   "workflowBudget.saveFailed": "Impossible d'enregistrer les limites de workflow.",
   "workflowBudget.saved": "Limites de workflow enregistrées.",
   ...desktopCompatibilityCopy("fr"),
+  ...accountProbeCopy("fr"),
   ...shellV2Copy("fr"),
   ...modelsV2Copy("fr"),
   ...accountsV2Copy("fr"),

@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -130,6 +131,7 @@ export const zh: Record<TKey, string> = {
   "workflowBudget.saveFailed": "无法保存工作流限制。",
   "workflowBudget.saved": "工作流限制已保存。",
   ...desktopCompatibilityCopy("zh"),
+  ...accountProbeCopy("zh"),
   ...shellV2Copy("zh"),
   ...modelsV2Copy("zh"),
   ...accountsV2Copy("zh"),

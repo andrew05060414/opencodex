@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -130,6 +131,7 @@ export const ko: Record<TKey, string> = {
   "workflowBudget.saveFailed": "워크플로 한도를 저장하지 못했습니다.",
   "workflowBudget.saved": "워크플로 한도를 저장했습니다.",
   ...desktopCompatibilityCopy("ko"),
+  ...accountProbeCopy("ko"),
   ...shellV2Copy("ko"),
   ...modelsV2Copy("ko"),
   ...accountsV2Copy("ko"),

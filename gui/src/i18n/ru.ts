@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -130,6 +131,7 @@ export const ru: Record<TKey, string> = {
   "workflowBudget.saveFailed": "Не удалось сохранить лимиты рабочих процессов.",
   "workflowBudget.saved": "Лимиты рабочих процессов сохранены.",
   ...desktopCompatibilityCopy("ru"),
+  ...accountProbeCopy("ru"),
   ...shellV2Copy("ru"),
   ...modelsV2Copy("ru"),
   ...accountsV2Copy("ru"),

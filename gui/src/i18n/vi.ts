@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -132,6 +133,7 @@ export const vi: Record<TKey, string> = {
   "workflowBudget.saveFailed": "Không thể lưu giới hạn quy trình.",
   "workflowBudget.saved": "Đã lưu giới hạn quy trình.",
   ...desktopCompatibilityCopy("vi"),
+  ...accountProbeCopy("vi"),
   ...shellV2Copy("vi"),
   ...modelsV2Copy("vi"),
   ...accountsV2Copy("vi"),

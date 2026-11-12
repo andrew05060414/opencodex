@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -132,6 +133,7 @@ export const en = {
   "workflowBudget.saveFailed": "Could not save workflow limits.",
   "workflowBudget.saved": "Workflow limits saved.",
   ...desktopCompatibilityCopy("en"),
+  ...accountProbeCopy("en"),
   ...shellV2Copy("en"),
   ...modelsV2Copy("en"),
   ...accountsV2Copy("en"),

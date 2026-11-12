@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -130,6 +131,7 @@ export const ja: Record<TKey, string> = {
   "workflowBudget.saveFailed": "ワークフロー上限を保存できませんでした。",
   "workflowBudget.saved": "ワークフロー上限を保存しました。",
   ...desktopCompatibilityCopy("ja"),
+  ...accountProbeCopy("ja"),
   ...shellV2Copy("ja"),
   ...modelsV2Copy("ja"),
   ...accountsV2Copy("ja"),

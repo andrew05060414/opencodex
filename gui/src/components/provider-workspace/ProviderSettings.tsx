@@ -25,6 +25,7 @@ import { providerSupportsLiveModelDiscovery } from "../../provider-workspace/cat
 import type { CatalogPreset } from "../provider-catalog/provider-presets";
 import { authModeLabel } from "./ProviderRail";
 import { ProviderProtocolPanel } from "./ProviderProtocolPanel";
+import ProviderModelDiscovery from "./ProviderModelDiscovery";
 import { ProviderKeyPacing, type KeyPacingDraft, type KeyPacingStatus } from "./ProviderKeyPacing";
 import type { WorkspaceItem, ProviderUpdatePatch, ProviderUpdateResult } from "./types";
 
@@ -533,6 +534,9 @@ export default function ProviderSettings({
           <span className="muted text-label" style={{ display: "block", marginTop: 2 }}>{t("pws.liveModelsDesc")}</span>
         </span>
       </label>
+      {apiBase !== undefined && liveModelDiscoverySupported && (
+        <ProviderModelDiscovery key={`${apiBase} ${item.name}`} apiBase={apiBase} provider={item.name} enabled={savedLiveModels} />
+      )}
       <section className="pwi-pacing-card" aria-labelledby="pwi-pacing-title">
         <div className="pwi-pacing-head">
           <div><h3 id="pwi-pacing-title">{t("pws.pacingTitle")}</h3><p>{t("pws.pacingDesc")}</p></div>

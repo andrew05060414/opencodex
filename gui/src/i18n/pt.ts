@@ -1,4 +1,5 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
+import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -132,6 +133,7 @@ export const pt: Record<TKey, string> = {
   "workflowBudget.saveFailed": "Não foi possível salvar os limites de fluxo de trabalho.",
   "workflowBudget.saved": "Limites de fluxo de trabalho salvos.",
   ...desktopCompatibilityCopy("pt"),
+  ...accountProbeCopy("pt"),
   ...shellV2Copy("pt"),
   ...modelsV2Copy("pt"),
   ...accountsV2Copy("pt"),
