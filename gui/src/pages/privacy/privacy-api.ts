@@ -15,6 +15,7 @@ import {
   type PrivacyRange,
   type PrivacyStats,
   type PrivacyTestResult,
+  type PrivacyValues,
 } from "./privacy-types";
 
 /**
@@ -95,15 +96,35 @@ export function normalizePrivacyStats(value: unknown, fallbackRange: PrivacyRang
 }
 
 export function normalizePrivacyConfig(value: unknown): PrivacyConfig {
-  const raw = (value ?? {}) as { enabled?: unknown; allowValues?: unknown };
+  const raw = (value ?? {}) as { enabled?: unknown; revealValues?: unknown; allowValues?: unknown };
   const rows = Array.isArray(raw.allowValues) ? raw.allowValues : [];
   return {
     enabled: raw.enabled === true,
+    revealValues: raw.revealValues === true,
     // Only `{ id, length }` is on the wire. A row without an id is unusable — it could not be
     // deleted — so it is dropped rather than rendered as a blank entry.
     allowValues: rows
       .map(row => ({ id: str((row ?? {}).id), length: num((row ?? {}).length) }))
       .filter(row => row.id !== ""),
+  };
+}
+
+export function normalizePrivacyValues(value: unknown): PrivacyValues {
+  const raw = (value ?? {}) as { reveal?: unknown; values?: unknown };
+  const rows = Array.isArray(raw.values) ? (raw.values as Record<string, unknown>[]) : [];
+  return {
+    reveal: raw.reveal === true,
+    values: rows
+      .map(row => ({
+        id: str(row?.id),
+        kind: asPrivacyKind(row?.kind),
+        value: str(row?.value),
+        context: str(row?.context),
+        requests: num(row?.requests),
+        requestIds: Array.isArray(row?.requestIds) ? row.requestIds.filter((id): id is string => typeof id === "string") : [],
+        lastSeen: str(row?.lastSeen),
+      }))
+      .filter(row => row.value !== ""),
   };
 }
 
@@ -134,6 +155,29 @@ export async function fetchPrivacyConfig(
 ): Promise<PrivacyConfig> {
   if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockPrivacyConfig();
   const res = await fetch(`${apiBase}/api/privacy/config`, { signal, cache: "no-store" });
+  return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
+}
+
+/** Reveal mode's originals for the window. Empty with `reveal: false` while the mode is off. */
+export async function fetchPrivacyValues(
+  apiBase: string,
+  range: PrivacyRange,
+  signal: AbortSignal,
+  failMessage: string,
+): Promise<PrivacyValues> {
+  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockPrivacyValues();
+  const res = await fetch(`${apiBase}/api/privacy/values?range=${range}&limit=1000`, { signal, cache: "no-store" });
+  return normalizePrivacyValues(await readJsonOrThrow<unknown>(res, failMessage));
+}
+
+/** Turns reveal mode on or off. Off makes the server forget every original it kept. */
+export async function savePrivacyReveal(apiBase: string, revealValues: boolean, failMessage: string): Promise<PrivacyConfig> {
+  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockSavePrivacyReveal(revealValues);
+  const res = await fetch(`${apiBase}/api/privacy/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ revealValues }),
+  });
   return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
 }
 
