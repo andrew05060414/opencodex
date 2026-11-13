@@ -28,7 +28,9 @@ let calls: { url: string; method: string; body: string | undefined }[];
 
 /** What the stats route answers with. Tests reassign it before mounting. */
 let statsBody: (range: string) => unknown;
-let configBody: { enabled: boolean; allowValues: { id: string; length: number }[] };
+let configBody: { enabled: boolean; revealValues?: boolean; allowValues: { id: string; length: number }[] };
+/** Reveal mode's originals, keyed by value; `reveal` follows `configBody.revealValues`. */
+let revealed: { id: string; kind: string; value: string; context: string; requests: number; requestIds: string[]; lastSeen: string }[];
 let testBody: unknown;
 
 function populated(range: string) {
@@ -78,6 +80,7 @@ beforeEach(() => {
   calls = [];
   statsBody = populated;
   configBody = { enabled: true, allowValues: [] };
+  revealed = [];
   testBody = { masked: "token={{SECRET_1a2b3c4d}}", hits: [{ kind: "token", count: 1 }] };
   /*
    * Stands in for the backend's allow-value routes, including the one property that matters:
@@ -93,10 +96,13 @@ beforeEach(() => {
     if (url.includes("/api/privacy/stats")) {
       return json(statsBody(new URL(url).searchParams.get("range") ?? "7d"));
     }
+    if (url.includes("/api/privacy/values")) {
+      return json(configBody.revealValues ? { reveal: true, values: revealed } : { reveal: false, values: [] });
+    }
     if (url.includes("/api/privacy/allow-values")) {
       if (method === "POST") {
         const value = (JSON.parse(body ?? "{}") as { value?: string }).value ?? "";
-        const id = ids[configBody.allowValues.length] ?? "ffffffff";
+        const id = revealed.find(row => row.value === value)?.id ?? ids[configBody.allowValues.length] ?? "ffffffff";
         configBody = { ...configBody, allowValues: [...configBody.allowValues, { id, length: value.length }] };
         return json(configBody);
       }
@@ -108,8 +114,12 @@ beforeEach(() => {
     }
     if (url.includes("/api/privacy/config")) {
       if (method === "PUT") {
-        const patch = JSON.parse(body ?? "{}") as { enabled?: boolean };
-        configBody = { ...configBody, enabled: patch.enabled === true };
+        const patch = JSON.parse(body ?? "{}") as { enabled?: boolean; revealValues?: boolean };
+        configBody = {
+          ...configBody,
+          ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+          ...(patch.revealValues === undefined ? {} : { revealValues: patch.revealValues }),
+        };
         return json(configBody);
       }
       return json(configBody);
@@ -329,4 +339,73 @@ test("mock data stays behind the dev flag", () => {
   expect(privacyMockEnabled("?mock=1", false)).toBe(false);
   expect(privacyMockEnabled("", true)).toBe(false);
   expect(privacyMockEnabled("?mock=1", true)).toBe(true);
+});
+
+const FAKE_TOKEN = ["fake", "token", "Q7xL2m9Zp4"].join("-");
+
+function revealOn() {
+  configBody = { enabled: true, revealValues: true, allowValues: [] };
+  revealed = [{
+    id: "c0ffee12",
+    kind: "token",
+    value: FAKE_TOKEN,
+    context: `auth token=${FAKE_TOKEN} end`,
+    requests: 1,
+    requestIds: ["r1"],
+    lastSeen: new Date().toISOString(),
+  }];
+}
+
+test("reveal mode off: a one-line hint offers Show originals, and the button writes revealValues only", async () => {
+  await mount();
+  expect(container.textContent).toContain(en["privacy.reveal.hintOff"]);
+  expect(container.textContent).toContain(en["privacy.reveal.warnMemory"]);
+  await click(buttonBy(en["privacy.reveal.turnOn"]));
+  const write = calls.find(call => call.method === "PUT");
+  expect(JSON.parse(write!.body!)).toEqual({ revealValues: true });
+  expect(container.textContent).toContain(en["privacy.reveal.onLine"]);
+});
+
+test("reveal mode on: the live view opens the request and shows the value dotted until the eye is pressed", async () => {
+  revealOn();
+  await mount();
+  await click(buttonBy(en["privacy.tab.live"]));
+  expect(container.querySelector(".privacy-request-row")!.getAttribute("aria-expanded")).toBe("true");
+  const value = () => container.querySelector(".privacy-reveal-value")!.textContent;
+  expect(value()).not.toContain(FAKE_TOKEN);
+  // The context holds the value too; it is dotted out with it.
+  expect(container.textContent).not.toContain(FAKE_TOKEN);
+  expect(container.textContent).toContain("auth token=");
+
+  await click(container.querySelector(".privacy-reveal-eye") as HTMLButtonElement);
+  expect(value()).toBe(FAKE_TOKEN);
+  expect(container.querySelector(".privacy-reveal-context")!.textContent).toBe(`auth token=${FAKE_TOKEN} end`);
+});
+
+test("Not a secret posts the value to the allow list, and Undo deletes it by the same id", async () => {
+  revealOn();
+  await mount();
+  await click(buttonBy(en["privacy.tab.values"]));
+  await click(buttonBy(en["privacy.reveal.notSecret"]));
+
+  const posted = calls.find(call => call.url.includes("/api/privacy/allow-values") && call.method === "POST");
+  expect(JSON.parse(posted!.body!)).toEqual({ value: FAKE_TOKEN });
+  expect(container.textContent).toContain(en["privacy.reveal.allowedNotice"]);
+  expect(container.textContent).toContain(en["privacy.reveal.allowed"]);
+  expect(buttonBy(en["privacy.reveal.notSecret"])).toBeUndefined();
+
+  await click(buttonBy(en["privacy.reveal.undo"]));
+  const removed = calls.find(call => call.method === "DELETE");
+  expect(removed!.url.endsWith("/api/privacy/allow-values/c0ffee12")).toBe(true);
+  expect(container.textContent).toContain(en["privacy.reveal.undoneNotice"]);
+  expect(buttonBy(en["privacy.reveal.notSecret"])).toBeDefined();
+});
+
+test("a request recorded before reveal mode says it has no original instead of claiming none are kept", async () => {
+  revealOn();
+  revealed = [];
+  await mount();
+  await click(container.querySelector(".privacy-request-row") as HTMLButtonElement);
+  expect(container.textContent).toContain(en["privacy.reveal.noneForRequest"]);
+  expect(container.textContent).not.toContain(en["privacy.row.noValues"]);
 });
