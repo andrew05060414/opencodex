@@ -144,6 +144,7 @@ export type {
   TierDecision,
   OcxProviderConfig,
   ModelCapabilities,
+  ModelCapabilityProbeRecord,
   ReasoningCapabilities,
 } from "./types/provider";
 
