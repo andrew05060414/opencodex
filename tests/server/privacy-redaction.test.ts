@@ -12,7 +12,7 @@ import {
 } from "../../src/privacy";
 import { handlePrivacyRoutes } from "../../src/server/management/privacy-routes";
 import type { ManagementContext } from "../../src/server/management/context";
-import { anthropicBodyFixture, chatBodyFixture, responsesBodyFixture, THINKING_BLOCK_SECRET } from "./fixtures/bodies";
+import { anthropicBodyFixture, chatBodyFixture, responsesBodyFixture, THINKING_BLOCK_SECRET } from "../fixtures/privacy/bodies";
 import {
   fakeBearerToken,
   fakeConnectionString,
@@ -23,7 +23,7 @@ import {
   fakeOpenAiKey,
   fakePassword,
   fakePrivateKeyBlock,
-} from "./fixtures/secrets";
+} from "../fixtures/privacy/secrets";
 
 function ctxFor(req: Request, config: unknown = {}): ManagementContext {
   const url = new URL(req.url);

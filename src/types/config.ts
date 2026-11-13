@@ -1,4 +1,5 @@
 import type { OcxProviderConfig } from "./provider";
+import type { OcxPrivacyRedactionConfig } from "./privacy-redaction-config";
 import type { CodexAccount } from "./accounts";
 import type { AnthropicAccountPoolConfig, OcxAccountPoolRotationStrategy } from "./anthropic-account-pool";
 import type { AnthropicInstanceId } from "../providers/anthropic-instance-id";
@@ -471,7 +472,7 @@ export type OcxConnectedClientId = "codex" | "claude" | "claude-desktop" | "grok
  * `privacy` rather than `dashboard`: `ocx status` and `ocx account` are not the dashboard, and
  * they read the same projections.
  */
-export interface OcxPrivacyConfig {
+export interface OcxPrivacyConfig extends OcxPrivacyRedactionConfig {
   /**
    * Mask stored account emails before they leave the proxy. Omitted or `true` is the historical
    * behaviour and the default.
@@ -483,27 +484,6 @@ export interface OcxPrivacyConfig {
    * those accounts.
    */
   maskEmails?: boolean;
-  /** Turns on client-request body redaction (secrets -> `{{SECRET_xxxxxxxx}}`). Default off. */
-  enabled?: boolean;
-  /** Exact-match original values that client-request redaction must leave untouched. */
-  allowValues?: string[];
-  /**
-   * Two-way mode: restore the placeholders a model echoes back to the original values, for the
-   * client that sent them. Requires `enabled`. Default off (redaction stays one-way).
-   */
-  restoreResponses?: boolean;
-  /**
-   * With `restoreResponses`, also restore placeholders inside tool-call arguments. Default off:
-   * a restored value there is something a tool can execute or transmit.
-   */
-  restoreToolArguments?: boolean;
-  /**
-   * Opt-in reveal mode: keep the original of each redacted value in memory so the operator can
-   * list them (`GET /api/privacy/values`, admin token) and spot false positives. Real secrets
-   * sit in the process's memory while this is on; they are never written to disk or logs.
-   * Default off.
-   */
-  revealValues?: boolean;
 }
 
 export interface OcxClientConnectionConfig {

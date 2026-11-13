@@ -17,8 +17,8 @@ import {
 import { CLAUDE_INTERCEPT_HOSTS, startConnectProxy, type ConnectProxyHandle } from "../../src/claude/intercept/connect-proxy";
 import { createLocalInterceptCa, issueLocalInterceptLeaf } from "../../src/claude/intercept/local-ca";
 import { isPrivacyRedactionEnabled, privacyOptionsFromConfig, redactClientBody } from "../../src/privacy";
-import { anthropicBodyFixture, THINKING_BLOCK_SECRET } from "../privacy/fixtures/bodies";
-import { fakeOpenAiKey } from "../privacy/fixtures/secrets";
+import { anthropicBodyFixture, THINKING_BLOCK_SECRET } from "../fixtures/privacy/bodies";
+import { fakeOpenAiKey } from "../fixtures/privacy/secrets";
 import type { OcxConfig } from "../../src/types";
 
 interface FakeUpstream { url: string; bodies: Array<{ text: string; headers: Headers }>; stop: () => void }

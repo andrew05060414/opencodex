@@ -312,6 +312,7 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "PUT", path: "/api/storage/cleanup-policy", module: "server/management/logs-usage-routes", mutates: true },
   // server/management/privacy-routes
   { method: "GET", path: "/api/privacy/stats", module: "server/management/privacy-routes", mutates: false, exempt: { reason: "scrape-target", why: "Operator diagnostic endpoint exposing privacy redaction statistics for a monitoring/dashboard UI, in the same family as /api/metrics." } },
+  { method: "GET", path: "/api/privacy/values", module: "server/management/privacy-routes", mutates: false },
   { method: "GET", path: "/api/privacy/config", module: "server/management/privacy-routes", mutates: false },
   { method: "PUT", path: "/api/privacy/config", module: "server/management/privacy-routes", mutates: true },
   { method: "POST", path: "/api/privacy/test", module: "server/management/privacy-routes", mutates: false, exempt: { reason: "interactive-preview", why: "GUI-only 'try a value' tool for previewing redaction output; it deliberately records nothing and has no CLI workflow to drive." } },
@@ -373,6 +374,7 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "POST", path: "/api/keys/rotate/commit", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/accounts/clear-cooldown", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/accounts/import", module: "server/management/oauth-account-routes", mutates: true },
+  { method: "POST", path: "/api/providers/probe-capabilities", module: "server/management/provider-routes", mutates: false },
   { method: "POST", path: "/api/oauth/accounts/probe", module: "server/management/oauth-account-routes", mutates: false },
   // Only bearer surface that returns refresh tokens. Requires an operator-mediated session
   // (pairing or trusted Tailscale identity); automatic loopback bootstrap and the admin token are
