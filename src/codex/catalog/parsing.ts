@@ -111,7 +111,7 @@ export interface CatalogModel {
   supportsReasoningEffort?: boolean;
   defaultThinkingEnabled?: boolean;
   /** Exact CCA family evidence, retained through the in-memory discovery cache. */
-  antigravityEffortWireModelIds?: Partial<Record<"low" | "medium" | "high", string>>;
+  antigravityEffortWireModelIds?: Partial<Record<"low" | "medium" | "high" | "xhigh", string>>;
   /** Suppress only catalog synthesis of a missing max rung; provider-declared max survives. */
   suppressSyntheticMax?: boolean;
   defaultReasoningEffort?: string;

@@ -113,12 +113,41 @@ const ANTIGRAVITY_WIRE_IDS_BY_PICKER_MODEL: Record<string, string[]> = Object.en
   return out;
 }, {});
 
+/** The tiers a discovered family must publish in full before it collapses into one picker row. */
 const ANTIGRAVITY_DISCOVERY_EFFORTS = ["low", "medium", "high"] as const;
-type AntigravityDiscoveryEffort = typeof ANTIGRAVITY_DISCOVERY_EFFORTS[number];
+type AntigravityDiscoveryEffort = typeof ANTIGRAVITY_DISCOVERY_EFFORTS[number] | "xhigh";
 type AntigravityEffortWireModelIds = Partial<Record<AntigravityDiscoveryEffort, string>>;
 
+/**
+ * Wire-id suffix → tier. `xhigh` is an optional fourth rung (Gemini 4 Hydrogen publishes
+ * `-low/-medium/-high/-xhigh`); it joins a family only when the three required tiers are all
+ * present, so it can never complete a partial family. `-extra-high` comes before `-high` so
+ * the longer spelling is not read as the `high` rung of a `<base>-extra` model.
+ */
+const ANTIGRAVITY_WIRE_TIER_SUFFIXES = [
+  ["-extra-high", "xhigh"],
+  ["-xhigh", "xhigh"],
+  ["-low", "low"],
+  ["-medium", "medium"],
+  ["-high", "high"],
+] as const satisfies readonly (readonly [string, AntigravityDiscoveryEffort])[];
+
+/** Requested efforts that select a family's xhigh rung when it has one, and `high` otherwise. */
+const ANTIGRAVITY_ABOVE_HIGH_EFFORTS = new Set(["xhigh", "max", "ultra"]);
+
+function splitAntigravityTierSuffix(wireId: string): { baseId: string; tier: AntigravityDiscoveryEffort } | undefined {
+  for (const [suffix, tier] of ANTIGRAVITY_WIRE_TIER_SUFFIXES) {
+    if (wireId.endsWith(suffix)) return { baseId: wireId.slice(0, -suffix.length), tier };
+  }
+  return undefined;
+}
+
+function xhighWireModelId(baseId: string, available: ReadonlyMap<string, Record<string, unknown>>): string | undefined {
+  return [`${baseId}-xhigh`, `${baseId}-extra-high`].find(id => available.has(id));
+}
+
 function isAntigravityDiscoveryEffort(value: string): value is AntigravityDiscoveryEffort {
-  return (ANTIGRAVITY_DISCOVERY_EFFORTS as readonly string[]).includes(value);
+  return value === "xhigh" || (ANTIGRAVITY_DISCOVERY_EFFORTS as readonly string[]).includes(value);
 }
 
 function pickerModelIdForDiscoveredWireId(
@@ -144,10 +173,12 @@ function pickerModelIdForDiscoveredWireId(
     if (isKnownAntigravityPickerModelId(baseId)) return baseId;
   }
 
-  const effortMatch = /^(.*)-(low|medium|high)$/.exec(wireId);
-  if (effortMatch) {
-    const baseId = effortMatch[1]!;
-    if (isValidModelDiscoveryModelId(baseId)
+  const tierMatch = splitAntigravityTierSuffix(wireId);
+  if (tierMatch) {
+    const { baseId, tier } = tierMatch;
+    if (tier === "xhigh") {
+      if (completeDiscoveredEffortWireModelIds(baseId, available)) return baseId;
+    } else if (isValidModelDiscoveryModelId(baseId)
       && ANTIGRAVITY_DISCOVERY_EFFORTS.every(effort => available.has(`${baseId}-${effort}`))) {
       return baseId;
     }
@@ -178,8 +209,7 @@ function pickerModelIdForDiscoveredWireId(
  * Publishing it as its own row is what breaks effort selection.
  */
 function collapsesIntoKnownPickerModel(candidateId: string): boolean {
-  const effortMatch = /^(.*)-(low|medium|high)$/.exec(candidateId);
-  const baseId = effortMatch?.[1];
+  const baseId = splitAntigravityTierSuffix(candidateId)?.baseId;
   return baseId !== undefined && isKnownAntigravityPickerModelId(baseId);
 }
 
@@ -277,8 +307,9 @@ function completeDiscoveredEffortWireModelIds(
 ): AntigravityEffortWireModelIds | undefined {
   const explicitEffortMap = Object.hasOwn(ANTIGRAVITY_EFFORT_WIRE_MAP, pickerId)
     ? ANTIGRAVITY_EFFORT_WIRE_MAP[pickerId] : undefined;
+  const xhigh = xhighWireModelId(pickerId, available);
   if (explicitEffortMap && Object.values(explicitEffortMap).every(wireId => available.has(wireId))) {
-    return { ...explicitEffortMap };
+    return { ...explicitEffortMap, ...(xhigh ? { xhigh } : {}) };
   }
 
   if (!isValidModelDiscoveryModelId(pickerId)) return undefined;
@@ -288,7 +319,7 @@ function completeDiscoveredEffortWireModelIds(
     if (!available.has(wireId)) return undefined;
     suffixEffortMap[effort] = wireId;
   }
-  return suffixEffortMap;
+  return xhigh ? { ...suffixEffortMap, xhigh } : suffixEffortMap;
 }
 
 // ── Default effort per Gemini base model ──
@@ -328,7 +359,7 @@ function pickerToWireId(pickerId: string): string {
 }
 
 function resolveAntigravityThinkingLevel(effort: string): string | undefined {
-  if (effort === "xhigh" || effort === "max" || effort === "ultra") return "high";
+  if (ANTIGRAVITY_ABOVE_HIGH_EFFORTS.has(effort)) return "high";
   return ANTIGRAVITY_THINKING_LEVELS.has(effort) ? effort : undefined;
 }
 
@@ -517,7 +548,8 @@ export function registerAntigravityDiscoveredWireModels(
     const families: Record<string, AntigravitySuffixMap> = Object.create(null);
     for (const model of models) {
       if (ANTIGRAVITY_DISCOVERY_EFFORTS.every(effort => model.effortWireModelIds?.[effort] === `${model.id}-${effort}`)) {
-        families[model.id] = { low: `${model.id}-low`, medium: `${model.id}-medium`, high: `${model.id}-high` };
+        const xhigh = model.effortWireModelIds?.xhigh;
+        families[model.id] = { low: `${model.id}-low`, medium: `${model.id}-medium`, high: `${model.id}-high`, ...(xhigh ? { xhigh } : {}) };
       }
     }
     writeAntigravityWireSnapshot(key, { version: 1, provider: generation.provider, families });
@@ -575,7 +607,8 @@ function discoveredAntigravityEffortWireModelId(
   const effortMap = discoveredAntigravityMapping(baseUrl)?.effortModels.get(modelId);
   if (!effortMap) return undefined;
 
-  const requestedEffort = effort ? resolveAntigravityThinkingLevel(effort) : undefined;
+  const requestedEffort = effort && effortMap.xhigh && ANTIGRAVITY_ABOVE_HIGH_EFFORTS.has(effort) ? "xhigh"
+    : effort ? resolveAntigravityThinkingLevel(effort) : undefined;
   if (requestedEffort && isAntigravityDiscoveryEffort(requestedEffort) && effortMap[requestedEffort]) {
     return effortMap[requestedEffort];
   }

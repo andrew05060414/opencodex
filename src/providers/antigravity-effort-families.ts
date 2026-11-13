@@ -7,7 +7,7 @@ export interface AntigravityEffortFamilyRow {
   provider: string;
   custom?: boolean;
   catalogKind?: string;
-  antigravityEffortWireModelIds?: Partial<Record<"low" | "medium" | "high", string>>;
+  antigravityEffortWireModelIds?: Partial<Record<"low" | "medium" | "high" | "xhigh", string>>;
 }
 
 const FAMILY_EFFORTS = ["low", "medium", "high"] as const;
@@ -15,8 +15,9 @@ const FAMILY_EFFORTS = ["low", "medium", "high"] as const;
 export function antigravityEffortFamilyIds(row: AntigravityEffortFamilyRow): string[] | undefined {
   if (row.custom || row.catalogKind === "custom-model-v1" || !row.antigravityEffortWireModelIds) return undefined;
   const ids = FAMILY_EFFORTS.map(effort => `${row.id}-${effort}`);
-  return FAMILY_EFFORTS.every((effort, index) => row.antigravityEffortWireModelIds![effort] === ids[index])
-    ? ids : undefined;
+  if (!FAMILY_EFFORTS.every((effort, index) => row.antigravityEffortWireModelIds![effort] === ids[index])) return undefined;
+  const xhigh = row.antigravityEffortWireModelIds.xhigh;
+  return xhigh === `${row.id}-xhigh` || xhigh === `${row.id}-extra-high` ? [...ids, xhigh] : ids;
 }
 
 /** Retained wire targets stay routable internally; only the public list collapses. */
