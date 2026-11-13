@@ -3,9 +3,8 @@
  *
  * The three routes and every field name below are the contract the backend owns
  * (`GET /api/privacy/stats`, `GET|PUT /api/privacy/config`, `POST /api/privacy/test`).
- * The one rule the whole surface is built around: a record carries a KIND and a COUNT and
- * nothing else — no secret value, and no prefix of one — so there is no field here that
- * could ever hold one.
+ * Stats records carry a KIND and a COUNT and nothing else. The one exception is opt-in reveal
+ * mode (`GET /api/privacy/values`), whose `PrivacyRevealedValue` holds the originals.
  */
 
 /** Closed set. The backend never invents a kind; an unknown one is folded into `other`. */
@@ -73,7 +72,31 @@ export interface PrivacyAllowValue {
 
 export interface PrivacyConfig {
   enabled: boolean;
+  /** Reveal mode: the server keeps each redacted original in memory for `GET /api/privacy/values`. */
+  revealValues: boolean;
   allowValues: PrivacyAllowValue[];
+}
+
+/**
+ * One distinct redacted original, served only in reveal mode. The single type on this page that
+ * holds a real value: it is rendered hidden until the operator asks to see it.
+ */
+export interface PrivacyRevealedValue {
+  /** Same hash-prefix id an allow-list entry for this value carries. */
+  id: string;
+  kind: PrivacyKind;
+  value: string;
+  /** A short window of the surrounding text, or `field "<name>"`. Contains the value. */
+  context: string;
+  requests: number;
+  /** Ids of the requests (as in `PrivacyStats.requests`) that carried it. */
+  requestIds: string[];
+  lastSeen: string;
+}
+
+export interface PrivacyValues {
+  reveal: boolean;
+  values: PrivacyRevealedValue[];
 }
 
 export interface PrivacyTestResult {

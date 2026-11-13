@@ -1,6 +1,7 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
+import { privacyRevealCopy } from "./privacy-reveal-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { gatewayClientsCopy } from "./gateway-clients-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
@@ -138,6 +139,7 @@ export const en = {
   ...desktopCompatibilityCopy("en"),
   ...shellV2Copy("en"),
   ...codexCliUpdateCopy("en"),
+  ...privacyRevealCopy("en"),
   ...remoteLinkDiagnosticsCopy("en"),
   ...gatewayClientsCopy("en"),
   ...modelsV2Copy("en"),

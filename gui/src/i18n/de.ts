@@ -1,6 +1,7 @@
 import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
+import { privacyRevealCopy } from "./privacy-reveal-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { gatewayClientsCopy } from "./gateway-clients-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
@@ -137,6 +138,7 @@ export const de: Record<TKey, string> = {
   ...desktopCompatibilityCopy("de"),
   ...shellV2Copy("de"),
   ...codexCliUpdateCopy("de"),
+  ...privacyRevealCopy("de"),
   ...remoteLinkDiagnosticsCopy("de"),
   ...gatewayClientsCopy("de"),
   ...modelsV2Copy("de"),
