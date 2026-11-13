@@ -2,6 +2,7 @@ import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
+import { privacyRevealCopy } from "./privacy-reveal-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -137,6 +138,7 @@ export const fr: Record<TKey, string> = {
   ...accountProbeCopy("fr"),
   ...shellV2Copy("fr"),
   ...codexCliUpdateCopy("fr"),
+  ...privacyRevealCopy("fr"),
   ...remoteLinkDiagnosticsCopy("fr"),
   ...modelsV2Copy("fr"),
   ...accountsV2Copy("fr"),

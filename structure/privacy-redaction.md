@@ -32,7 +32,9 @@ placeholders. `privacy.allowValues` lists exact originals that stay untouched. C
   `src/server/responses/core.ts` and `src/server/claude-messages.ts`. `restoreToolArguments` extends
   it to tool-call arguments.
 - `revealValues`: originals are kept in process memory only, listed by `GET /api/privacy/values`.
-  Never written to disk or logs.
+  Never written to disk or logs. Each listed value carries its allow-list `id` and the `requestIds`
+  that carried it, so the dashboard shows it under its request and "Not a secret" posts it to
+  `allow-values` (undone by deleting that same `id`). Turning the mode off drops the originals.
 
 ## Stats and management
 

@@ -16,6 +16,7 @@ import type {
   PrivacyRequestRecord,
   PrivacyStats,
   PrivacyTestResult,
+  PrivacyValues,
 } from "./privacy-types";
 
 /**
@@ -26,6 +27,7 @@ import type {
  * must not be the one mode in which a value could reach the page.
  */
 let mockEnabled = true;
+let mockReveal = true;
 let mockAllowValues: string[] = ["sample-allowed-value"];
 
 const CLIENTS = ["multica-agent-sdk", "codex", "claude-code", "cursor", "opencode"];
@@ -106,6 +108,7 @@ export function mockPrivacyStats(range: PrivacyRange): PrivacyStats {
 export function mockPrivacyConfig(): PrivacyConfig {
   return {
     enabled: mockEnabled,
+    revealValues: mockReveal,
     allowValues: mockAllowValues.map(value => ({ id: digest(value), length: value.length })),
   };
 }
@@ -113,6 +116,34 @@ export function mockPrivacyConfig(): PrivacyConfig {
 export function mockSavePrivacyEnabled(enabled: boolean): PrivacyConfig {
   mockEnabled = enabled;
   return mockPrivacyConfig();
+}
+
+export function mockSavePrivacyReveal(reveal: boolean): PrivacyConfig {
+  mockReveal = reveal;
+  return mockPrivacyConfig();
+}
+
+/** Fake originals, assembled from fragments like everything else here, tied to mock request ids. */
+export function mockPrivacyValues(): PrivacyValues {
+  if (!mockReveal) return { reveal: false, values: [] };
+  const fake = [
+    { kind: "token" as const, value: ["demo", "token", "4f7Qx2LmZ9"].join("-"), label: "token=" },
+    { kind: "password" as const, value: ["hunter", "2", "-not-real"].join(""), label: "PASSWORD=" },
+    { kind: "api_key" as const, value: ["sk", "mock", "A1b2C3d4E5f6"].join("-"), label: "OPENAI_API_KEY=" },
+    { kind: "email" as const, value: ["someone", "example.test"].join("@"), label: "MAIL_TO=" },
+  ];
+  return {
+    reveal: true,
+    values: fake.map((row, index) => ({
+      id: digest(row.value),
+      kind: row.kind,
+      value: row.value,
+      context: "export " + row.label + row.value + " # from .env",
+      requests: index + 1,
+      requestIds: Array.from({ length: 9 }, (_, i) => "mock-0-" + i).filter((_, i) => i % (index + 1) === 0),
+      lastSeen: new Date().toISOString(),
+    })),
+  };
 }
 
 /** Mirrors the route's 400s and its idempotence, so the panel's error path is exercisable. */

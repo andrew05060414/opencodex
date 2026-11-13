@@ -20,9 +20,16 @@ function parseRange(url: URL): PrivacyStatsRange {
   return raw === "30d" ? "30d" : "7d";
 }
 
-/** `allowValues` projected for the GUI: never the original value, only its id and length. */
-function allowValuesView(config: ManagementContext["config"]): Array<{ id: string; length: number }> {
-  return (config.privacy?.allowValues ?? []).map((value) => ({ id: secretValueId(value), length: value.length }));
+/**
+ * The config as every config-writing route answers it. `allowValues` is projected: never the
+ * original value, only its id and length.
+ */
+function configView(config: ManagementContext["config"]) {
+  return {
+    enabled: config.privacy?.enabled === true,
+    revealValues: config.privacy?.revealValues === true,
+    allowValues: (config.privacy?.allowValues ?? []).map((value) => ({ id: secretValueId(value), length: value.length })),
+  };
 }
 
 /**
@@ -66,7 +73,7 @@ export async function handlePrivacyRoutes(ctx: ManagementContext): Promise<Respo
   }
 
   if (url.pathname === "/api/privacy/config" && req.method === "GET") {
-    return jsonResponse({ enabled: config.privacy?.enabled === true, revealValues: config.privacy?.revealValues === true, allowValues: allowValuesView(config) }, 200, req, config);
+    return jsonResponse(configView(config), 200, req, config);
   }
 
   if (url.pathname === "/api/privacy/config" && req.method === "PUT") {
@@ -116,7 +123,7 @@ async function handlePutConfig(ctx: ManagementContext): Promise<Response> {
   saveConfigPreservingClaudeCode(config);
   // Turning reveal off must not leave the originals sitting in memory.
   if (body.revealValues === false) globalPrivacyStats.dropSamples();
-  return jsonResponse({ enabled: config.privacy.enabled === true, revealValues: config.privacy.revealValues === true, allowValues: allowValuesView(config) }, 200, req, config);
+  return jsonResponse(configView(config), 200, req, config);
 }
 
 async function handleTest(ctx: ManagementContext): Promise<Response> {
@@ -160,7 +167,7 @@ async function handleAddAllowValue(ctx: ManagementContext): Promise<Response> {
     config.privacy = { ...config.privacy, allowValues: [...existing, value] };
     saveConfigPreservingClaudeCode(config);
   }
-  return jsonResponse({ enabled: config.privacy?.enabled === true, allowValues: allowValuesView(config) }, 200, req, config);
+  return jsonResponse(configView(config), 200, req, config);
 }
 
 async function handleDeleteAllowValue(ctx: ManagementContext, rawId: string): Promise<Response> {
@@ -178,5 +185,5 @@ async function handleDeleteAllowValue(ctx: ManagementContext, rawId: string): Pr
   }
   config.privacy = { ...config.privacy, allowValues: next };
   saveConfigPreservingClaudeCode(config);
-  return jsonResponse({ enabled: config.privacy.enabled === true, allowValues: allowValuesView(config) }, 200, req, config);
+  return jsonResponse(configView(config), 200, req, config);
 }

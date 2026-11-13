@@ -1,15 +1,22 @@
 import { randomUUID } from "node:crypto";
+import { secretValueId } from "./redact";
 import type { PrivacyRequestRecord, RedactionHit, RedactionKind, RedactionSample, PrivacyStatsRange, PrivacyStatsSummary } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UNKNOWN_CLIENT = "unknown";
 const UNKNOWN_PROVIDER = "unknown";
 const UNKNOWN_MODEL = "unknown";
+/** `summary()` lists at most 200 requests, so more ids than that could never be matched. */
+const MAX_REQUEST_IDS_PER_VALUE = 200;
 
 /** One distinct redacted original, as served by reveal mode. Holds a real secret. */
 export interface PrivacyRevealedValue extends RedactionSample {
+  /** The value's hash-prefix id: the same id an `allowValues` entry for it is listed and deleted by. */
+  id: string;
   /** How many retained requests carried this value. */
   requests: number;
+  /** Ids of those requests (as in `summary().requests[].id`), newest first, capped. */
+  requestIds: string[];
   lastSeen: string;
   client: string;
   provider: string;
@@ -107,14 +114,17 @@ export class PrivacyStatsStore {
         const seen = byValue.get(key);
         if (seen) {
           seen.requests += 1;
+          if (seen.requestIds.length < MAX_REQUEST_IDS_PER_VALUE) seen.requestIds.push(record.id);
           continue;
         }
         byValue.set(key, {
+          id: secretValueId(sample.value),
           kind: sample.kind,
           value: sample.value,
           context: sample.context,
           source: sample.source,
           requests: 1,
+          requestIds: [record.id],
           lastSeen: new Date(record.ts).toISOString(),
           client: record.client ?? UNKNOWN_CLIENT,
           provider: record.provider ?? UNKNOWN_PROVIDER,

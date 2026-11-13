@@ -2,6 +2,7 @@ import { desktopCompatibilityCopy } from "./desktop-compatibility-copy";
 import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
+import { privacyRevealCopy } from "./privacy-reveal-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -139,6 +140,7 @@ export const en = {
   ...accountProbeCopy("en"),
   ...shellV2Copy("en"),
   ...codexCliUpdateCopy("en"),
+  ...privacyRevealCopy("en"),
   ...remoteLinkDiagnosticsCopy("en"),
   ...modelsV2Copy("en"),
   ...accountsV2Copy("en"),

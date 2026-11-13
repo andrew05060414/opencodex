@@ -11,7 +11,14 @@ import { formatProviderDisplayName } from "../../provider-icons";
 import type { Locale, TFn } from "../../i18n/shared";
 import { dayHeading, formatTimeOfDay, groupRequestsByDay } from "./privacy-grouping";
 import { privacyKindColor, privacyKindKey } from "./privacy-kinds";
-import type { PrivacyHit, PrivacyKind, PrivacyRequestRecord } from "./privacy-types";
+import { PrivacyRevealedValueList, type PrivacyRevealActions } from "./privacy-reveal";
+import type { PrivacyHit, PrivacyKind, PrivacyRequestRecord, PrivacyRevealedValue } from "./privacy-types";
+
+/** Reveal mode's originals, keyed by the request that carried them, and what a row can do with one. */
+export interface PrivacyRequestReveal {
+  byRequest: ReadonlyMap<string, readonly PrivacyRevealedValue[]>;
+  actions: PrivacyRevealActions;
+}
 
 export function PrivacyKindTag({ hit, t }: { hit: PrivacyHit; t: TFn }) {
   return (
@@ -27,12 +34,20 @@ function PrivacyRequestRow({
   request,
   locale,
   t,
+  reveal,
+  initiallyOpen,
 }: {
   request: PrivacyRequestRecord;
   locale: Locale;
   t: TFn;
+  reveal?: PrivacyRequestReveal;
+  initiallyOpen: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  // Until the user toggles the row it follows `initiallyOpen`, so a value that lands a poll
+  // after its request still opens the row in the live view.
+  const [userOpen, setOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? initiallyOpen;
+  const values = reveal?.byRequest.get(request.id) ?? [];
   const detailId = useId();
   const route = `${request.client} → ${formatProviderDisplayName(request.provider, t)}`;
   return (
@@ -42,7 +57,7 @@ function PrivacyRequestRow({
         className="privacy-request-row"
         aria-expanded={open}
         aria-controls={detailId}
-        onClick={() => setOpen(value => !value)}
+        onClick={() => setOpen(!open)}
       >
         <span className="privacy-request-time mono text-label muted">{formatTimeOfDay(request.ts, locale)}</span>
         <span className="privacy-request-route text-control" title={route}>{route}</span>
@@ -63,7 +78,13 @@ function PrivacyRequestRow({
             </li>
           ))}
         </ul>
-        <p className="muted text-caption">{t("privacy.row.noValues")}</p>
+        {!reveal ? (
+          <p className="muted text-caption">{t("privacy.row.noValues")}</p>
+        ) : values.length > 0 ? (
+          <PrivacyRevealedValueList values={values} actions={reveal.actions} t={t} />
+        ) : (
+          <p className="muted text-caption">{t("privacy.reveal.noneForRequest")}</p>
+        )}
       </div>
     </li>
   );
@@ -74,11 +95,16 @@ export function PrivacyRequestList({
   locale,
   t,
   emptyLabel,
+  reveal,
+  expanded = false,
 }: {
   requests: readonly PrivacyRequestRecord[];
   locale: Locale;
   t: TFn;
   emptyLabel: string;
+  reveal?: PrivacyRequestReveal;
+  /** Rows that carry an original start open (the live view), so a new value is seen without a click. */
+  expanded?: boolean;
 }) {
   if (requests.length === 0) {
     return <p className="privacy-list-empty muted text-control">{emptyLabel}</p>;
@@ -91,7 +117,14 @@ export function PrivacyRequestList({
           <h4 className="privacy-group-head text-label muted">{dayHeading(group.key, group.at, locale, t, now)}</h4>
           <ul className="privacy-request-list">
             {group.rows.map(request => (
-              <PrivacyRequestRow key={request.id} request={request} locale={locale} t={t} />
+              <PrivacyRequestRow
+                key={request.id}
+                request={request}
+                locale={locale}
+                t={t}
+                reveal={reveal}
+                initiallyOpen={expanded && (reveal?.byRequest.has(request.id) ?? false)}
+              />
             ))}
           </ul>
         </section>
@@ -100,15 +133,17 @@ export function PrivacyRequestList({
   );
 }
 
-/** The "by value" tab: kinds and counts, aggregated. There is no value to aggregate by. */
+/** The "by value" tab: kinds and counts, aggregated, then each original when reveal mode has them. */
 export function PrivacyValueList({
   requests,
   t,
   emptyLabel,
+  reveal,
 }: {
   requests: readonly PrivacyRequestRecord[];
   t: TFn;
   emptyLabel: string;
+  reveal?: { values: readonly PrivacyRevealedValue[]; actions: PrivacyRevealActions };
 }) {
   const totals = new Map<PrivacyKind, number>();
   for (const request of requests) {
@@ -133,7 +168,16 @@ export function PrivacyValueList({
           </li>
         ))}
       </ul>
-      <p className="muted text-caption">{t("privacy.values.note")}</p>
+      {reveal ? (
+        <section className="privacy-reveal-section" aria-label={t("privacy.reveal.listTitle")}>
+          <h4 className="privacy-group-head text-label muted">{t("privacy.reveal.listTitle")}</h4>
+          {reveal.values.length > 0
+            ? <PrivacyRevealedValueList values={reveal.values} actions={reveal.actions} t={t} />
+            : <p className="muted text-caption">{t("privacy.reveal.listEmpty")}</p>}
+        </section>
+      ) : (
+        <p className="muted text-caption">{t("privacy.values.note")}</p>
+      )}
     </div>
   );
 }

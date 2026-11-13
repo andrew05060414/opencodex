@@ -491,6 +491,11 @@ describe("reveal mode (privacy.revealValues): originals kept in memory for the o
     expect(values.map((v) => v.value)).toEqual([a, b]);
     expect(values.find((v) => v.value === a)!.requests).toBe(2);
     expect(values.find((v) => v.value === b)!.requests).toBe(1);
+    // Each value carries its allow-list id and the requests it came from, newest first.
+    const [newer, older] = store.summary("7d", true, 3_000).requests.map((r) => r.id);
+    expect(values.find((v) => v.value === a)!.requestIds).toEqual([newer, older]);
+    expect(values.find((v) => v.value === b)!.requestIds).toEqual([newer]);
+    expect(values.find((v) => v.value === a)!.id).toBe(secretValueId(a));
     store.dropSamples();
     expect(store.revealedValues("7d", 10, 3_000)).toEqual([]);
     expect(store.summary("7d", true, 3_000).totals.masked).toBe(3);
