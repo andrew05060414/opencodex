@@ -55,6 +55,7 @@
     "provider-antigravity-wire-snapshot.test.ts": "providers",
     "provider-antigravity-model-quota.test.ts": "providers",
     "antigravity-discovered-families.test.ts": "adapters/google",
+    "antigravity-xhigh-tier.test.ts": "adapters/google",
     "provider-antigravity-effort-families.test.ts": "providers",
     "provider-antigravity-family-catalog.test.ts": "providers",
     "claude-subagent-model-force.test.ts": "claude-integration", "claude-config-home-isolation.test.ts": "claude-integration",
