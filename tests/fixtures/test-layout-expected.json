@@ -1737,5 +1737,8 @@
   "link-ocx-child-ws-gate.test.ts": "clients",
   "link-ocx-child-ws-feature.test.ts": "clients",
   "link-relay-wait-observer.test.ts": "clients",
-  "combo-anthropic-extra-usage.test.ts": "codex-integration"
+  "combo-anthropic-extra-usage.test.ts": "codex-integration",
+  "combo-capability-policy.test.ts": "codex-integration",
+  "combo-request-capability.test.ts": "codex-integration",
+  "combo-capability-policy-config.test.ts": "config"
 }
