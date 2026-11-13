@@ -3,6 +3,7 @@ import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
 import { routeLiveCopy } from "./route-live-copy";
+import { privacyRevealCopy } from "./privacy-reveal-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { remoteLinkChildCopy } from "./remote-link-child-copy";
 import { gatewayClientsCopy } from "./gateway-clients-copy";
@@ -144,6 +145,7 @@ export const en = {
   ...shellV2Copy("en"),
   ...codexCliUpdateCopy("en"),
   ...routeLiveCopy("en"),
+  ...privacyRevealCopy("en"),
   ...remoteLinkDiagnosticsCopy("en"),
   ...remoteLinkChildCopy("en"),
   ...gatewayClientsCopy("en"),

@@ -1,22 +1,39 @@
 /**
  * Privacy — what request redaction kept on this computer.
  *
- * The page reads the three contract routes (`/api/privacy/stats`, `/config`, `/test`) and
- * shows counts only: a record carries a kind and a number, never a value, so there is nothing
- * here that could leak the thing the feature exists to protect. The Live tab is the same stats
- * request on a three-second poll, not a second source of truth.
+ * The page reads the contract routes (`/api/privacy/stats`, `/config`, `/test`) and shows
+ * counts: a stats record carries a kind and a number, never a value. Opt-in reveal mode adds
+ * `/api/privacy/values`, the originals kept in the server's memory, so the operator can check
+ * for false positives and allow a value with one click. The Live tab is the same requests on a
+ * three-second poll, not a second source of truth.
  */
 import { useMemo, useState } from "react";
 import { useDataSurface } from "../data-surface";
 import { DataSurfaceSkeleton, DataSurfaceStatus } from "../components/data-surface";
 import { Notice } from "../ui";
 import { useI18n } from "../i18n/shared";
-import { fetchPrivacyConfig, fetchPrivacyStats, savePrivacyEnabled } from "./privacy/privacy-api";
+import {
+  addPrivacyAllowValue,
+  deletePrivacyAllowValue,
+  fetchPrivacyConfig,
+  fetchPrivacyStats,
+  fetchPrivacyValues,
+  savePrivacyEnabled,
+  savePrivacyReveal,
+} from "./privacy/privacy-api";
 import { privacyKindColor, privacyKindKey, PRIVACY_KINDS } from "./privacy/privacy-kinds";
 import { PrivacyOverview } from "./privacy/privacy-overview";
 import { PrivacyRequestList, PrivacyValueList } from "./privacy/privacy-requests";
+import { PrivacyRevealBar, type PrivacyRevealActions } from "./privacy/privacy-reveal";
 import { PrivacySettings } from "./privacy/privacy-settings";
-import type { PrivacyConfig, PrivacyKind, PrivacyRange, PrivacyStats } from "./privacy/privacy-types";
+import type {
+  PrivacyConfig,
+  PrivacyKind,
+  PrivacyRange,
+  PrivacyRevealedValue,
+  PrivacyStats,
+  PrivacyValues,
+} from "./privacy/privacy-types";
 import "./privacy/privacy.css";
 
 const TABS = ["requests", "values", "live"] as const;
@@ -25,7 +42,7 @@ type PrivacyTab = (typeof TABS)[number];
 /** Live is the same request on a timer; 3s is the cadence the page is specified at. */
 const LIVE_POLL_MS = 3_000;
 
-const EMPTY_CONFIG: PrivacyConfig = { enabled: false, allowValues: [] };
+const EMPTY_CONFIG: PrivacyConfig = { enabled: false, revealValues: false, allowValues: [] };
 
 export default function Privacy({ apiBase }: { apiBase: string }) {
   const { t, locale } = useI18n();
@@ -36,6 +53,8 @@ export default function Privacy({ apiBase }: { apiBase: string }) {
   /** The last write's answer outranks the cached read until the next load settles. */
   const [savedConfig, setSavedConfig] = useState<PrivacyConfig | null>(null);
   const [enabling, setEnabling] = useState(false);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealNotice, setRevealNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   const statsResource = useDataSurface<PrivacyStats>(
     `privacy-stats:${apiBase}:${range}`,
@@ -53,11 +72,30 @@ export default function Privacy({ apiBase }: { apiBase: string }) {
     { isEmpty: () => false },
   );
 
+  const valuesResource = useDataSurface<PrivacyValues>(
+    `privacy-values:${apiBase}:${range}`,
+    [apiBase, range],
+    signal => fetchPrivacyValues(apiBase, range, signal, t("privacy.loadFailed")),
+    { isEmpty: () => false, pollMs: tab === "live" ? LIVE_POLL_MS : undefined },
+  );
+
   const stats = statsResource.state.data;
   const config = savedConfig ?? configResource.state.data ?? EMPTY_CONFIG;
   // Both routes report the switch. A write answers for it until the next stats load lands.
   const enabled = savedConfig ? savedConfig.enabled : stats?.enabled ?? config.enabled;
   const view = stats ? { ...stats, enabled } : undefined;
+  const reveal = savedConfig ? savedConfig.revealValues : valuesResource.state.data?.reveal ?? config.revealValues;
+  const revealedValues = useMemo(
+    () => (reveal ? valuesResource.state.data?.values ?? [] : []),
+    [reveal, valuesResource.state.data],
+  );
+  const valuesByRequest = useMemo(() => {
+    const map = new Map<string, PrivacyRevealedValue[]>();
+    for (const value of revealedValues) {
+      for (const id of value.requestIds) map.set(id, [...(map.get(id) ?? []), value]);
+    }
+    return map;
+  }, [revealedValues]);
 
   const requests = useMemo(() => stats?.requests ?? [], [stats]);
   const kindCounts = useMemo(() => {
@@ -89,6 +127,40 @@ export default function Privacy({ apiBase }: { apiBase: string }) {
       setEnabling(false);
     }
   };
+
+  const writeConfig = async (run: () => Promise<PrivacyConfig>, okText: string | null, failText: string) => {
+    if (revealBusy) return;
+    setRevealBusy(true);
+    try {
+      setSavedConfig(await run());
+      setRevealNotice(okText ? { tone: "ok", text: okText } : null);
+      valuesResource.refresh();
+    } catch {
+      setRevealNotice({ tone: "err", text: failText });
+    } finally {
+      setRevealBusy(false);
+    }
+  };
+
+  const revealActions: PrivacyRevealActions = {
+    allowedIds: new Set(config.allowValues.map(entry => entry.id)),
+    busy: revealBusy,
+    onAllow: value => {
+      void writeConfig(
+        () => addPrivacyAllowValue(apiBase, value.value, t("privacy.settings.allow.addFailed")),
+        t("privacy.reveal.allowedNotice"),
+        t("privacy.settings.allow.addFailed"),
+      );
+    },
+    onUndo: value => {
+      void writeConfig(
+        () => deletePrivacyAllowValue(apiBase, value.id, t("privacy.settings.allow.removeFailed")),
+        t("privacy.reveal.undoneNotice"),
+        t("privacy.settings.allow.removeFailed"),
+      );
+    },
+  };
+  const requestReveal = reveal ? { byRequest: valuesByRequest, actions: revealActions } : undefined;
 
   const listEmptyLabel = kindFilter ? t("privacy.list.emptyFiltered") : t("privacy.list.empty");
 
@@ -190,17 +262,44 @@ export default function Privacy({ apiBase }: { apiBase: string }) {
                 </div>
               )}
 
+              <PrivacyRevealBar
+                reveal={reveal}
+                busy={revealBusy}
+                onToggle={() => {
+                  void writeConfig(
+                    () => savePrivacyReveal(apiBase, !reveal, t("privacy.reveal.toggleFailed")),
+                    null,
+                    t("privacy.reveal.toggleFailed"),
+                  );
+                }}
+                t={t}
+              />
+              {revealNotice && <Notice tone={revealNotice.tone}>{revealNotice.text}</Notice>}
+
               {statsResource.state.refreshing && (
                 <DataSurfaceStatus live={!statsResource.state.showError}>{t("privacy.loading")}</DataSurfaceStatus>
               )}
 
               {tab === "values" ? (
-                <PrivacyValueList requests={requests} t={t} emptyLabel={listEmptyLabel} />
+                <PrivacyValueList
+                  requests={requests}
+                  t={t}
+                  emptyLabel={listEmptyLabel}
+                  reveal={reveal ? { values: revealedValues, actions: revealActions } : undefined}
+                />
               ) : (
-                <PrivacyRequestList requests={visibleRequests} locale={locale} t={t} emptyLabel={listEmptyLabel} />
+                <PrivacyRequestList
+                  requests={visibleRequests}
+                  locale={locale}
+                  t={t}
+                  emptyLabel={listEmptyLabel}
+                  reveal={requestReveal}
+                  expanded={tab === "live"}
+                />
               )}
 
-              <p className="privacy-footnote muted text-caption">{t("privacy.footnote")}</p>
+              {/* "Holds no originals" stops being true once reveal mode is on; the bar says what is kept. */}
+              {!reveal && <p className="privacy-footnote muted text-caption">{t("privacy.footnote")}</p>}
             </>
           )}
         </>
