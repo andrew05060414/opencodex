@@ -199,6 +199,8 @@ test("the empty state says nothing has been redacted rather than showing a zero"
   await mount();
   expect(container.textContent).toContain(en["privacy.empty.noData.title"]);
   expect(container.querySelector(".privacy-request-row")).toBeNull();
+  // The diagram stays on the page, idle, so a restart that cleared the counts does not blank the card.
+  expect(container.querySelector(".privacy-flow--idle")).not.toBeNull();
 });
 
 test("while redaction is off the card offers to turn it on, and the button writes the config", async () => {

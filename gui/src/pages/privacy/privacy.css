@@ -80,6 +80,9 @@
 }
 .privacy-flow-hub .brand-logo { width: 22px; height: 22px; }
 .privacy-flow-caption { text-align: center; margin: 0; }
+/* Before the first redaction: same shape, dashed strands and zero counts. */
+.privacy-flow--idle .privacy-flow-wires path { stroke-dasharray: 4 4; }
+.privacy-flow--idle .privacy-flow-name, .privacy-flow--idle .privacy-flow-count { color: var(--faint); }
 
 /* ── empty / disabled states inside the card ───────────── */
 
@@ -88,6 +91,7 @@
   padding: var(--space-4) 0 var(--space-2);
 }
 .privacy-overview-state p { margin: 0; max-width: var(--prose-measure); }
+.privacy-overview-state .privacy-overview-flow { width: min(100%, 520px); margin-top: var(--space-3); }
 .privacy-overview-state-title { color: var(--text); font-weight: var(--weight-semibold); }
 
 /* ── toolbar, filters ──────────────────────────────────── */
