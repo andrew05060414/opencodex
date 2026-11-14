@@ -80,7 +80,7 @@ function kindForFieldName(key: string): RedactionKind {
   return "api_key";
 }
 
-/** Minimum length for a bare field VALUE to count as a secret by name alone. */
+/** Minimum length for a bare field VALUE to be considered a secret by name at all (value shape then decides). */
 const MIN_NAMED_SECRET_LEN = 6;
 
 /** Anthropic `source: { type, media_type, data }` / Gemini `inlineData: { mimeType, data }` shape. */
@@ -144,21 +144,35 @@ interface Rule {
  * the model is reading. Values with a recognisable secret SHAPE (sk-, ghp_, JWT, Bearer ...) never get
  * here: they have their own rules above.
  *
- * A value is kept as a secret when it is not shaped like an identifier:
+ * A value is kept as a secret when it is not shaped like an identifier or a plain data value:
  *  - not followed by `(` or `[` (a call or a generic/index expression);
- *  - not snake_case / SCREAMING_SNAKE / kebab-case / a dotted path;
- *  - with a digit: accepted (random tokens almost always carry digits);
+ *  - not snake_case / SCREAMING_SNAKE / kebab-case / a dotted path / a semver / an ISO date / a file path;
  *  - without a digit: only a long (>=20) single-case run of letters, so camelCase / PascalCase
- *    names and short words are left alone.
+ *    names, status words (`backlog`, `in_progress`) and short words are left alone;
+ *  - with a digit: at least 16 characters, or 8+ characters mixing three character classes
+ *    (lower / upper / digit / symbol). `strict` (every kind but passwords) also rejects an all-digit
+ *    value (a counter, port or numeric id), so `started_3`, `step2`, `2026` stay readable.
+ * Passwords stay lenient (`strict = false`): they are chosen by people, so a short word with a
+ * digit is a plausible one.
  */
-export function looksLikeSecretValue(value: string, following: string): boolean {
+export function looksLikeSecretValue(value: string, following: string, strict = true): boolean {
   if (following.startsWith("(") || following.startsWith("[")) return false;
   if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(value)) return false; // snake_case
   if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value)) return false; // SCREAMING_SNAKE (env var names)
   if (/^[a-z]+(?:-[a-z0-9]+)+$/i.test(value) && !/[A-Z].*\d|\d.*[A-Z]/.test(value)) return false; // kebab-case
   if (/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value)) return false; // dotted path
-  if (/\d/.test(value)) return true;
-  return value.length >= 20 && (/^[a-z]+$/.test(value) || /^[A-Z]+$/.test(value));
+  if (!/\d/.test(value)) return value.length >= 20 && (/^[a-z]+$/.test(value) || /^[A-Z]+$/.test(value));
+  if (!strict) return true;
+  if (/^\d+$/.test(value)) return false; // counter, port, numeric id
+  if (/^(?:[A-Za-z]+|\d+)(?:_(?:[A-Za-z]+|\d+))+$/.test(value)) return false; // words and numbers joined by `_` (`Tue_Nov_14`)
+  if (/^(?:~|\.{1,2})?\//.test(value)) return false; // file path (`~/.ssh/id_ed25519`)
+  if (/^L\d+(?:-L?\d+)*\.?$/.test(value)) return false; // line reference (`L643-669`)
+  if (/^v?\d+(?:\.\d+){1,3}(?:[-+][\w.]+)?$/.test(value)) return false; // semver
+  if (/^\d{4}-\d{2}-\d{2}(?:[T ]\S*)?$/.test(value)) return false; // ISO date / timestamp
+  if (value.length >= 16) return true;
+  if (value.length < 8) return false;
+  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(value)).length;
+  return classes >= 3;
 }
 
 const RULES: Rule[] = [
@@ -188,7 +202,11 @@ const RULES: Rule[] = [
   {
     kind: "token",
     pattern: () => /\b(Bearer\s+)([A-Za-z0-9._~+/=-]{16,})\b/gi,
-    extract: (m) => ({ fullMatch: m[0], secret: m[2]!, prefix: m[1] }),
+    // A hyphenated phrase after the word in prose is not a credential: apply the value-shape gate. The
+    // explicit `Bearer` context also admits a long mixed-case run of letters (base64-ish) that has no digit.
+    extract: (m) => looksLikeSecretValue(m[2]!, "") || /^(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9+/=]{20,}$/.test(m[2]!)
+      ? { fullMatch: m[0], secret: m[2]!, prefix: m[1] }
+      : null,
   },
   // Generic KEY=VALUE / "key": "value" credential assignment, matched by variable NAME rather
   // than value shape ("宁可误报，不要漏报"): any name containing key/secret/token/password/passwd/pwd
@@ -201,14 +219,14 @@ const RULES: Rule[] = [
       const secret = m[3]!;
       // `cache_read_tokens: 32559727`, `total_tokens=1200000`: a usage counter, not a credential.
       if (/^\d+$/.test(secret) && /tokens["']?\s*[:=]\s*$/i.test(m[1]!)) return null;
-      const following = (m.input ?? "").slice(m.index + m[0].length, m.index + m[0].length + 1);
-      if (!looksLikeSecretValue(secret, following)) return null;
       const label = m[0]!.toLowerCase();
       const kind: RedactionKind = label.includes("password") || label.includes("passwd") || label.includes("pwd")
         ? "password"
         : label.includes("token")
           ? "token"
           : "api_key";
+      const following = (m.input ?? "").slice(m.index + m[0].length, m.index + m[0].length + 1);
+      if (!looksLikeSecretValue(secret, following, kind !== "password")) return null;
       return { fullMatch: m[0], secret, prefix: `${m[1]}${m[2] ?? ""}`, suffix: m[2] ?? "", kind };
     },
   },
@@ -366,6 +384,13 @@ class RedactionSession {
   private redactNamedValue(value: string, kind: RedactionKind, fieldName: string): string {
     if (value.length < MIN_NAMED_SECRET_LEN || isAlreadyPlaceholder(value) || this.allow.has(value)) {
       return value;
+    }
+    // The field NAME only says "might be a credential"; the VALUE decides. `status_key: "in_progress"`,
+    // `next_status_key: "backlog"` and `token: "two words"` are data, not secrets. Passwords are chosen by
+    // people, so a password-named field keeps the name-only rule. A value that is not secret-shaped is
+    // still scanned by the pattern rules, so a PEM block or `sk-...` inside such a field is still masked.
+    if (kind !== "password" && (/\s/.test(value) || !looksLikeSecretValue(value, "", true))) {
+      return this.redactString(value);
     }
     const placeholder = generatePlaceholder(value);
     this.recordHit(
