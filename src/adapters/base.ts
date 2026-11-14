@@ -180,6 +180,8 @@ export interface AdapterRequest {
      * the reference rather than cloning or snapshotting it.
      */
     tierLog?: AdapterTierMetadata;
+    /** Antigravity only: which transport serialized this request, so the usage log can say how it was sent. */
+    antigravityTransport?: "agy" | "direct";
     usageLog?: {
       inputTokens?: number;
       estimated?: boolean;
