@@ -365,6 +365,10 @@ Additional server-domain coverage: `tests/server/advisor-routes.test.ts`.
 
 `tray-proxy-deadline.test.ts`, `tray-proxy.test.ts`, `win-exec.test.ts`, `win-paths.test.ts`, `windows-atomic-replace.test.ts`, `windows-deploy-close-regressions.test.ts`, `windows-elevation-spawn.test.ts`, `windows-elevation.test.ts`, `windows-popup-fix.test.ts`, `windows-scheduler-install-verification.test.ts`, `windows-secret-acl.test.ts`, `windows-service-mutation-lock.test.ts`, `windows-service-wrappers.test.ts`, `windows-text-decoding.test.ts`, `windows-tray-restart-hardening.test.ts`, `windows-tray-run-limit.test.ts`, `windows-tray.test.ts`, `windows-user-principal-nonascii.test.ts`, `windows-user-principal.test.ts`, `winsw-stop-hardening.test.ts`
 
+#### `tests/adapters/agy-acp/` (7)
+
+`agy-account-home.test.ts`, `agy-adapter-routing.test.ts`, `agy-bridge-pool.test.ts`, `agy-conflict-retry.test.ts`, `agy-error-rotation.test.ts`, `agy-registry.test.ts`, `agy-transport-choice.test.ts`
+
 #### `tests/adapters/anthropic/` (19)
 
 `anthropic-account-pool.test.ts`, `anthropic-agentrouter-language-framing.test.ts`, `anthropic-baseurl-override.test.ts`, `anthropic-compatible-stream.test.ts`, `anthropic-empty-content.test.ts`, `anthropic-eof-tolerance.test.ts`, `anthropic-error-body.test.ts`, `anthropic-error-stop-reason.test.ts`, `anthropic-hardening.test.ts`, `anthropic-image-guard.test.ts`, `anthropic-image-normalize.test.ts`, `anthropic-image-retry-e2e.test.ts`, `anthropic-image-retry.test.ts`, `anthropic-reasoning.test.ts`, `anthropic-stream-hardening.test.ts`, `anthropic-tail-guard.test.ts`, `anthropic-thinking-signature.test.ts`, `anthropic-tool-call-id.test.ts`, `anthropic-tool-schema.test.ts`
