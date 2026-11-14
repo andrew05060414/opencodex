@@ -12,6 +12,7 @@ import { createCommandCodeAdapter } from "./command-code";
 import { createCursorAdapter } from "./cursor";
 import { createDevinAdapter } from "./devin";
 import { createGoogleAdapter } from "./google";
+import { ANTIGRAVITY_PROVIDER_ID, withAgyTransport } from "./agy-acp/adapter";
 import { createKiroAdapter } from "./kiro";
 import { createMimoFreeAdapter } from "./mimo-free";
 import { createOpenAIChatAdapter } from "./openai-chat";
@@ -115,7 +116,11 @@ export const ADAPTER_REGISTRY = {
   google: {
     wire: "google",
     mutation: "codex-owned",
-    create: (provider: OcxProviderConfig, _context: AdapterFactoryContext) => createGoogleAdapter(provider),
+    create: (provider: OcxProviderConfig, context: AdapterFactoryContext) => {
+      const adapter = createGoogleAdapter(provider);
+      const antigravity = context.providerId === ANTIGRAVITY_PROVIDER_ID && provider.googleMode === "cloud-code-assist";
+      return antigravity ? withAgyTransport(adapter, provider, undefined, context.cacheRetention) : adapter;
+    },
   },
   kiro: {
     wire: "kiro",

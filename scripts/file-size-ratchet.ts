@@ -77,11 +77,21 @@ export const DATA_SNAPSHOT_PATHS = [
   "scripts/model-metadata.source.json",
 ] as const;
 
+/**
+ * Third-party MIT source copied from an upstream npm package and kept close to it, so a re-sync
+ * is a diff against upstream rather than a rewrite. Patches are listed in
+ * src/adapters/agy-acp/vendor/VENDORED.md. index.mjs is the upstream plugin's single module.
+ */
+export const VENDORED_PATHS = [
+  "src/adapters/agy-acp/vendor/index.mjs",
+] as const;
+
 /** Every path exempt from a size cap, whatever the reason. */
 export const EXEMPT_PATHS = [
   ...GENERATED_PATHS,
   ...I18N_CATALOG_PATHS,
   ...DATA_SNAPSHOT_PATHS,
+  ...VENDORED_PATHS,
 ].sort() as readonly string[];
 
 export type Verdict =

@@ -1250,6 +1250,8 @@ export interface OcxProviderConfig {
    * "cloud-code-assist" = Google Antigravity (Cloud Code Assist) OAuth + CCA envelope.
    */
   googleMode?: "ai-studio" | "vertex" | "cloud-code-assist";
+  /** google-antigravity only: send requests through the local agy CLI (ACP) bridge instead of Google's API. */
+  agyTransport?: { enabled?: boolean; agyPath?: string };
   /** Google tool-schema compatibility policy. Omitted preserves compatible report-only behavior. */
   googleToolSchemaPolicy?: "compatible" | "reject-lossy";
   /** Vertex AI GCP project id. API keys use it to select the project endpoint; "auto" resolves each API key's own project. ADC falls back to GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT env. */

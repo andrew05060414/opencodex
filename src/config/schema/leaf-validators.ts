@@ -423,6 +423,10 @@ export const providerConfigSchema = z.object({
   upstreamWebsocket: z.boolean().optional(),
   directGeminiWireRenames: z.boolean().optional(),
   googleToolSchemaPolicy: z.enum(["compatible", "reject-lossy"]).optional(),
+  agyTransport: z.object({
+    enabled: z.boolean().optional(),
+    agyPath: z.string().min(1).optional(),
+  }).strict().optional(),
   noStructuredOutputModels: z.array(z.string().min(1))
     .transform(normalizeNonBlankStringArray)
     .optional(),

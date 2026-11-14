@@ -159,6 +159,7 @@ export const PROVIDER_MODEL_RENAME_ROLES = {
   forwardAdvisorTool: "none",
   noVisionModels: "list",
   googleMode: "none",
+  agyTransport: "none",
   googleToolSchemaPolicy: "none",
   project: "none",
   location: "none",
