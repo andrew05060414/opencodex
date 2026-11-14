@@ -11,25 +11,30 @@ import { flowSides, PRIVACY_RANGES, strandY, wirePath, type FlowSlice } from "./
 import { formatDayLabel } from "./privacy-grouping";
 import type { PrivacyDay, PrivacyFlow, PrivacyRange, PrivacyStats } from "./privacy-types";
 
-function PrivacyFlowDiagram({ flows, t }: { flows: readonly PrivacyFlow[]; t: TFn }) {
-  const { clients, providers } = flowSides(flows, t("privacy.flow.others"));
+/** Idle strands: the diagram before any request was redacted, so the page still shows what will fill in. */
+const IDLE_STRANDS: readonly FlowSlice[] = [0, 1, 2].map(index => ({ name: String(index), masked: 0, rest: true }));
+
+function PrivacyFlowDiagram({ flows, t, idle = false }: { flows: readonly PrivacyFlow[]; t: TFn; idle?: boolean }) {
+  const { clients, providers } = idle
+    ? { clients: [...IDLE_STRANDS], providers: [...IDLE_STRANDS] }
+    : flowSides(flows, t("privacy.flow.others"));
   const clientMax = Math.max(1, ...clients.map(row => row.masked));
   const providerMax = Math.max(1, ...providers.map(row => row.masked));
   const side = (rows: FlowSlice[], modifier: string, label: string) => (
     <ul className={`privacy-flow-side privacy-flow-side--${modifier}`} aria-label={label}>
       {rows.map(row => (
         <li key={`${modifier}:${row.name}`} className="privacy-flow-row">
-          <span className="privacy-flow-name" title={row.name}>
-            {row.rest || modifier === "client" ? row.name : formatProviderDisplayName(row.name, t)}
+          <span className="privacy-flow-name" title={idle ? undefined : row.name}>
+            {idle ? "—" : row.rest || modifier === "client" ? row.name : formatProviderDisplayName(row.name, t)}
           </span>
-          <span className="privacy-flow-count mono text-label muted">{row.masked}</span>
+          <span className="privacy-flow-count mono text-label muted">{idle ? "0" : row.masked}</span>
         </li>
       ))}
     </ul>
   );
 
   return (
-    <div className="privacy-flow">
+    <div className={`privacy-flow${idle ? " privacy-flow--idle" : ""}`}>
       {side(clients, "client", t("privacy.flow.clients"))}
       <div className="privacy-flow-wires">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
@@ -138,6 +143,10 @@ export function PrivacyOverview({ stats, range, onRange, onEnable, enabling, loc
         <div className="privacy-overview-state">
           <p className="privacy-overview-state-title text-subtitle">{t("privacy.empty.noData.title")}</p>
           <p className="muted text-control">{t("privacy.empty.noData.desc")}</p>
+          <div className="privacy-overview-flow">
+            <PrivacyFlowDiagram flows={[]} t={t} idle />
+            <p className="privacy-flow-caption text-caption muted">{t("privacy.overview.hereCaption")}</p>
+          </div>
         </div>
       ) : (
         <div className="privacy-overview-body">
