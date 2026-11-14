@@ -164,6 +164,29 @@ describe("agy transport routing", () => {
     expect(schema).not.toHaveProperty("additionalProperties");
   });
 
+  test("a client that is itself agy does not hand agy its own toolSummary argument a second time", async () => {
+    const stub = fakeBridge();
+    const { deps } = depsWith(stub.bridge);
+    const wrapper = withAgyTransport(googleStub().adapter, provider(), deps);
+    const tool = {
+      name: "run_command",
+      description: "Run a command",
+      parameters: {
+        type: "object",
+        properties: { toolSummary: { type: "string" }, CommandLine: { type: "string" } },
+        required: ["CommandLine", "toolSummary"],
+      },
+    };
+
+    const request = await wrapper.buildRequest(parsed({ context: { messages: [{ role: "user", content: "hi", timestamp: 0 }], tools: [tool] } } as Partial<OcxParsedRequest>), incoming(AGY_HEADER));
+    await wrapper.fetchResponse!(request);
+
+    const sent = (JSON.parse(stub.calls[0]!.body) as { tools: Array<{ name: string; input_schema: { properties: Record<string, unknown>; required?: string[] } }> }).tools;
+    const schema = sent.find(entry => entry.name === "run_command")!.input_schema;
+    expect(Object.keys(schema.properties)).toEqual(["CommandLine"]);
+    expect(schema.required).toEqual(["CommandLine"]);
+  });
+
   test("a token no pool account holds is refused with 401 and never reaches a bridge", async () => {
     const stub = fakeBridge();
     const { deps, bridged } = depsWith(stub.bridge);

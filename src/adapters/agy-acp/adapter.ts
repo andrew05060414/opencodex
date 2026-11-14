@@ -90,9 +90,26 @@ async function fetchThroughBridge(bridge: AgyBridge, request: AdapterRequest, si
   return upstream;
 }
 
+/**
+ * agy adds its own `toolSummary` argument to every tool it is handed and lists it in `required`.
+ * A client that is itself agy already declares that argument, and the second copy makes `required`
+ * repeat an item, which agy's schema check rejects for the whole session.
+ */
+const AGY_INJECTED_ARGUMENTS = ["toolSummary"];
+
+function withoutAgyInjectedArguments(schema: Record<string, unknown>): Record<string, unknown> {
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object") return schema;
+  const kept = Object.fromEntries(Object.entries(properties).filter(([name]) => !AGY_INJECTED_ARGUMENTS.includes(name)));
+  const required = Array.isArray(schema.required) ? schema.required.filter(name => !AGY_INJECTED_ARGUMENTS.includes(name as string)) : undefined;
+  const { required: _required, ...rest } = schema;
+  return { ...rest, properties: kept, ...(required && required.length > 0 ? { required } : {}) };
+}
+
 function sanitizeAgyTool(tool: unknown): unknown {
   if (!tool || typeof tool !== "object" || !("input_schema" in tool)) return tool;
-  return { ...tool, input_schema: sanitizeGeminiToolParameters((tool as { input_schema: unknown }).input_schema) };
+  const cleaned = sanitizeGeminiToolParameters((tool as { input_schema: unknown }).input_schema);
+  return { ...tool, input_schema: withoutAgyInjectedArguments(cleaned) };
 }
 
 /**
