@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { normalizeRecordedClient, type UsageClient } from "../usage/client";
+import { clientNameField, normalizeRecordedClient, type UsageClient } from "../usage/client";
 import { anthropicAccountTagField, stampApiKeyAccountLabel, usesApiKeyAccount } from "../providers/label";
 import { finalizeProviderCacheAffinity } from "./request-log-cache-affinity";
 import { aggregateAttemptUsage } from "./request-log-attempt-usage";
@@ -130,6 +130,8 @@ export interface RequestLogContext extends UpstreamErrorDiagnostics, LinkRequest
   model: string;
   provider: string;
   client?: UsageClient;
+  /** Bounded product name of an unrecognized client (`usageClientName`); never a raw header. */
+  clientName?: string;
   /** Optional process-lifetime aggregate sink, injected by the server composition owner. */
   requestMetricsRecorder?: RequestMetricsRecorder;
   /** Bounded terminal enum observed while inspecting a buffered response body. */
@@ -343,6 +345,7 @@ export function rebindCacheDiagnosticBody(
 export interface RequestLogEntry extends UpstreamErrorDiagnostics, LinkRequestLogCarrier, RequestBodyEntryField {
   requestId: string;
   client?: UsageClient;
+  clientName?: string;
   /** The logical request this row belongs to (#4546); absent on rows written without a budget. */
   logicalRequestId?: string;
   timestamp: number;
@@ -537,7 +540,7 @@ export function requestLogEntryFromPersistedUsage(entry: PersistedUsageEntry): R
     timestamp: entry.timestamp,
     model: entry.model,
     provider: entry.provider,
-    ...(Object.hasOwn(entry, "client") ? { client: normalizeRecordedClient(entry.client) ?? "unknown" } : {}),
+    ...(Object.hasOwn(entry, "client") ? { client: normalizeRecordedClient(entry.client) ?? "unknown" } : {}), ...clientNameField(entry.clientName),
     ...(entry.firstOutputMs !== undefined ? { firstOutputMs: entry.firstOutputMs } : {}),
     ...(entry.genStartMs !== undefined ? { genStartMs: entry.genStartMs } : {}),
     ...(entry.lastOutputMs !== undefined ? { lastOutputMs: entry.lastOutputMs } : {}),
@@ -745,7 +748,7 @@ export function addRequestLog(entry: RequestLogEntry) {
       timestamp: entry.timestamp,
       provider: entry.provider,
       model: entry.model,
-      client: entry.client ?? "unknown",
+      client: entry.client ?? "unknown", ...clientNameField(entry.clientName),
       ...(isKnownUsageSurface(entry.surface) ? { surface: entry.surface } : {}),
       // This function REBUILDS the persisted row field by field rather than
       // spreading it, so a field missing here reaches /api/logs and never
@@ -1640,7 +1643,7 @@ function writeFinalRequestLog(
     timestamp: start,
     model: isCombo ? logCtx.requestedModel! : logCtx.model,
     provider: isCombo ? "combo" : logCtx.provider,
-    client: normalizeRecordedClient(logCtx.client) ?? "unknown",
+    client: normalizeRecordedClient(logCtx.client) ?? "unknown", ...clientNameField(logCtx.clientName),
     ...(logCtx.surface ? { surface: logCtx.surface } : {}),
     ...(logCtx.apiKeyId ? { apiKeyId: logCtx.apiKeyId } : {}),
     ...(logCtx.admissionKind ? { admissionKind: logCtx.admissionKind } : {}),
