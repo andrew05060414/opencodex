@@ -13,7 +13,7 @@ import {
 } from "../../src/oauth/generic-account-failover";
 import { createOAuthRefreshIntentLock, getAccountSet, saveCredential, setAccountPaused, setActiveAccount, getAccountCredentialWithStatus, mergeAccountCredential } from "../../src/oauth/store";
 import { clearPoolRotationState } from "../../src/oauth/pool-kernel";
-import { antigravityAccountSupportsModel, clearAntigravityAccountRosters, recordAntigravityAccountRoster } from "../../src/providers/antigravity-account-roster";
+import { antigravityAccountModelSupport, antigravityAccountSupportsModel, clearAntigravityAccountRosters, recordAntigravityAccountRoster } from "../../src/providers/antigravity-account-roster";
 import { handleResponses } from "../../src/server/responses";
 import type { OcxConfig } from "../../src/types";
 import { installIsolatedCodexHome, type IsolatedCodexHome } from "../helpers/isolated-codex-home";
@@ -234,6 +234,41 @@ test("all accounts denying a model gives a model-specific exhaustion without cyc
   expect(result.status).toBe(404);
   expect(sends).toEqual([bearer(0), bearer(1), bearer(2)]);
   expect(result.body.error?.message).toContain(`No eligible stored Google Antigravity account can serve the model "${model}"`);
+});
+
+const bareNotFound = () => Response.json({ error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" } }, { status: 404 });
+
+test("Google's bare model 404 rotates to a sibling and is remembered only after the sibling serves the model", async () => {
+  onSend = async auth => auth === bearer(0) ? bareNotFound() : undefined;
+  expect((await turn(config(true))).status).toBe(200);
+  expect(sends).toEqual([bearer(0), bearer(1)]);
+  expect(antigravityAccountSupportsModel(provider, ids[0]!, model)).toBe(false);
+  expect(antigravityAccountSupportsModel(provider, ids[1]!, model)).toBeUndefined();
+  const support = antigravityAccountModelSupport(provider, ids[0]!);
+  expect(support.deniedModels.map(d => d.model)).toEqual([model]);
+  expect(support.deniedModels[0]!.expiresAt - support.deniedModels[0]!.deniedAt).toBe(6 * 60 * 60 * 1000);
+  // The next request skips the account that lacks the model.
+  sends.length = 0;
+  onSend = undefined;
+  expect((await turn(config(true))).status).toBe(200);
+  expect(sends).toEqual([bearer(1)]);
+  // The verdict is bounded in time.
+  expect(antigravityAccountSupportsModel(provider, ids[0]!, model, Date.now() + 6 * 60 * 60 * 1000 + 1000)).toBeUndefined();
+});
+
+test("a bare 404 from every account stays a 404, stores no verdict and leaves accounts unpaused", async () => {
+  onSend = async () => bareNotFound();
+  const result = await turn(config(true));
+  expect(result.status).toBe(404);
+  expect(sends).toEqual([bearer(0), bearer(1), bearer(2)]);
+  for (const id of ids) {
+    expect(antigravityAccountSupportsModel(provider, id, model)).toBeUndefined();
+    expect(getAccountSet(provider)!.accounts.find(row => row.id === id)?.paused).not.toBe(true);
+  }
+  sends.length = 0;
+  onSend = undefined;
+  expect((await turn(config(true))).status).toBe(200);
+  expect(sends).toHaveLength(1);
 });
 
 test("an unrelated 404 never rotates or records a model denial", async () => {

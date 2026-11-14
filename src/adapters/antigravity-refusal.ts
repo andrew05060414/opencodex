@@ -4,9 +4,20 @@ import { registerProviderResponseProvenance } from "../providers/request-pacing"
 import { parseUpstreamJsonPayload } from "./upstream-http-error";
 
 /** Trusted only at the original Google body boundary; never serialized or inferred from display text. */
-const modelNotFoundResponses = new WeakMap<Response, true>();
+const modelNotFoundResponses = new WeakMap<Response, AntigravityModelNotFoundEvidence>();
 registerProviderResponseProvenance(modelNotFoundResponses);
 export const hasAntigravityModelNotFoundProvenance = (response: Response): boolean => modelNotFoundResponses.has(response);
+
+/**
+ * `strong`: Google named this very model (ResourceInfo `models/<model>`).
+ * `bare`: Google's observed body for a model the account cannot call, the CCA sentence with no
+ * detail at all. It cannot tell a missing model from other upstream trouble, so it may rotate the
+ * request but is only remembered once a sibling account serves the same model.
+ */
+export type AntigravityModelNotFoundEvidence = "strong" | "bare";
+export const antigravityModelNotFoundEvidence = (response: Response): AntigravityModelNotFoundEvidence | undefined =>
+  modelNotFoundResponses.get(response);
+const BARE_NOT_FOUND_MESSAGE = /^requested entity was not found\.?$/i;
 
 /** The caller supplies a complete original body, bounded to 4 KiB before normalization. */
 export function markAntigravityModelNotFound(response: Response, requestBody: string, payloadText: string): void {
@@ -23,11 +34,15 @@ export function markAntigravityModelNotFound(response: Response, requestBody: st
   const resourceInfo = details.filter((detail): detail is Record<string, unknown> =>
     detail !== null && typeof detail === "object" && !Array.isArray(detail)
     && detail["@type"] === "type.googleapis.com/google.rpc.ResourceInfo");
-  // No observed model-specific message form is known: prose alone cannot identify the missing resource.
+  // Prose naming a model is never evidence; only the exact CCA sentence with no details counts as bare.
+  if (!details.length && typeof error.message === "string" && BARE_NOT_FOUND_MESSAGE.test(error.message.trim())) {
+    modelNotFoundResponses.set(response, "bare");
+    return;
+  }
   if (!resourceInfo.length || resourceInfo.some(detail => detail.resourceName !== `models/${model}`
     || (detail.resourceType !== undefined && (typeof detail.resourceType !== "string"
       || !/(?:^|[./])models?$/i.test(detail.resourceType))))) return;
-  modelNotFoundResponses.set(response, true);
+  modelNotFoundResponses.set(response, "strong");
 }
 
 export type AntigravityRefusalKind = "verify_account" | "other";
