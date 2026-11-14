@@ -138,6 +138,13 @@
 .aqt-bar-reset:empty {
   display: none;
 }
+/* Projection under the reset line: runs-out estimate and pace. Wraps rather than widening the pool column. */
+.aqt-bar-eta {
+  grid-column: 2 / 4;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
 .aqt-bar-value {
   text-align: right;
   white-space: nowrap;
