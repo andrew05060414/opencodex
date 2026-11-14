@@ -37,3 +37,19 @@ describe("antigravity transport choice", () => {
     expect(chooseAntigravityTransport(none, new Headers())).toBe("direct");
   });
 });
+
+describe("caller transport header survives the credential header rebuild", () => {
+  test("is restored for google-antigravity and nowhere else", async () => {
+    const { restoreResponsesClientMetadata } = await import("../../../src/server/responses/core-auth");
+    const incoming = new Headers({ authorization: "Bearer caller", "x-opencodex-antigravity-transport": "agy" });
+
+    const antigravity = new Headers({ authorization: "Bearer pool" });
+    restoreResponsesClientMetadata(antigravity, incoming, { adapter: "google", googleMode: "cloud-code-assist" } as never);
+    expect(antigravity.get("x-opencodex-antigravity-transport")).toBe("agy");
+    expect(antigravity.get("authorization")).toBe("Bearer pool");
+
+    const vertex = new Headers({ authorization: "Bearer pool" });
+    restoreResponsesClientMetadata(vertex, incoming, { adapter: "google", googleMode: "vertex" } as never);
+    expect(vertex.has("x-opencodex-antigravity-transport")).toBe(false);
+  });
+});

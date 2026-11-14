@@ -17,6 +17,7 @@ import {
   captureCallerDirectAuth,
 } from "../../providers/caller-authorization";
 import { inspectChatGptDomainClaim } from "../../oauth/chatgpt";
+import { AGY_TRANSPORT_REQUEST_HEADER } from "../../adapters/agy-acp/transport";
 import {
   resolveCodexAuthContext,
   CodexMainProfileDrainingError,
@@ -89,6 +90,9 @@ export function restoreResponsesClientMetadata(
   if (provider.adapter === "openai-responses" || compactionRecoveryKind === "compaction-v1") {
     copyResponsesClientMetadata(headers, incoming, provider);
   }
+  // The Antigravity adapter reads the caller's per-request transport choice from these headers.
+  const transport = provider.googleMode === "cloud-code-assist" ? incoming.get(AGY_TRANSPORT_REQUEST_HEADER) : null;
+  if (transport && !headers.has(AGY_TRANSPORT_REQUEST_HEADER)) headers.set(AGY_TRANSPORT_REQUEST_HEADER, transport);
 }
 
 /**
