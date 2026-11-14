@@ -56,6 +56,7 @@ import {
   failoverAccountSnapshot,
 } from "../../oauth/generic-account-failover";
 import { classifyKiroRefusal } from "../../adapters/kiro-refusal";
+import { planAntigravity429Rotation, withDeclinedCause, type Antigravity429Plan } from "../../oauth/antigravity-rate-limit-policy";
 import { normalizeFinalKiroHttpError } from "../../adapters/kiro-retry";
 import { noteKiroMonthlyRefusal } from "../../providers/kiro-usage";
 import { persistKiroAccountState } from "../../providers/kiro-account-state-disk";
@@ -597,12 +598,15 @@ export function createAdapterContinuations(
         }
       }
       } else {
+     let antigravity429: Antigravity429Plan | undefined;
      if (
        response.status === 429
        && transportState.genericFailoverAccountId
         && !isNonReplayableResponse(response)
        && transportState.genericFailovers < transportState.genericFailoverLimit
         && isGenericOAuthFailoverEnabled(config, route.providerName)
+        && (route.providerName !== "google-antigravity" || (antigravity429 = withDeclinedCause(planAntigravity429Rotation(
+          transportState, response, transportState.genericFailoverAccountId, route.modelId), logCtx)).rotate)
       ) {
         // Intersection with the shared request budget. The continuation loop re-sends the
         // turn, so without this the per-request bound could be re-armed simply by reaching a
@@ -622,7 +626,7 @@ export function createAdapterContinuations(
             config,
             route.providerName,
             transportState.genericFailoverAccountId,
-            response.headers.get("retry-after"),
+            antigravity429?.rotate ? antigravity429.retryAfter : response.headers.get("retry-after"),
             Date.now(),
             route.modelId,
           )

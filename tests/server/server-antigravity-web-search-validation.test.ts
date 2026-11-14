@@ -227,7 +227,7 @@ describe("Antigravity web-search structured validation rotation (#6666)", () => 
     ["malformed", structuredRefusal.slice(0, -1)],
     ["oversized complete JSON", JSON.stringify({ error: { details: [{ reason: "VALIDATION_REQUIRED" }] }, padding: "x".repeat(4096) })],
     ["oversized trailing whitespace", structuredRefusal + " ".repeat(4096)],
-  ])("%s never rotates", async (_name, body) => {
+  ])("%s is not a validation refusal", async (name, body) => {
     const accounts = await seedAntigravityAccounts(2);
     const cfg = webSearchConfig();
     const before = durableHealth();
@@ -239,7 +239,14 @@ describe("Antigravity web-search structured validation rotation (#6666)", () => 
     const response = await handleResponses(request(), cfg, route);
     expect(response.status).toBe(403);
     await response.text();
-    expect(sends).toEqual([{ auth: accounts[0]!.auth, project: accounts[0]!.project }]);
+    // A body that is complete and display-safe but not a validation demand is a plain access
+    // denial: one sibling is tried (cooled in memory only), and the sibling's 403 ends it, since a
+    // second refused account points at the client or region. Oversized bodies are never trusted.
+    const plainDenial = !String(name).startsWith("oversized");
+    expect(sends).toEqual(plainDenial ? [
+      { auth: accounts[0]!.auth, project: accounts[0]!.project },
+      { auth: accounts[1]!.auth, project: accounts[1]!.project },
+    ] : [{ auth: accounts[0]!.auth, project: accounts[0]!.project }]);
     expect(durableHealth()).toEqual(before);
   });
 
@@ -321,28 +328,20 @@ describe("Antigravity web-search structured validation rotation (#6666)", () => 
   });
 });
 
-test("web-search preserves structured refusal once the roster's failover limit is spent", async () => {
+test("web-search stops rotating once a second account is also refused", async () => {
   const accounts = await seedAntigravityAccounts(5);
   const cfg = webSearchConfig();
   const sends: string[] = [];
-  installAntigravityFetchMock(async ({ auth, sendIndex }) => {
+  installAntigravityFetchMock(async ({ auth }) => {
     sends.push(auth);
-    if (sendIndex <= 4) return Response.json({ error: {
-      status: "RESOURCE_EXHAUSTED", message: "Quota exceeded for quota metric",
-    } }, { status: 429 });
-    // A new eligible sibling exists, but it cannot enlarge the captured failover ceiling.
-    await saveCredential("google-antigravity", {
-      access: "late-token", refresh: "late-refresh", expires: Date.now() + 3_600_000,
-      accountId: "late-account", projectId: "late-project",
-    }, { addAccount: true });
     return new Response(structuredRefusal, { status: 403 });
   });
   const sendBudget = budget(10);
   const response = await handleResponses(request(), cfg, route, { sendBudget });
   expect(response.status).toBe(403);
   await response.text();
-  expect(sends).toEqual(accounts.map(row => row.auth));
-  expect(sendBudget.used).toBe(5);
+  expect(sends).toEqual(accounts.slice(0, 2).map(row => row.auth));
+  expect(sendBudget.used).toBe(2);
   expect(durableHealth().every(row => !row.needsReauth)).toBe(true);
 });
 

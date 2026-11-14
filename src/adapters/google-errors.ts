@@ -4,6 +4,8 @@ import { isLocationUnsupportedMessage } from "../lib/errors";
 export const ANTIGRAVITY_VALIDATION_REQUIRED_PREFIX = "Antigravity account validation required (VALIDATION_REQUIRED)";
 /** Leading words of every normalized Antigravity 403 that is not a validation demand (see `classifyGoogle`). */
 export const ANTIGRAVITY_ACCESS_DENIED_PREFIX = "Antigravity access denied";
+/** Leading words of a normalized Antigravity 429 that Google classified as hard quota exhaustion. */
+export const ANTIGRAVITY_QUOTA_EXHAUSTED_PREFIX = "Antigravity quota exhausted";
 
 function hasAntigravityValidationReason(payloadText: string): boolean {
   const payload = parseUpstreamJsonPayload(payloadText);
@@ -74,7 +76,7 @@ export function isGoogleQuotaExhaustedText(text: string): boolean {
 function classifyGoogle(label: string, status: number | undefined, enumStatus: string | undefined, text: string): string {
   const lower = `${enumStatus ?? ""} ${text}`.toLowerCase();
   const quotaExhausted = isGoogleQuotaExhaustedText(lower);
-  if ((!enumStatus || enumStatus === "RESOURCE_EXHAUSTED") && quotaExhausted) return `${label} quota exhausted`;
+  if ((!enumStatus || enumStatus === "RESOURCE_EXHAUSTED") && quotaExhausted) return `${label} quota exhausted`; // keep in step with ANTIGRAVITY_QUOTA_EXHAUSTED_PREFIX
   if (status === 429 || enumStatus === "RESOURCE_EXHAUSTED" || lower.includes("rate limit")) {
     return `${label} rate limit exceeded`;
   }
@@ -178,4 +180,42 @@ export function extractGoogleRetryAfterSeconds(payloadText: string): string | un
     if (Number.isFinite(seconds) && seconds > 0) return String(seconds);
   }
   return undefined;
+}
+
+export interface GoogleRateLimitInfo {
+  /** `ErrorInfo.reason`, e.g. QUOTA_EXHAUSTED, RATE_LIMIT_EXCEEDED, MODEL_CAPACITY_EXHAUSTED. */
+  reason?: string;
+  /** `RetryInfo.retryDelay` in whole seconds, rounded up. */
+  retryDelaySeconds?: number;
+  /** `ErrorInfo.metadata.quotaResetDelay` in whole seconds, rounded up. */
+  quotaResetDelaySeconds?: number;
+  /** Whether the error carried any `details` entry at all. */
+  hasDetails?: boolean;
+}
+
+/** Google durations: "42.5s", or the long form "1h16m0.6s" some quota resets use. */
+function googleDurationSeconds(raw: unknown): number | undefined {
+  if (typeof raw !== "string") return undefined;
+  const match = /^\s*(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)s)?\s*$/i.exec(raw);
+  if (!match || (!match[1] && !match[2] && !match[3])) return undefined;
+  const seconds = Math.ceil(Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0));
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+/** Structured 429 facts from the error `details`; every field is absent when Google did not state it. */
+export function parseGoogleRateLimitInfo(payloadText: string): GoogleRateLimitInfo {
+  const parsed = parseUpstreamJsonPayload(payloadText) as { error?: { details?: unknown } } | undefined;
+  const details = parsed?.error?.details;
+  const info: GoogleRateLimitInfo = { hasDetails: Array.isArray(details) && details.length > 0 };
+  if (!Array.isArray(details)) return info;
+  for (const item of details) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    if (info.reason === undefined && typeof rec.reason === "string" && /^[A-Z][A-Z0-9_]{2,63}$/.test(rec.reason)) info.reason = rec.reason;
+    info.retryDelaySeconds ??= googleDurationSeconds(rec.retryDelay);
+    const metadata = rec.metadata && typeof rec.metadata === "object" && !Array.isArray(rec.metadata)
+      ? rec.metadata as Record<string, unknown> : undefined;
+    info.quotaResetDelaySeconds ??= googleDurationSeconds(metadata?.quotaResetDelay);
+  }
+  return info;
 }

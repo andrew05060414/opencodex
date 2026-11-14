@@ -121,6 +121,7 @@ import { mapCodexAuthContextErrorToResponse } from "./codex-auth-error";
 import { chargeWorkflowSends } from "../../lib/workflow-budget";
 import { hasWorkflowSendObserver } from "../../lib/request-execution-budget";
 import { isAntigravityAccessDeniedRefusal, isAntigravityValidationRefusal } from "./antigravity-validation-refusal";
+import { antigravity403MayRotate, planAntigravity429Rotation, withDeclinedCause, ANTIGRAVITY_VALIDATION_COOLDOWN_MS } from "../../oauth/antigravity-rate-limit-policy";
 import { createAntigravityModelDenialRecovery, recoverAntigravityAccount } from "./antigravity-model-denial-recovery";
 import { adapterSendBudgetRefusal } from "../workflow-refusal";
 import { AdmissionModelDeniedError, admissionModelDeniedResponse, projectAdmissionModelDeniedLog } from "../admission-model-scope";
@@ -880,12 +881,13 @@ export async function prepareAdapterExchange(
       failedResponse: Response,
       recovery: AttemptRecoveryKind,
       modelAccountId?: string,
+      cooldownMs?: number,
     ): Promise<Response | null> => {
       const sent = transportState.replayOAuthCredentialSnapshot ?? transportState.sentOAuthSnapshot;
       if (!antigravityPoolActivated || !sent
         || transportState.genericFailovers >= transportState.genericFailoverLimit) return null;
       const nextId = modelAccountId ?? rotateAntigravityAccountOnAuthRefusal(
-        antigravityPoolActivated, sent.accountId, sent.generation, route.modelId,
+        antigravityPoolActivated, sent.accountId, sent.generation, route.modelId, Date.now(), cooldownMs,
       );
       if (!nextId) return null;
       const adapterOwnsDispatch = transportState.activeAdapter.fetchResponse !== undefined;
@@ -1080,14 +1082,15 @@ export async function prepareAdapterExchange(
         && transportState.activeAdapter.name === "google"
         && antigravityPoolActivated
         && !isNonReplayableResponse(upstreamResponse)
-        && transportState.genericFailovers < transportState.genericFailoverLimit
-        && (!antigravityAuthRotationAttempted && await isAntigravityValidationRefusal(upstreamResponse, options.abortSignal)
-          // A plain access-denied 403 keeps rotating while siblings remain: each refused account is
-          // cooled before the hop, so the ring advances and `genericFailoverLimit` bounds the sends.
-          || await isAntigravityAccessDeniedRefusal(upstreamResponse, options.abortSignal))) {
-        antigravityAuthRotationAttempted = true;
-        const rotated = await rotateAntigravityAuth(upstreamResponse, "oauth-account-403");
-        if (rotated) { upstreamResponse = rotated; continue recovery; }
+        && transportState.genericFailovers < transportState.genericFailoverLimit) {
+        const validation = !antigravityAuthRotationAttempted && await isAntigravityValidationRefusal(upstreamResponse, options.abortSignal);
+        // Plain access denial rotates once; a second refused account ends it (client or region).
+        if ((validation || await isAntigravityAccessDeniedRefusal(upstreamResponse, options.abortSignal))
+          && antigravity403MayRotate(transportState)) {
+          antigravityAuthRotationAttempted = true;
+          const rotated = await rotateAntigravityAuth(upstreamResponse, "oauth-account-403", undefined, validation ? ANTIGRAVITY_VALIDATION_COOLDOWN_MS : undefined);
+          if (rotated) { upstreamResponse = rotated; continue recovery; }
+        }
       }
 
       // A 502/503/504 that outlived the same-account ladder is replayed once on a live sibling: the
@@ -1579,6 +1582,10 @@ export async function prepareAdapterExchange(
         // the 429 this hop was recovering from. The wire protocol is resolved from the
         // provider and model, not from the account, so an account rotation cannot move the
         // replay between these two shapes.
+        const plan = route.providerName === "google-antigravity" ? withDeclinedCause(planAntigravity429Rotation(
+          transportState, upstreamResponse, transportState.genericFailoverAccountId, route.modelId), logCtx) : undefined;
+        if (plan && !plan.rotate) break;
+        const rotationRetryAfter = plan?.rotate ? plan.retryAfter : upstreamResponse.headers.get("retry-after");
         const adapterOwnsDispatch = transportState.activeAdapter.fetchResponse !== undefined;
         const hop = reserveCredentialHop(
           "auth-recovery",
@@ -1592,7 +1599,7 @@ export async function prepareAdapterExchange(
           config,
           route.providerName,
           transportState.genericFailoverAccountId,
-          upstreamResponse.headers.get("retry-after"),
+          rotationRetryAfter,
           Date.now(),
           route.modelId,
         );

@@ -499,6 +499,7 @@ export function rotateAntigravityAccountOnAuthRefusal(
   sentGeneration: string,
   requestedModelId: string | null | undefined,
   now = Date.now(),
+  cooldownMs = DEFAULT_COOLDOWN_MS,
 ): string | null {
   if (!poolActivated) return null;
   const set = getAccountSet("google-antigravity");
@@ -507,7 +508,7 @@ export function rotateAntigravityAccountOnAuthRefusal(
   const failed = set.accounts.find(row => row.id === failedAccountId);
   if (failed && credentialGeneration(failed.credential) === sentGeneration) {
     health.set(healthKey("google-antigravity", failedAccountId, family), {
-      cooldownUntil: now + DEFAULT_COOLDOWN_MS,
+      cooldownUntil: now + cooldownMs,
       cooldownSource: "auth",
       identity: sentGeneration,
     });

@@ -27,6 +27,7 @@ import {
 import type { AdapterRequest, ProviderAdapter } from "../../adapters/base";
 import type { OcxParsedRequest, OcxUsage } from "../../types";
 import { rotateProviderTransportOn429, rateLimitRetryPolicyFor } from "../../providers/key-failover";
+import { antigravity403MayRotate, planAntigravity429Rotation } from "../../oauth/antigravity-rate-limit-policy";
 import {
   isGenericOAuthFailoverEnabled,
   rotateGenericOAuthAccountOn429,
@@ -303,6 +304,7 @@ export async function executeResponsesSidecars(
       const failedAccountId = transportState.genericFailoverAccountId;
       if (!sent || !failedAccountId || sent.accountId !== failedAccountId) return null;
       if (options.abortSignal?.aborted || sidecarHasCommittedOutput()) return null;
+      if (!antigravity403MayRotate(transportState)) return null;
 
       const hop = reserveCredentialHop(
         "auth-recovery",
@@ -365,6 +367,13 @@ export async function executeResponsesSidecars(
       // web-search/image loop and never reaches `onSendsConsumed`, so this reservation is the
       // charge for other sidecars. Antigravity web search hands its reservation to the adapter
       // physical-send owner instead; a refusal preserves the real 429.
+      let rotationRetryAfter = retryAfter;
+      if (route.providerName === "google-antigravity") {
+        const plan = planAntigravity429Rotation(transportState, originalResponse,
+          transportState.genericFailoverAccountId, route.modelId);
+        if (!plan.rotate) return null;
+        rotationRetryAfter = plan.retryAfter;
+      }
       const hop = reserveCredentialHop(
         "auth-recovery",
         `${route.providerName}|${route.modelId}|sidecar-oauth-429`,
@@ -377,7 +386,7 @@ export async function executeResponsesSidecars(
         config,
         route.providerName,
         transportState.genericFailoverAccountId,
-        retryAfter,
+        rotationRetryAfter,
         Date.now(),
         route.modelId,
       );

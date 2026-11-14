@@ -70,3 +70,40 @@ export function classifyAntigravityRefusal(status: number, bodyText: string): An
   if (VERIFY_ACCOUNT_WORDS.some(word => lower.includes(word))) return { kind: "verify_account" };
   return { kind: "other" };
 }
+
+/**
+ * What one Antigravity 429 says about itself. `quota`: this account's allowance is spent (reason
+ * QUOTA_EXHAUSTED or Google's quota wording). `capacity`: the model is overloaded for everyone, so
+ * another account cannot help. `declined`: a 429 with no `details` at all (the small
+ * "Resource has been exhausted (e.g. check quota)." answer Google gives to some request contents):
+ * it is the same for every account, so it is returned as is. `unreasoned`: anything else without a
+ * known reason; `reasoned` is false when no `ErrorInfo.reason` came with it.
+ */
+export interface AntigravityRateLimit {
+  readonly kind: "quota" | "capacity" | "declined" | "unreasoned";
+  readonly reasoned: boolean;
+  /** Server-stated wait before this account may be used again (quota reset, else retryDelay). */
+  readonly waitSeconds?: number;
+  /** `RetryInfo.retryDelay`, for same-account backoff. */
+  readonly retryDelaySeconds?: number;
+}
+
+const rateLimitResponses = new WeakMap<Response, AntigravityRateLimit>();
+registerProviderResponseProvenance(rateLimitResponses);
+export const antigravityRateLimit = (response: Response): AntigravityRateLimit | undefined => rateLimitResponses.get(response);
+
+export function classifyAntigravityRateLimit(
+  info: { reason?: string; retryDelaySeconds?: number; quotaResetDelaySeconds?: number; hasDetails?: boolean }, quotaWording: boolean,
+): AntigravityRateLimit {
+  const reasoned = info.reason !== undefined;
+  const kind = info.reason === "QUOTA_EXHAUSTED" || (quotaWording && info.reason !== "MODEL_CAPACITY_EXHAUSTED") ? "quota"
+    : info.reason === "MODEL_CAPACITY_EXHAUSTED" ? "capacity"
+      : info.hasDetails === false && !quotaWording ? "declined" : "unreasoned";
+  const waitSeconds = info.quotaResetDelaySeconds ?? info.retryDelaySeconds;
+  return { kind, reasoned, ...(waitSeconds !== undefined ? { waitSeconds } : {}),
+    ...(info.retryDelaySeconds !== undefined ? { retryDelaySeconds: info.retryDelaySeconds } : {}) };
+}
+
+export function markAntigravityRateLimit(response: Response, limit: AntigravityRateLimit): void {
+  if (response.status === 429) rateLimitResponses.set(response, limit);
+}
