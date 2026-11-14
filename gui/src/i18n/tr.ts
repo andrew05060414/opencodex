@@ -4760,7 +4760,7 @@ export const tr: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "Aç",
   "privacy.empty.disabled.enabling": "Açılıyor…",
   "privacy.empty.noData.title": "Henüz maskelenmiş bir istek yok",
-  "privacy.empty.noData.desc": "Açık bırakın; değiştirilen her şey burada görünür.",
+  "privacy.empty.noData.desc": "Açık bırakın; değiştirilen her şey burada görünür. Sayaçlar yalnızca bellekte tutulur; OpenCodex yeniden başlatılınca sıfırlanır.",
   "privacy.settings.open": "Ayarlar",
   "privacy.settings.hide": "Ayarları gizle",
   "privacy.settings.title": "Maskeleme ayarları",

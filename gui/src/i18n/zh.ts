@@ -4758,7 +4758,7 @@ export const zh: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "启用",
   "privacy.empty.disabled.enabling": "正在启用…",
   "privacy.empty.noData.title": "还没有请求被脱敏",
-  "privacy.empty.noData.desc": "开着就行，有东西被换掉就会出现在这里。",
+  "privacy.empty.noData.desc": "开着就行，有东西被换掉就会出现在这里。 统计只保存在内存里，重启 OpenCodex 后会清零。",
   "privacy.settings.open": "设置",
   "privacy.settings.hide": "收起设置",
   "privacy.settings.title": "脱敏设置",

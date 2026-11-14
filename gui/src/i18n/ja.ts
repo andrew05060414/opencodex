@@ -4759,7 +4759,7 @@ export const ja: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "オンにする",
   "privacy.empty.disabled.enabling": "オンにしています…",
   "privacy.empty.noData.title": "まだマスキングされたリクエストはありません",
-  "privacy.empty.noData.desc": "オンのままにしておけば、置き換えられたものがここに表示されます。",
+  "privacy.empty.noData.desc": "オンのままにしておけば、置き換えられたものがここに表示されます。 件数はメモリ上にのみ保持され、OpenCodex を再起動するとリセットされます。",
   "privacy.settings.open": "設定",
   "privacy.settings.hide": "設定を閉じる",
   "privacy.settings.title": "マスキングの設定",

@@ -4729,7 +4729,7 @@ export const vi: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "Bật",
   "privacy.empty.disabled.enabling": "Đang bật…",
   "privacy.empty.noData.title": "Chưa có yêu cầu nào bị ẩn dữ liệu",
-  "privacy.empty.noData.desc": "Cứ để bật; mọi thứ bị thay thế sẽ hiện ở đây.",
+  "privacy.empty.noData.desc": "Cứ để bật; mọi thứ bị thay thế sẽ hiện ở đây. Số liệu chỉ lưu trong bộ nhớ nên khởi động lại OpenCodex sẽ xóa sạch.",
   "privacy.settings.open": "Cài đặt",
   "privacy.settings.hide": "Ẩn cài đặt",
   "privacy.settings.title": "Cài đặt ẩn dữ liệu",

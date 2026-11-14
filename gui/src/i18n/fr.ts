@@ -4726,7 +4726,7 @@ export const fr: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "Activer",
   "privacy.empty.disabled.enabling": "Activation…",
   "privacy.empty.noData.title": "Aucune requête n'a encore été expurgée",
-  "privacy.empty.noData.desc": "Laissez la fonction active ; tout ce qui est remplacé apparaît ici.",
+  "privacy.empty.noData.desc": "Laissez la fonction active ; tout ce qui est remplacé apparaît ici. Les compteurs ne sont gardés qu’en mémoire : redémarrer OpenCodex les remet à zéro.",
   "privacy.settings.open": "Paramètres",
   "privacy.settings.hide": "Masquer les paramètres",
   "privacy.settings.title": "Paramètres de rédaction",

@@ -4732,7 +4732,7 @@ export const pt: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "Ativar",
   "privacy.empty.disabled.enabling": "Ativando…",
   "privacy.empty.noData.title": "Nenhuma requisição foi mascarada ainda",
-  "privacy.empty.noData.desc": "Deixe ativado; qualquer item substituído aparece aqui.",
+  "privacy.empty.noData.desc": "Deixe ativado; qualquer item substituído aparece aqui. As contagens ficam só na memória; reiniciar o OpenCodex as zera.",
   "privacy.settings.open": "Configurações",
   "privacy.settings.hide": "Ocultar configurações",
   "privacy.settings.title": "Configurações de mascaramento",

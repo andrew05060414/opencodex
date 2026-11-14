@@ -4759,7 +4759,7 @@ export const ko: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "켜기",
   "privacy.empty.disabled.enabling": "켜는 중…",
   "privacy.empty.noData.title": "아직 마스킹된 요청이 없습니다",
-  "privacy.empty.noData.desc": "켜 둔 상태로 두면 대체된 항목이 여기에 나타납니다.",
+  "privacy.empty.noData.desc": "켜 둔 상태로 두면 대체된 항목이 여기에 나타납니다. 집계는 메모리에만 보관되므로 OpenCodex를 다시 시작하면 초기화됩니다.",
   "privacy.settings.open": "설정",
   "privacy.settings.hide": "설정 숨기기",
   "privacy.settings.title": "마스킹 설정",

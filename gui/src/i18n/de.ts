@@ -4737,7 +4737,7 @@ export const de: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "Einschalten",
   "privacy.empty.disabled.enabling": "Wird eingeschaltet…",
   "privacy.empty.noData.title": "Noch keine Anfrage geschwärzt",
-  "privacy.empty.noData.desc": "Eingeschaltet lassen; alles, was ersetzt wird, erscheint hier.",
+  "privacy.empty.noData.desc": "Eingeschaltet lassen; alles, was ersetzt wird, erscheint hier. Die Zähler liegen nur im Arbeitsspeicher; ein Neustart von OpenCodex setzt sie zurück.",
   "privacy.settings.open": "Einstellungen",
   "privacy.settings.hide": "Einstellungen ausblenden",
   "privacy.settings.title": "Schwärzungs-Einstellungen",

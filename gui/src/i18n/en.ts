@@ -4771,7 +4771,7 @@ export const en = {
   "privacy.empty.disabled.enable": "Turn on",
   "privacy.empty.disabled.enabling": "Turning on…",
   "privacy.empty.noData.title": "No request has been redacted yet",
-  "privacy.empty.noData.desc": "Leave it on; anything replaced shows up here.",
+  "privacy.empty.noData.desc": "Leave it on; anything replaced shows up here. Counts are kept in memory only, so restarting OpenCodex clears them.",
   "privacy.settings.open": "Settings",
   "privacy.settings.hide": "Hide settings",
   "privacy.settings.title": "Redaction settings",

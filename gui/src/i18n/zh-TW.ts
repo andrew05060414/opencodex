@@ -4723,7 +4723,7 @@ export const zhTW: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "啟用",
   "privacy.empty.disabled.enabling": "正在啟用…",
   "privacy.empty.noData.title": "還沒有請求被遮蔽",
-  "privacy.empty.noData.desc": "開著就好，有東西被換掉就會出現在這裡。",
+  "privacy.empty.noData.desc": "開著就好，有東西被換掉就會出現在這裡。 統計只保存在記憶體裡，重新啟動 OpenCodex 後會清零。",
   "privacy.settings.open": "設定",
   "privacy.settings.hide": "收起設定",
   "privacy.settings.title": "遮蔽設定",

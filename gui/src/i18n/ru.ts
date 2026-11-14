@@ -4760,7 +4760,7 @@ export const ru: Record<TKey, string> = {
   "privacy.empty.disabled.enable": "Включить",
   "privacy.empty.disabled.enabling": "Включаем…",
   "privacy.empty.noData.title": "Пока ни один запрос не был замаскирован",
-  "privacy.empty.noData.desc": "Оставьте включённым — всё замененное появится здесь.",
+  "privacy.empty.noData.desc": "Оставьте включённым — всё замененное появится здесь. Счётчики хранятся только в памяти; перезапуск OpenCodex обнуляет их.",
   "privacy.settings.open": "Настройки",
   "privacy.settings.hide": "Скрыть настройки",
   "privacy.settings.title": "Настройки маскирования",
