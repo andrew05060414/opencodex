@@ -98,6 +98,7 @@ import { anthropicSessionKeyFromParts } from "../../oauth/anthropic-routing";
 import { configuredAnthropicInstance } from "../../providers/anthropic-instance";
 import { isTranslatorBudgetExceededError } from "../../lib/translator-budget";
 import { bindTurnTerminationScope, rememberDeliveredFinalAnswer } from "../../responses/turn-termination";
+import { observeContextBreakdown } from "../context-breakdown";
 import { noteCodexSelectionAffinity, observeCacheDiagnosticInbound, rebindCacheDiagnosticBody, requestLogSpeedLabel, readConfiguredCodexServiceTier } from "../request-log";
 import type { RouteResult } from "../../router";
 import {
@@ -274,7 +275,9 @@ export async function prepareResponsesRequest(
   // Fail closed: a redaction error must never let the original body reach a vendor.
   if (isPrivacyRedactionEnabled(config)) {
     try {
+      const redactStartedAt = performance.now();
       const outcome = redactClientBody(body, privacyOptionsFromConfig(config));
+      logCtx.privacyRedactionMs = (logCtx.privacyRedactionMs ?? 0) + (performance.now() - redactStartedAt);
       body = outcome.body;
       // Two-way mode only: the first (outermost) entry point to redact owns restoration.
       registerPrivacyRestore(logCtx, inboundWire === "anthropic" ? "messages" : inboundWire, outcome.restoreMap, config);
@@ -317,6 +320,7 @@ export async function prepareResponsesRequest(
       : options.promptCacheKeyIsSharedCohort === false ? "metadata-derived" : "caller",
     contextPrincipalIdOf(options.admission),
   );
+  observeContextBreakdown(logCtx, body, "responses");
   if (!concreteSelection && !options.compactionRoutingOverride && inboundWire === "responses") {
     options.compactionRoutingOverride = applyCompactionRoutingOverride(body, req.headers, config, {
       endpoint: "responses",

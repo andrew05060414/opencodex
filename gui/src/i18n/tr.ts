@@ -3,6 +3,7 @@ import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
 import { privacyRevealCopy } from "./privacy-reveal-copy";
+import { routeLiveCopy } from "./route-live-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -140,6 +141,7 @@ export const tr: Record<TKey, string> = {
   ...shellV2Copy("tr"),
   ...codexCliUpdateCopy("tr"),
   ...privacyRevealCopy("tr"),
+  ...routeLiveCopy("tr"),
   ...remoteLinkDiagnosticsCopy("tr"),
   ...modelsV2Copy("tr"),
   ...accountsV2Copy("tr"),

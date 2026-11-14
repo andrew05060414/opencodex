@@ -3,6 +3,7 @@ import { accountProbeCopy } from "./account-probe-copy";
 import { shellV2Copy } from "./shell-v2-copy";
 import { codexCliUpdateCopy } from "./codex-cli-update-copy";
 import { privacyRevealCopy } from "./privacy-reveal-copy";
+import { routeLiveCopy } from "./route-live-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
@@ -137,6 +138,7 @@ export const zhTW: Record<TKey, string> = {
   ...shellV2Copy("zh-TW"),
   ...codexCliUpdateCopy("zh-TW"),
   ...privacyRevealCopy("zh-TW"),
+  ...routeLiveCopy("zh-TW"),
   ...remoteLinkDiagnosticsCopy("zh-TW"),
   ...modelsV2Copy("zh-TW"),
   ...accountsV2Copy("zh-TW"),

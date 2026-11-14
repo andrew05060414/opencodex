@@ -93,6 +93,7 @@ import { evidenceFromBody } from "../routing/request-evidence";
 import { resolveWireProtocolOverride } from "./adapter-resolve";
 import type { OcxConfig } from "../types";
 import { readJsonRequestBody, resolveInboundBodyLimitBytes } from "./request-decompress";
+import { observeContextBreakdown } from "./context-breakdown";
 import { addFinalRequestLog, httpStatusForRequestLogTerminal, recordFirstOutput, type RequestLogContext } from "./request-log";
 import { createFinalRequestLog } from "./inference/final-log";
 import {
@@ -694,7 +695,9 @@ async function handleClaudeMessagesWithBudget(
     // the original body reach a vendor.
     if (isPrivacyRedactionEnabled(config)) {
       try {
+        const redactStartedAt = performance.now();
         const outcome = redactClientBody(anthropicBody, privacyOptionsFromConfig(config));
+        logCtx.privacyRedactionMs = (logCtx.privacyRedactionMs ?? 0) + (performance.now() - redactStartedAt);
         anthropicBody = outcome.body;
         registerPrivacyRestore(logCtx, "messages", outcome.restoreMap, config);
         const bodyModel = isRec(anthropicBody) ? anthropicBody.model : undefined;
@@ -717,6 +720,7 @@ async function handleClaudeMessagesWithBudget(
         return anthropicErrorResponse(503, "privacy redaction failed; request was not sent", "api_error");
       }
     }
+    observeContextBreakdown(logCtx, anthropicBody, "messages");
     clientModelLabel = clientFacingModelLabel(isRec(anthropicBody) ? anthropicBody.model : undefined);
     // Defensive [1m] strip (devlog 138): clients normally remove the context-variant
     // marker themselves; the 1M signal we act on is the anthropic-beta header.

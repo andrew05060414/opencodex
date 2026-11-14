@@ -70,6 +70,7 @@ import {
   linkRequestSessionLane,
 } from "./request-log-conversation";
 import type { OcxConfig } from "../types";
+import { observeContextBreakdown } from "./context-breakdown";
 import { DecompressedBodyTooLargeError, UnsupportedContentEncodingError, readJsonRequestBody, resolveInboundBodyLimitBytes } from "./request-decompress";
 import {
   addFinalRequestLog,
@@ -215,6 +216,7 @@ async function handleChatCompletionsWithBudget(
   try {
     const rawBody = await readChatBody(req, translatorBudget, resolveInboundBodyLimitBytes(config.maxInboundBodyBytes));
     assertChatCompletionsRoutingBody(rawBody);
+    observeContextBreakdown(logCtx, rawBody, "chat");
     // Normalize foreign image shapes BEFORE routing. isNativeChatRouteEligible below
     // decides the pipeline from the image parts it can see, and the native path then
     // forwards this body as-is, so both must observe the same parts. A body with no
@@ -243,7 +245,9 @@ async function handleChatCompletionsWithBudget(
   // (success, failure, cancel, native passthrough) converges on.
   if (isPrivacyRedactionEnabled(config)) {
     try {
+      const redactStartedAt = performance.now();
       const outcome = redactClientBody(chatBody, privacyOptionsFromConfig(config));
+      logCtx.privacyRedactionMs = (logCtx.privacyRedactionMs ?? 0) + (performance.now() - redactStartedAt);
       chatBody = outcome.body as Rec;
       registerPrivacyRestore(logCtx, "chat", outcome.restoreMap, config);
       // A translate-and-replay through the Responses pipeline shares this same logCtx and

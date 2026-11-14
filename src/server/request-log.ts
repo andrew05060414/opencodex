@@ -4,6 +4,7 @@ import { clientNameField, normalizeRecordedClient, type UsageClient } from "../u
 import { anthropicAccountTagField, stampApiKeyAccountLabel, usesApiKeyAccount } from "../providers/label";
 import { finalizeProviderCacheAffinity } from "./request-log-cache-affinity";
 import { aggregateAttemptUsage } from "./request-log-attempt-usage";
+import { accountRosterField, contextBreakdownField, routeLiveTimingField, type AccountRosterEntryField, type ContextBreakdownContext, type ContextBreakdownEntryField, type RouteLiveTimingContext, type RouteLiveTimingEntryField } from "./request-log-route-live";
 export { aggregateAttemptUsage } from "./request-log-attempt-usage";
 
 import { KEY_ACCOUNT_LOG_LABEL_RE } from "../codex/account-label";
@@ -126,7 +127,7 @@ export function cacheDiagnosticsObserving(): boolean {
   return cacheDiagnosticHooks()?.enabled() === true;
 }
 
-export interface RequestLogContext extends UpstreamErrorDiagnostics, LinkRequestLogCarrier, RequestBodyLogContext {
+export interface RequestLogContext extends UpstreamErrorDiagnostics, LinkRequestLogCarrier, RequestBodyLogContext, RouteLiveTimingContext, ContextBreakdownContext {
   model: string;
   provider: string;
   client?: UsageClient;
@@ -143,15 +144,7 @@ export interface RequestLogContext extends UpstreamErrorDiagnostics, LinkRequest
   logicalRequestId?: string;
   /** Process-local privacy-bounded cache diagnostic; never persisted with request logs. */
   cacheDiagnosticDraft?: CacheDiagnosticDraft;
-  /**
-   * Id of this request's privacy-redaction stats row (privacy_contract.md), set by whichever
-   * entry point redacted the client body -- before routing decided `provider`/`model`, which is
-   * why the row needs backfilling. `addFinalRequestLog` is the one point every protocol's every
-   * success, failure, and cancel path converges on, so it fills in the final values there
-   * instead of each entry point doing it at its own (different, not always singular) routing
-   * site. Never persisted with request logs; a missing id or a failed backfill is a silent
-   * no-op that never affects the request.
-   */
+  /** Privacy stats row id (privacy_contract.md), set before routing; `addFinalRequestLog` backfills provider/model. Never persisted. */
   privacyEventId?: string;
   /**
    * Internal live reference to this request's execution budget; omitted from RequestLogEntry and
@@ -342,7 +335,7 @@ export function rebindCacheDiagnosticBody(
   cacheDiagnosticHooks()?.rebind(body, draft);
 }
 
-export interface RequestLogEntry extends UpstreamErrorDiagnostics, LinkRequestLogCarrier, RequestBodyEntryField {
+export interface RequestLogEntry extends UpstreamErrorDiagnostics, LinkRequestLogCarrier, RequestBodyEntryField, AccountRosterEntryField, RouteLiveTimingEntryField, ContextBreakdownEntryField {
   requestId: string;
   client?: UsageClient;
   clientName?: string;
@@ -1497,10 +1490,7 @@ function writeFinalRequestLog(
   addLog: (entry: RequestLogEntry) => void = addRequestLog,
   attemptStatus?: number,
 ): void {
-  // Privacy redaction (privacy_contract.md) runs before routing, so its stats row is written
-  // with provider/model still "unknown". This is the one point every protocol's every finish
-  // path (success, failure, cancel, native passthrough) converges on, so it is where the row
-  // gets the real values -- never affects the request or this log row either way.
+  // Every finish path converges here, so the pre-routing privacy stats row gets its real provider/model (best effort).
   backfillPrivacyRouteBestEffort(logCtx.privacyEventId, { provider: logCtx.provider, model: logCtx.model });
   // Mid-stream web-search aborts used to emit response.failed and land as 502/upstream_server_error.
   // Prefer the client-close classification whenever the captured reason says so.
@@ -1703,6 +1693,9 @@ function writeFinalRequestLog(
     ...(logCtx.transportPhase ? { transportPhase: logCtx.transportPhase } : {}),
     ...(logCtx.terminalSource ? { terminalSource: logCtx.terminalSource } : {}),
     ...(logCtx.routeDecision ? { routeDecision: logCtx.routeDecision } : {}),
+    ...accountRosterField(isCombo ? attempts?.at(-1) : logCtx),
+    ...(isCombo ? {} : routeLiveTimingField(logCtx, start)),
+    ...contextBreakdownField(logCtx, isCombo ? attempts?.at(-1) : { adapter: logCtx.providerAdapter ?? logCtx.provider, model: logCtx.model }, contextWindowForModel),
     ...(jevDecision ? { jevDecision } : {}),
     ...(claudeCompatibility ? { claudeCompatibility } : {}),
     ...(protocolTrace ? { protocolTrace } : {}),
