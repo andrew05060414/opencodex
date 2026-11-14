@@ -173,7 +173,7 @@ snapshot is included in filtered-cache identity. `src/usage/source-facets.ts` fo
 its legacy count is the unclassified subset of the Codex app option for the selected device.
 Unselectable padded IDs remain in the configured membership set but are omitted from individual
 rows and counted separately, so they neither hide valid choices nor become unconfigured traffic.
-`src/server/management/usage-source-facets.ts` bounds concurrent scans. The session-only facets
+`src/server/management/usage-source-facets.ts` bounds concurrent scans and retains the folded counts per filter, configured key set, time zone and 30-day window start. A repeat call after the ledger grew scans only the bytes appended since the last scan, guarded by the same identity and boundary digest as the aggregate; rows stamped after a call's upper bound wait in a capped pending list until a later window reaches them, so the counts match a full rescan. The session-only facets
 route rechecks session and inventory after scanning, fails closed on changes and sets no-store.
 Expiration after an authorized scan starts returns 401 so the dashboard clears session-scoped
 results; an initial credential lacking the required dashboard scope still receives 403.

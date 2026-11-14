@@ -452,7 +452,7 @@ export function hubStatusLines(hub: HubStatus): string[] {
   const listener = hub.loopbackListener.state === "off"
     ? "off — this hub does not route its own local Codex/Claude clients"
     : hub.loopbackListener.state === "companion"
-      ? `companion on http://127.0.0.1:${hub.loopbackListener.port} — same port as the public listener, no credential needed locally`
+      ? `companion on http://127.0.0.1:${hub.loopbackListener.port} — same port as the public listener, no credential needed locally; serves model traffic only, so /healthz and the dashboard answer 404 here — probe the Health URL above`
       : `ported on http://127.0.0.1:${hub.loopbackListener.port} — a second port local clients must be pointed at`;
   const tokenLines = [`  Data token: ${hub.dataToken}${hub.dataToken === "missing" ? "" : ` at ${hub.dataTokenPath}`}`];
   if (hub.dataToken === "admin-collision (file)") {

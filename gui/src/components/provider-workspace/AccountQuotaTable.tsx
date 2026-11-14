@@ -2,8 +2,9 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useT, type TKey } from "../../i18n/shared";
 import {
   buildQuotaTable, formatCountdown,
-  type AccountFlag, type PoolCell, type PoolKey, type QuotaTableAccount, type QuotaTableRow,
+  type AccountFlag, type PoolCell, type PoolKey, type PoolWindow, type QuotaTableAccount, type QuotaTableRow,
 } from "../../provider-workspace/account-quota-table";
+import { QuotaPaceLine } from "./QuotaPaceLine";
 import "./account-quota-table.css";
 
 const FLAG_TONE: Record<AccountFlag, "ok" | "warn" | "muted" | "danger"> = {
@@ -20,7 +21,7 @@ function useMinuteClock(): number {
   return now;
 }
 
-function PoolBar({ label, cell, now }: { label: string; cell: PoolCell; now: number }) {
+function PoolBar({ label, kind, cell, now }: { label: string; kind: PoolWindow; cell: PoolCell; now: number }) {
   const t = useT();
   const remaining = Math.round(cell.remaining);
   const tone = remaining <= 20 ? "bar-warn" : "bar-green";
@@ -31,6 +32,7 @@ function PoolBar({ label, cell, now }: { label: string; cell: PoolCell; now: num
       <div className="bar"><div className={`bar-fill ${tone}`} style={{ "--bar-scale": remaining / 100 } as CSSProperties} /></div>
       <span className="aqt-bar-value">{t("acctTable.left", { percent: remaining })}</span>
       <span className="aqt-bar-reset">{countdown ? t("acctTable.resetsIn", { time: countdown }) : ""}</span>
+      <QuotaPaceLine kind={kind} remaining={cell.remaining} resetAt={cell.resetAt} now={now} />
     </div>
   );
 }
@@ -134,8 +136,8 @@ export function AccountQuotaTable({ accounts, strategy, renderAccount, renderAct
                       return (
                         <td key={pool.key} className="aqt-pool" data-label={poolLabel(pool.key)}>
                           {cell ? <>
-                            {cell.fiveHour && <PoolBar label={t("acctTable.fiveHour")} cell={cell.fiveHour} now={now} />}
-                            {cell.weekly && <PoolBar label={t("acctTable.weekly")} cell={cell.weekly} now={now} />}
+                            {cell.fiveHour && <PoolBar label={t("acctTable.fiveHour")} kind="fiveHour" cell={cell.fiveHour} now={now} />}
+                            {cell.weekly && <PoolBar label={t("acctTable.weekly")} kind="weekly" cell={cell.weekly} now={now} />}
                             {row.next.includes(pool.key) && <span className="badge badge-primary aqt-next" title={t("acctTable.nextHint")}>{t("acctTable.next")}</span>}
                           </> : <span className="faint" title={t("acctTable.noReading")}>—</span>}
                         </td>

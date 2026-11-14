@@ -710,6 +710,8 @@ describe("status hub block", () => {
     const companion = collectHubStatus(hub() as Parameters<typeof collectHubStatus>[0], { port: 10100, hostname: "100.64.0.10" }, {});
     expect(companion?.loopbackListener).toEqual({ state: "companion", port: 10100 });
     expect(hubStatusLines(companion!).join("\n")).toContain("same port as the public listener");
+    // 127.0.0.1:<port>/healthz is a 404 by design (loopback allowlist); status must say so.
+    expect(hubStatusLines(companion!).join("\n")).toContain("/healthz and the dashboard answer 404 here");
 
     const ported = collectHubStatus(
       hub({ unauthenticatedLoopbackListener: { enabled: true, port: 10104 } }) as Parameters<typeof collectHubStatus>[0],
