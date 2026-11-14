@@ -5,6 +5,7 @@ import { codexCliUpdateCopy } from "./codex-cli-update-copy";
 import { privacyRevealCopy } from "./privacy-reveal-copy";
 import { routeLiveCopy } from "./route-live-copy";
 import { remoteLinkDiagnosticsCopy } from "./remote-link-diagnostics-copy";
+import { gatewayClientsCopy } from "./gateway-clients-copy";
 import { modelsV2Copy } from "./v2-pages/models-copy";
 import { accountsV2Copy } from "./v2-pages/accounts-copy";
 import { subagentsV2Copy } from "./v2-pages/subagents-copy";
@@ -142,6 +143,7 @@ export const ru: Record<TKey, string> = {
   ...privacyRevealCopy("ru"),
   ...routeLiveCopy("ru"),
   ...remoteLinkDiagnosticsCopy("ru"),
+  ...gatewayClientsCopy("ru"),
   ...modelsV2Copy("ru"),
   ...accountsV2Copy("ru"),
   ...subagentsV2Copy("ru"),
