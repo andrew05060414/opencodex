@@ -30,7 +30,6 @@ const INTENTIONAL_ENGLISH = new Set<TKey>([
   "nav.claude", // Product name.
   "pws.exportFormatCockpit", // Export format named after the Cockpit Tools product.
   "pws.exportFormatCodexAuth", // Export format named after the Codex auth.json file and Codex Switcher.
-  "acctTable.actions", // "Actions" is the same word in French (the table's action column).
   "acctTable.pool.gemini", // Quota pool named after the product.
   "acctTable.pool.claudeGpt", // Quota pool named after the products.
   "acctTable.pool.argon", // Quota pool name used by the Antigravity quota API.
