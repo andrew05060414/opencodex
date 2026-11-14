@@ -133,6 +133,37 @@ describe("agy transport routing", () => {
     expect((JSON.parse(stub.calls[0]!.body) as { output_config: { effort: string } }).output_config).toEqual({ effort });
   });
 
+  test("client tool schemas reach the bridge cleaned the way the direct transport cleans them", async () => {
+    const stub = fakeBridge();
+    const { deps } = depsWith(stub.bridge);
+    const wrapper = withAgyTransport(googleStub().adapter, provider(), deps);
+    const tool = {
+      name: "write_file",
+      description: "Write a file",
+      parameters: {
+        type: "object",
+        $schema: "http://json-schema.org/draft-07/schema#",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+          options: { type: "object", properties: { mode: { type: "string" } }, required: ["mode", "mode"] },
+        },
+        required: ["path", "content", "path", "content", "missing"],
+      },
+    };
+
+    const request = await wrapper.buildRequest(parsed({ context: { messages: [{ role: "user", content: "hi", timestamp: 0 }], tools: [tool] } } as Partial<OcxParsedRequest>), incoming(AGY_HEADER));
+    await wrapper.fetchResponse!(request);
+
+    const sent = (JSON.parse(stub.calls[0]!.body) as { tools: Array<{ name: string; input_schema: Record<string, unknown> }> }).tools;
+    const schema = sent.find(entry => entry.name === "write_file")!.input_schema;
+    expect(schema.required).toEqual(["path", "content"]);
+    expect((schema.properties as { options: { required: string[] } }).options.required).toEqual(["mode"]);
+    expect(schema).not.toHaveProperty("$schema");
+    expect(schema).not.toHaveProperty("additionalProperties");
+  });
+
   test("a token no pool account holds is refused with 401 and never reaches a bridge", async () => {
     const stub = fakeBridge();
     const { deps, bridged } = depsWith(stub.bridge);

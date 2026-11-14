@@ -2,6 +2,7 @@ import type { OcxParsedRequest, OcxProviderConfig } from "../../types";
 import type { AdapterFetchContext, AdapterRequest, IncomingMeta, ProviderAdapter } from "../base";
 import { createAnthropicAdapter } from "../anthropic";
 import { safeAntigravityHttpErrorMessage } from "../google-errors";
+import { sanitizeGeminiToolParameters } from "../google-tool-schema";
 import { listAccounts } from "../../oauth/store";
 import { agyAccountHome, ensureAgyTokenFile, type AgyAccountRef } from "./account-home";
 import { defaultAgyBridgePool, type AgyBridge } from "./bridge-pool";
@@ -89,6 +90,11 @@ async function fetchThroughBridge(bridge: AgyBridge, request: AdapterRequest, si
   return upstream;
 }
 
+function sanitizeAgyTool(tool: unknown): unknown {
+  if (!tool || typeof tool !== "object" || !("input_schema" in tool)) return tool;
+  return { ...tool, input_schema: sanitizeGeminiToolParameters((tool as { input_schema: unknown }).input_schema) };
+}
+
 /**
  * Give one Google-antigravity provider a per-request transport. `direct` delegates to the Google
  * adapter untouched. `agy` builds the request as Anthropic Messages, sends it through the bridge
@@ -112,6 +118,10 @@ export function withAgyTransport(
   async function buildAgyRequest(parsed: OcxParsedRequest, incoming: IncomingMeta): Promise<AdapterRequest> {
     const request = await anthropic.buildRequest(parsed, incoming);
     const body = JSON.parse(request.body) as Record<string, unknown>;
+    // agy validates every MCP tool schema and rejects the whole session on one bad schema (a
+    // duplicated `required` entry, an unknown keyword); the direct transport sends the same tools
+    // through this cleaner, so both transports accept the same client tools.
+    if (Array.isArray(body.tools)) body.tools = body.tools.map(sanitizeAgyTool);
     const effort = parsed.options.reasoning;
     if (body.output_config === undefined && effort && effort !== "none") {
       body.output_config = { effort: effort === "minimal" ? "low" : effort };
