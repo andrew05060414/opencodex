@@ -28,6 +28,7 @@ import type {
  */
 let mockEnabled = true;
 let mockReveal = true;
+let mockMaskEmails = true;
 let mockAllowValues: string[] = ["sample-allowed-value"];
 
 const CLIENTS = ["multica-agent-sdk", "codex", "claude-code", "cursor", "opencode"];
@@ -109,12 +110,18 @@ export function mockPrivacyConfig(): PrivacyConfig {
   return {
     enabled: mockEnabled,
     revealValues: mockReveal,
+    maskEmails: mockMaskEmails,
     allowValues: mockAllowValues.map(value => ({ id: digest(value), length: value.length })),
   };
 }
 
 export function mockSavePrivacyEnabled(enabled: boolean): PrivacyConfig {
   mockEnabled = enabled;
+  return mockPrivacyConfig();
+}
+
+export function mockSavePrivacyMaskEmails(maskEmails: boolean): PrivacyConfig {
+  mockMaskEmails = maskEmails;
   return mockPrivacyConfig();
 }
 
