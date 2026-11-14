@@ -74,6 +74,8 @@ export interface AccountRow {
    */
   paused?: boolean;
   pauseDetails?: import("../types/account-auto-pause").AccountPauseDetails;
+  /** Antigravity only: models this account's discovery listed or refused (unexpired verdicts). */
+  modelSupport?: { listedModelIds?: string[]; rosterObservedAt?: number; deniedModels: { model: string; deniedAt: number; expiresAt: number }[] };
 }
 
 export type ClassifyResult = { type: AccountType } | { error: string };
@@ -479,6 +481,7 @@ interface OAuthAccountDto {
   needsReauthCause?: "tos_violation";
   autoSelectable?: boolean;
   skipReason?: unknown;
+  modelSupport?: AccountRow["modelSupport"];
   /** Always sent by the management route; explicitly `null` when the tier is unknown. */
   plan?: string | null;
   quota?: CodexQuotaDto | null;
@@ -524,6 +527,7 @@ async function fetchOAuthRows(
     ...(isAnthropicOAuthInstance(name) && Object.hasOwn(a, "autoSwitchThresholdOverride") ? { autoSwitchThresholdOverride: a.autoSwitchThresholdOverride } : {}),
     ...(a.needsReauthReason === "verify_account" ? { needsReauthReason: a.needsReauthReason } : {}),
     ...(a.needsReauthReason === "verify_account" && a.needsReauthCause === "tos_violation" ? { needsReauthCause: a.needsReauthCause } : {}),
+    ...(name === "google-antigravity" && Array.isArray(a.modelSupport?.deniedModels) ? { modelSupport: a.modelSupport } : {}),
     ...(name === "kiro" && typeof a.autoSelectable === "boolean"
       ? { autoSelectable: a.autoSelectable } : {}),
     ...(name === "kiro" && a.autoSelectable === false && isKiroSkipReason(a.skipReason)

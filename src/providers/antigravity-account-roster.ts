@@ -23,6 +23,8 @@ import { ANTIGRAVITY_MODEL_ALIASES, canonicalAntigravityUsageModel, type Antigra
 /** A roster older than this is treated as unknown; entitlements change with plan and rollout. */
 export const ANTIGRAVITY_ACCOUNT_ROSTER_TTL_MS = 6 * 60 * 60 * 1000;
 export const ANTIGRAVITY_MODEL_DENIAL_TTL_MS = 24 * 60 * 60 * 1000;
+/** A bare "Requested entity was not found." verdict is weaker evidence, so it is retried sooner. */
+export const ANTIGRAVITY_BARE_MODEL_DENIAL_TTL_MS = 6 * 60 * 60 * 1000;
 
 /** Logical ordering survives observations completed in the same millisecond. */
 let observationOrder = 0;
@@ -48,12 +50,14 @@ interface AccountRoster {
 }
 
 const rosters = new Map<string, AccountRoster>();
-const modelDenials = new Map<string, Map<string, { generation: string; order: number; deniedAt: number }>>();
+interface ModelDenial { generation: string; order: number; deniedAt: number; ttlMs: number }
+const modelDenials = new Map<string, Map<string, ModelDenial>>();
 
 /** Admit only evidence from the credential actually sent, in the captured configuration home. */
 export function recordAntigravityModelDenial(
   provider: string, accountId: string, modelId: string,
   sent: AntigravityModelObservation & { readonly generation: string }, now = Date.now(),
+  ttlMs = ANTIGRAVITY_MODEL_DENIAL_TTL_MS,
 ): boolean {
   if (getConfigDir() !== sent.configDir || accountGeneration(provider, accountId) !== sent.generation) return false;
   const key = rosterKey(provider, accountId);
@@ -70,7 +74,7 @@ export function recordAntigravityModelDenial(
   const previous = denials.get(id);
   if (previous && previous.order > sent.order) return false;
   if (denials.size >= 2000 && !denials.has(id)) denials.delete(denials.keys().next().value!);
-  denials.set(id, { generation: sent.generation, order: sent.order, deniedAt: now });
+  denials.set(id, { generation: sent.generation, order: sent.order, deniedAt: now, ttlMs });
   return true;
 }
 
@@ -146,7 +150,7 @@ export function antigravityAccountSupportsModel(
   const denial = modelDenials.get(key)?.get(canonicalId);
   const roster = freshRoster(providerName, accountId, now);
   if (denial && denial.generation === accountGeneration(providerName, accountId)
-    && now - denial.deniedAt <= ANTIGRAVITY_MODEL_DENIAL_TTL_MS
+    && now - denial.deniedAt <= denial.ttlMs
     && (!roster || denial.order >= roster.order)) return false;
   if (!roster) return undefined;
   if (roster.ids.has(id)) return true;
@@ -154,6 +158,25 @@ export function antigravityAccountSupportsModel(
   if (roster.ids.has(canonical)) return true;
   const alias = Object.hasOwn(ANTIGRAVITY_MODEL_ALIASES, id) ? ANTIGRAVITY_MODEL_ALIASES[id] : undefined;
   return alias !== undefined && roster.ids.has(alias);
+}
+
+export interface AntigravityAccountModelSupport {
+  /** Picker ids the account's last discovery listed; absent when no fresh roster exists. */
+  readonly listedModelIds?: readonly string[];
+  readonly rosterObservedAt?: number;
+  /** Models this account refused, with when the verdict stops applying. */
+  readonly deniedModels: readonly { readonly model: string; readonly deniedAt: number; readonly expiresAt: number }[];
+}
+
+/** One account's known model support: its fresh roster plus unexpired denials. Data only, no secrets. */
+export function antigravityAccountModelSupport(providerName: string, accountId: string, now = Date.now()): AntigravityAccountModelSupport {
+  const key = rosterKey(providerName, accountId);
+  const generation = accountGeneration(providerName, accountId);
+  const roster = freshRoster(providerName, accountId, now);
+  const deniedModels = [...(modelDenials.get(key) ?? [])]
+    .filter(([, d]) => d.generation === generation && now - d.deniedAt <= d.ttlMs && (!roster || d.order >= roster.order))
+    .map(([model, d]) => ({ model, deniedAt: d.deniedAt, expiresAt: d.deniedAt + d.ttlMs }));
+  return { ...(roster ? { listedModelIds: roster.modelIds, rosterObservedAt: roster.observedAt } : {}), deniedModels };
 }
 
 /** Forget rosters (one account, or all). For account removal and tests. */
