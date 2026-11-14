@@ -96,11 +96,13 @@ export function normalizePrivacyStats(value: unknown, fallbackRange: PrivacyRang
 }
 
 export function normalizePrivacyConfig(value: unknown): PrivacyConfig {
-  const raw = (value ?? {}) as { enabled?: unknown; revealValues?: unknown; allowValues?: unknown };
+  const raw = (value ?? {}) as { enabled?: unknown; revealValues?: unknown; maskEmails?: unknown; allowValues?: unknown };
   const rows = Array.isArray(raw.allowValues) ? raw.allowValues : [];
   return {
     enabled: raw.enabled === true,
     revealValues: raw.revealValues === true,
+    // Fail closed like the server: only a literal `false` unmasks.
+    maskEmails: raw.maskEmails !== false,
     // Only `{ id, length }` is on the wire. A row without an id is unusable — it could not be
     // deleted — so it is dropped rather than rendered as a blank entry.
     allowValues: rows
@@ -177,6 +179,17 @@ export async function savePrivacyReveal(apiBase: string, revealValues: boolean, 
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ revealValues }),
+  });
+  return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
+}
+
+/** Shows or masks account emails on the dashboard (`privacy.maskEmails`); logs and usage records stay masked. */
+export async function savePrivacyMaskEmails(apiBase: string, maskEmails: boolean, failMessage: string): Promise<PrivacyConfig> {
+  if (DEV_BUILD && privacyMockEnabled()) return (await mock()).mockSavePrivacyMaskEmails(maskEmails);
+  const res = await fetch(`${apiBase}/api/privacy/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ maskEmails }),
   });
   return normalizePrivacyConfig(await readJsonOrThrow<unknown>(res, failMessage));
 }

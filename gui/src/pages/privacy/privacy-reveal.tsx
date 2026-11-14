@@ -74,6 +74,21 @@ export function PrivacyRevealedValueList({ values, actions, t }: { values: reado
 }
 
 /** The line above the lists: how to turn reveal mode on, or that it is on and how to stop it. */
+/** Dashboard account emails: masked by default; one switch shows the full address and account name. */
+export function PrivacyAccountEmailsBar({ maskEmails, busy, onToggle, t }: { maskEmails: boolean; busy: boolean; onToggle: () => void; t: TFn }) {
+  return (
+    <div className={`privacy-reveal-bar${maskEmails ? "" : " privacy-reveal-bar--on"}`}>
+      <div className="privacy-reveal-bar-copy">
+        <p className="text-control">{t(maskEmails ? "privacy.reveal.emailsMaskedLine" : "privacy.reveal.emailsShownLine")}</p>
+        <p className="muted text-caption">{t("privacy.reveal.emailsScope")}</p>
+      </div>
+      <button type="button" className={`btn btn-sm ${maskEmails ? "btn-primary" : "btn-ghost"}`} disabled={busy} onClick={onToggle}>
+        {t(maskEmails ? "privacy.reveal.emailsShow" : "privacy.reveal.emailsMask")}
+      </button>
+    </div>
+  );
+}
+
 export function PrivacyRevealBar({ reveal, busy, onToggle, t }: { reveal: boolean; busy: boolean; onToggle: () => void; t: TFn }) {
   return (
     <div className={`privacy-reveal-bar${reveal ? " privacy-reveal-bar--on" : ""}`}>

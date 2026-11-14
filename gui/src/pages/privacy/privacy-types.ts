@@ -74,6 +74,8 @@ export interface PrivacyConfig {
   enabled: boolean;
   /** Reveal mode: the server keeps each redacted original in memory for `GET /api/privacy/values`. */
   revealValues: boolean;
+  /** Account emails are masked in dashboard projections unless the operator turns this off. */
+  maskEmails: boolean;
   allowValues: PrivacyAllowValue[];
 }
 
