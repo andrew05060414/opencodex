@@ -3,7 +3,7 @@ import {
   GOOGLE_PERMISSION_DENIED_SUFFIX, safeAntigravityHttpErrorMessage,
 } from "../../adapters/google-errors";
 import { readBoundedResponseBody } from "../../lib/bounded-body";
-import { classifyAntigravityRefusal, hasAntigravityModelNotFoundProvenance } from "../../adapters/antigravity-refusal";
+import { antigravityModelNotFoundEvidence, classifyAntigravityRefusal, hasAntigravityModelNotFoundProvenance, type AntigravityModelNotFoundEvidence } from "../../adapters/antigravity-refusal";
 
 /** Match only the normalized Antigravity validation-refusal marker. */
 export function hasAntigravityValidationRefusalMarker(text: string): boolean {
@@ -74,4 +74,9 @@ async function inspectValidationRefusal(
 /** Only original-body, model-specific Google adapter evidence qualifies for account rotation. */
 export async function isAntigravityModelNotFoundRefusal(response: Response, signal?: AbortSignal): Promise<boolean> {
   return response.status === 404 && !signal?.aborted && hasAntigravityModelNotFoundProvenance(response);
+}
+
+/** How strongly the original 404 body identified the model as missing, or `undefined` when it did not. */
+export function antigravityModelNotFoundStrength(response: Response, signal?: AbortSignal): AntigravityModelNotFoundEvidence | undefined {
+  return response.status === 404 && !signal?.aborted ? antigravityModelNotFoundEvidence(response) : undefined;
 }

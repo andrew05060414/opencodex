@@ -129,6 +129,7 @@ function statusText(row: AccountRow): string {
   if (row.provider === "kiro" && row.autoSelectable === false && !(row.paused && row.skipReason === "paused"))
     parts.push(row.skipReason ? `not-auto-selected(${row.skipReason})` : "not-auto-selected");
   if (row.validationPending) parts.push("validation-pending");
+  if (row.modelSupport?.deniedModels.length) parts.push(`no-model(${row.modelSupport.deniedModels.map(d => d.model).join(",")})`);
   if (row.health && row.health !== "Healthy" && !row.needsReauth && !row.validationPending) parts.push(row.health.toLowerCase());
   if (row.creditsAfterLimit === true) parts.push("paid-credits: on");
   if (row.selectionExcludedReason === "plan_excluded") {
