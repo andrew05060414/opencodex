@@ -3,8 +3,9 @@ import { useT, type TKey } from "../../i18n/shared";
 import { QUOTA_WARN_THRESHOLD, quotaBarTone } from "../QuotaBars";
 import {
   buildQuotaTable, formatCountdown,
-  type AccountFlag, type PoolCell, type PoolKey, type QuotaTableAccount, type QuotaTableRow,
+  type AccountFlag, type PoolCell, type PoolKey, type PoolWindow, type QuotaTableAccount, type QuotaTableRow,
 } from "../../provider-workspace/account-quota-table";
+import { QuotaPaceLine } from "./QuotaPaceLine";
 import "./account-quota-table.css";
 
 const FLAG_TONE: Record<AccountFlag, "ok" | "warn" | "muted" | "danger"> = {
@@ -21,7 +22,7 @@ function useMinuteClock(): number {
   return now;
 }
 
-function PoolBar({ label, cell, now }: { label: string; cell: PoolCell; now: number }) {
+function PoolBar({ label, kind, cell, now }: { label: string; kind: PoolWindow; cell: PoolCell; now: number }) {
   const t = useT();
   // Consumed share, matching QuotaBars and the Codex account cards: the bar fills as the
   // allowance is spent, so a fresh account reads 0% and an exhausted one reads 100%.
@@ -35,6 +36,7 @@ function PoolBar({ label, cell, now }: { label: string; cell: PoolCell; now: num
       <div className="bar"><div className={`bar-fill ${tone}`} style={{ "--bar-scale": used / 100 } as CSSProperties} /></div>
       <span className="aqt-bar-value">{t("quota.usedPercent", { pct: used })}</span>
       <span className="aqt-bar-reset">{countdown ? t("acctTable.resetsIn", { time: countdown }) : ""}</span>
+      <QuotaPaceLine kind={kind} remaining={Math.max(0, 100 - cell.used)} resetAt={cell.resetAt} now={now} />
     </div>
   );
 }
@@ -138,8 +140,8 @@ export function AccountQuotaTable({ accounts, strategy, renderRowContent }: Acco
                               header still names the column for assistive technology. */}
                           <span className="aqt-pool-label" aria-hidden="true">{poolLabel(pool.key)}</span>
                           {cell ? <>
-                            {cell.fiveHour && <PoolBar label={t("acctTable.fiveHour")} cell={cell.fiveHour} now={now} />}
-                            {cell.weekly && <PoolBar label={t("acctTable.weekly")} cell={cell.weekly} now={now} />}
+                            {cell.fiveHour && <PoolBar label={t("acctTable.fiveHour")} kind="fiveHour" cell={cell.fiveHour} now={now} />}
+                            {cell.weekly && <PoolBar label={t("acctTable.weekly")} kind="weekly" cell={cell.weekly} now={now} />}
                             {row.next.includes(pool.key) && <span className="badge badge-primary aqt-next" title={t("acctTable.nextHint")}>{t("acctTable.next")}</span>}
                           </> : <span className="faint" title={t("acctTable.noReading")}>—</span>}
                         </td>
