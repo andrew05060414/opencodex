@@ -20,17 +20,15 @@ export const loadVendoredAgyBridge: AgyBridgeFactory = async options => {
   return vendor.createAgyBridge(options);
 };
 
-const CHILD_ENV_KEYS = ["PATH", "Path", "PATHEXT", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "LANG", "LC_ALL"] as const;
 const SSH_CONNECTION = "opencodex-agy 0 127.0.0.1 0";
 
-/** agy keeps tokens in a file when SSH_CONNECTION is set, so each account gets its own HOME. */
+/**
+ * agy keeps tokens in a file when SSH_CONNECTION is set, so each account gets its own HOME.
+ * The bridge layers this over the parent environment; PATH must stay out, or it would replace the
+ * bridge's own `nc` shim directory and cut the client tool bridge.
+ */
 export function agyChildEnv(home: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const key of CHILD_ENV_KEYS) {
-    const value = process.env[key];
-    if (value !== undefined) env[key] = value;
-  }
-  return { ...env, HOME: home, USERPROFILE: home, SSH_CONNECTION };
+  return { HOME: home, USERPROFILE: home, SSH_CONNECTION };
 }
 
 export interface AgyBridgePool {
