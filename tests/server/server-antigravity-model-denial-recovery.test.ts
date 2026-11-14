@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isAntigravityModelNotFoundRefusal } from "../../src/server/responses/antigravity-validation-refusal";
+import { antigravityModelNotFoundStrength, isAntigravityModelNotFoundRefusal } from "../../src/server/responses/antigravity-validation-refusal";
 import { fetchAntigravityWithRetry } from "../../src/adapters/google-http";
 
 const model = "gemini-3.8-flash";
@@ -26,12 +26,23 @@ test("CCA model 404 classification requires original model-specific evidence", a
 });
 
 test("ambiguous and mismatched original resource errors cannot authorize model denial", async () => {
-  for (const body of [JSON.stringify({ error: { status: "NOT_FOUND", message: "Requested entity was not found." } }),
+  for (const body of [
     envelope("Requested entity was not found.", "projects/synthetic-project"),
     envelope("Requested entity was not found.", "models/other-model"),
     envelope("Requested entity was not found.", `projects/synthetic-project/models/${model}`),
     envelope(`Model '${model}' was not found.`, "projects/synthetic-project")])
     expect(await isAntigravityModelNotFoundRefusal(await normalized(body))).toBe(false);
+});
+
+test("Google's bare CCA model 404 is bare evidence: it may rotate but is not strong evidence", async () => {
+  const bare = JSON.stringify({ error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" } });
+  const response = await normalized(bare);
+  expect(await isAntigravityModelNotFoundRefusal(response)).toBe(true);
+  expect(antigravityModelNotFoundStrength(response)).toBe("bare");
+  expect(antigravityModelNotFoundStrength(await normalized(envelope()))).toBe("strong");
+  expect(antigravityModelNotFoundStrength(response, AbortSignal.abort())).toBeUndefined();
+  for (const message of ["Requested entity was not found. Also something else", "Not found", "entity missing"])
+    expect(antigravityModelNotFoundStrength(await normalized(JSON.stringify({ error: { code: 404, status: "NOT_FOUND", message } })))).toBeUndefined();
 });
 
 test("incidental model mentions without ResourceInfo cannot authorize model denial", async () => {

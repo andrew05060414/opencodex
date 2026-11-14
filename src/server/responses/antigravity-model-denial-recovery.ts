@@ -1,11 +1,14 @@
 import { getConfigDir } from "../../config/paths";
 import type { OAuthAccessSnapshot } from "../../oauth";
 import { failoverAccountSnapshot, rotateAntigravityAccountOnModelNotFound } from "../../oauth/generic-account-failover";
-import { captureAntigravityModelObservation, recordAntigravityModelDenial } from "../../providers/antigravity-account-roster";
+import {
+  ANTIGRAVITY_BARE_MODEL_DENIAL_TTL_MS, captureAntigravityModelObservation, recordAntigravityModelDenial,
+  type AntigravityModelObservation,
+} from "../../providers/antigravity-account-roster";
 import { isNonReplayableResponse, SendBudgetExhaustedError } from "../../lib/upstream-retry";
 import type { OcxConfig } from "../../types";
 import type { ResponsesSendBudget } from "./request-send-budget";
-import { isAntigravityModelNotFoundRefusal } from "./antigravity-validation-refusal";
+import { antigravityModelNotFoundStrength } from "./antigravity-validation-refusal";
 
 /** Common guarded credential-hop lifecycle for Antigravity auth and model recovery. */
 export async function recoverAntigravityAccount(options: {
@@ -41,6 +44,9 @@ export function createAntigravityModelDenialRecovery() {
   const root = getConfigDir();
   let observation = captureAntigravityModelObservation();
   const attempted = new Set<string>();
+  // Bare 404s are remembered only once a sibling account serves the same model: if every account
+  // answers the same bare 404 the model name (or the client fingerprint) is at fault, not the accounts.
+  const pendingBare: { accountId: string; observation: AntigravityModelObservation & { generation: string } }[] = [];
   let exhaustion: "none" | "ineligible" | "recovery" = "none";
   return {
     beforeSend: () => { observation = captureAntigravityModelObservation(); },
@@ -48,11 +54,20 @@ export function createAntigravityModelDenialRecovery() {
       config: OcxConfig; model: string | null | undefined; enabled: boolean; remaining: boolean;
       signal?: AbortSignal; rotate: (id: string) => Promise<Response | null>;
     }): Promise<Response | null> {
-      if (!context.enabled || !sent || !context.model || isNonReplayableResponse(response)
-        || !await isAntigravityModelNotFoundRefusal(response, context.signal)) return null;
+      if (pendingBare.length && context.model && response.status >= 200 && response.status < 400) {
+        for (const row of pendingBare.splice(0)) {
+          recordAntigravityModelDenial("google-antigravity", row.accountId, context.model, row.observation, Date.now(),
+            ANTIGRAVITY_BARE_MODEL_DENIAL_TTL_MS);
+        }
+      }
+      const strength = antigravityModelNotFoundStrength(response, context.signal);
+      if (!context.enabled || !sent || !context.model || !strength || isNonReplayableResponse(response)) return null;
       // Capture BEFORE the bounded response read: another discovery can finish during it.
-      if (getConfigDir() !== root || !recordAntigravityModelDenial("google-antigravity", sent.accountId,
-        context.model, { ...observation, configDir: root, generation: sent.generation })) return null;
+      const sentObservation = { ...observation, configDir: root, generation: sent.generation };
+      if (getConfigDir() !== root) return null;
+      if (strength === "strong") {
+        if (!recordAntigravityModelDenial("google-antigravity", sent.accountId, context.model, sentObservation)) return null;
+      } else pendingBare.push({ accountId: sent.accountId, observation: sentObservation });
       attempted.add(sent.accountId);
       const next = rotateAntigravityAccountOnModelNotFound(context.config, sent.accountId, context.model, attempted);
       if (!next) { exhaustion = "ineligible"; return null; }
