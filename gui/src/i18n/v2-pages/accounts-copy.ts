@@ -51,7 +51,7 @@ const rows = {
     "아직 할당량을 읽지 못했습니다",
     "Kontingent noch nicht gelesen",
     "Quota pas encore lu",
-    "尚未读取配额",
+    "尚未读取额度",
     "尚未讀取配額",
     "Квота ещё не прочитана",
     "クォータはまだ読み取られていません",
