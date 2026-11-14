@@ -2631,6 +2631,8 @@ export const en = {
   "integrations.action.disable": "Disable",
   "integrations.action.refresh": "Update",
   "integrations.action.settings": "Settings",
+  "integrations.action.reapply": "Click to re-apply and bring this client up to date",
+  "integrations.reapply.done": "{client} was re-applied.",
   "integrations.action.manageKeys": "Manage keys",
   "integrations.action.restore": "Restore…",
   "integrations.action.undo": "Undo",
