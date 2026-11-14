@@ -1,6 +1,7 @@
 import type { ManagementContext } from "./context";
 import { jsonResponse } from "../auth-cors";
 import { isPlainRecord } from "./shared";
+import { emailMaskingEnabled } from "../../lib/privacy";
 import { readManagementJsonBody, rethrowManagementBodyTooLarge } from "./body";
 import { saveConfigPreservingClaudeCode } from "../../config";
 import {
@@ -28,6 +29,8 @@ function configView(config: ManagementContext["config"]) {
   return {
     enabled: config.privacy?.enabled === true,
     revealValues: config.privacy?.revealValues === true,
+    // Dashboard-only: whether account emails are masked in management projections (default true).
+    maskEmails: emailMaskingEnabled(config),
     allowValues: (config.privacy?.allowValues ?? []).map((value) => ({ id: secretValueId(value), length: value.length })),
   };
 }
@@ -105,20 +108,24 @@ async function handlePutConfig(ctx: ManagementContext): Promise<Response> {
     return jsonResponse({ error: "invalid JSON body" }, 400, req, config);
   }
   if (!isPlainRecord(raw)) return jsonResponse({ error: "body must be a JSON object" }, 400, req, config);
-  const body = raw as { enabled?: unknown; revealValues?: unknown };
+  const body = raw as { enabled?: unknown; revealValues?: unknown; maskEmails?: unknown };
   if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
     return jsonResponse({ error: "enabled must be a boolean" }, 400, req, config);
   }
   if (body.revealValues !== undefined && typeof body.revealValues !== "boolean") {
     return jsonResponse({ error: "revealValues must be a boolean" }, 400, req, config);
   }
-  if (body.enabled === undefined && body.revealValues === undefined) {
+  if (body.maskEmails !== undefined && typeof body.maskEmails !== "boolean") {
+    return jsonResponse({ error: "maskEmails must be a boolean" }, 400, req, config);
+  }
+  if (body.enabled === undefined && body.revealValues === undefined && body.maskEmails === undefined) {
     return jsonResponse({ error: "enabled must be a boolean" }, 400, req, config);
   }
   config.privacy = {
     ...config.privacy,
     ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
     ...(body.revealValues === undefined ? {} : { revealValues: body.revealValues }),
+    ...(body.maskEmails === undefined ? {} : { maskEmails: body.maskEmails }),
   };
   saveConfigPreservingClaudeCode(config);
   // Turning reveal off must not leave the originals sitting in memory.

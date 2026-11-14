@@ -19,12 +19,13 @@ import {
   fetchPrivacyStats,
   fetchPrivacyValues,
   savePrivacyEnabled,
+  savePrivacyMaskEmails,
   savePrivacyReveal,
 } from "./privacy/privacy-api";
 import { privacyKindColor, privacyKindKey, PRIVACY_KINDS } from "./privacy/privacy-kinds";
 import { PrivacyOverview } from "./privacy/privacy-overview";
 import { PrivacyRequestList, PrivacyValueList } from "./privacy/privacy-requests";
-import { PrivacyRevealBar, type PrivacyRevealActions } from "./privacy/privacy-reveal";
+import { PrivacyAccountEmailsBar, PrivacyRevealBar, type PrivacyRevealActions } from "./privacy/privacy-reveal";
 import { PrivacySettings } from "./privacy/privacy-settings";
 import type {
   PrivacyConfig,
@@ -42,7 +43,7 @@ type PrivacyTab = (typeof TABS)[number];
 /** Live is the same request on a timer; 3s is the cadence the page is specified at. */
 const LIVE_POLL_MS = 3_000;
 
-const EMPTY_CONFIG: PrivacyConfig = { enabled: false, revealValues: false, allowValues: [] };
+const EMPTY_CONFIG: PrivacyConfig = { enabled: false, revealValues: false, maskEmails: true, allowValues: [] };
 
 export default function Privacy({ apiBase }: { apiBase: string }) {
   const { t, locale } = useI18n();
@@ -268,6 +269,18 @@ export default function Privacy({ apiBase }: { apiBase: string }) {
                 onToggle={() => {
                   void writeConfig(
                     () => savePrivacyReveal(apiBase, !reveal, t("privacy.reveal.toggleFailed")),
+                    null,
+                    t("privacy.reveal.toggleFailed"),
+                  );
+                }}
+                t={t}
+              />
+              <PrivacyAccountEmailsBar
+                maskEmails={config.maskEmails}
+                busy={revealBusy}
+                onToggle={() => {
+                  void writeConfig(
+                    () => savePrivacyMaskEmails(apiBase, !config.maskEmails, t("privacy.reveal.toggleFailed")),
                     null,
                     t("privacy.reveal.toggleFailed"),
                   );

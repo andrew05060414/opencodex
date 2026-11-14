@@ -285,7 +285,7 @@ describe("management routes: GET/PUT /api/privacy/config, allow-values, POST /ap
     const putResp = await handlePrivacyRoutes(ctxFor(putReq, config));
     expect(putResp?.status).toBe(200);
     const data = await putResp?.json();
-    expect(data).toEqual({ enabled: true, revealValues: false, allowValues: [{ id: secretValueId(kept), length: kept.length }] });
+    expect(data).toEqual({ enabled: true, revealValues: false, maskEmails: true, allowValues: [{ id: secretValueId(kept), length: kept.length }] });
     expect((config as { privacy: { allowValues: string[] } }).privacy.allowValues).toEqual([kept]);
   });
 
@@ -528,5 +528,19 @@ describe("reveal mode (privacy.revealValues): originals kept in memory for the o
     expect(put?.status).toBe(200);
     expect(globalPrivacyStats.revealedValues("7d", 10)).toEqual([]);
     globalPrivacyStats.reset();
+  });
+
+  it("PUT /api/privacy/config toggles dashboard email masking and rejects non-booleans", async () => {
+    const config: { privacy?: { maskEmails?: boolean } } = {};
+    const put = (body: unknown) => handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/config", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }), config));
+    const off = await put({ maskEmails: false });
+    expect(off?.status).toBe(200);
+    expect((await off?.json()).maskEmails).toBe(false);
+    expect(config.privacy?.maskEmails).toBe(false);
+    expect((await (await put({ maskEmails: true }))?.json()).maskEmails).toBe(true);
+    expect((await put({ maskEmails: "false" }))?.status).toBe(400);
+    expect(config.privacy?.maskEmails).toBe(true);
   });
 });
