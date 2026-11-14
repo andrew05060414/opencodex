@@ -31,6 +31,11 @@ export function defaultAgyTransportDeps(): AgyTransportDeps {
   };
 }
 
+/** The agy request is the only one addressed to the placeholder; a Google request always has a real host. */
+function isAgyRequest(request: AdapterRequest): boolean {
+  return request.url.startsWith(`${AGY_PLACEHOLDER_URL}/`);
+}
+
 function isAgyHeaders(headers: Headers): boolean {
   return headers.get(AGY_RESPONSE_HEADER) === AGY_RESPONSE_MARK;
 }
@@ -49,6 +54,39 @@ function parseErrorPayload(text: string): { errorType: string | undefined; messa
   } catch {
     return { errorType: undefined, message: text };
   }
+}
+
+/** The bridge answers 409 until agy registers a tool call, and a repeat attempt resolves it. */
+const CONFLICT_ATTEMPTS = 3;
+const CONFLICT_RETRY_DELAY_MS = 750;
+
+function waitUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise(resolve => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+  });
+}
+
+async function fetchThroughBridge(bridge: AgyBridge, request: AdapterRequest, signal?: AbortSignal): Promise<Response> {
+  const init: RequestInit = {
+    method: request.method,
+    headers: forwardedHeaders(request.headers),
+    body: request.body,
+    ...(signal ? { signal } : {}),
+  };
+  let upstream = await bridge.fetch(request.url, init);
+  for (let attempt = 1; upstream.status === 409 && attempt < CONFLICT_ATTEMPTS; attempt++) {
+    await waitUnlessAborted(CONFLICT_RETRY_DELAY_MS, signal);
+    if (signal?.aborted) break;
+    await upstream.body?.cancel().catch(() => {});
+    upstream = await bridge.fetch(request.url, init);
+  }
+  return upstream;
 }
 
 /**
@@ -70,13 +108,10 @@ export function withAgyTransport(
     authMode: undefined,
   }, cacheRetention);
   const googleFetch = google.fetchResponse;
-  let transport: "agy" | "direct" = "direct";
-  let streamRequested = false;
 
   async function buildAgyRequest(parsed: OcxParsedRequest, incoming: IncomingMeta): Promise<AdapterRequest> {
     const request = await anthropic.buildRequest(parsed, incoming);
     const body = JSON.parse(request.body) as Record<string, unknown>;
-    streamRequested = body.stream === true;
     const effort = parsed.options.reasoning;
     if (body.output_config === undefined && effort && effort !== "none") {
       body.output_config = { effort: effort === "minimal" ? "low" : effort };
@@ -85,17 +120,13 @@ export function withAgyTransport(
   }
 
   async function fetchAgy(request: AdapterRequest, ctx?: AdapterFetchContext): Promise<Response> {
+    const streamRequested = (JSON.parse(request.body) as { stream?: unknown }).stream === true;
     const account = deps.accountForToken(provider.apiKey ?? "");
     if (!account) {
       return agyErrorResponse({ status: 401, errorType: "authentication_error", message: NO_ACCOUNT_MESSAGE, rawBody: agyErrorBody("authentication_error", NO_ACCOUNT_MESSAGE) });
     }
     const bridge = await deps.bridgeFor(account, provider.agyTransport?.agyPath);
-    const upstream = await bridge.fetch(request.url, {
-      method: request.method,
-      headers: forwardedHeaders(request.headers),
-      body: request.body,
-      ...(ctx?.abortSignal ? { signal: ctx.abortSignal } : {}),
-    });
+    const upstream = await fetchThroughBridge(bridge, request, ctx?.abortSignal);
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => "");
       const parsed = parseErrorPayload(text);
@@ -119,14 +150,13 @@ export function withAgyTransport(
     ...google,
 
     buildRequest(parsed: OcxParsedRequest, incoming: IncomingMeta) {
-      transport = chooseAntigravityTransport(provider, incoming.headers);
-      if (transport !== "agy") return google.buildRequest(parsed, incoming);
+      if (chooseAntigravityTransport(provider, incoming.headers) !== "agy") return google.buildRequest(parsed, incoming);
       return buildAgyRequest(parsed, incoming);
     },
 
     ...(googleFetch ? {
       fetchResponse(request: AdapterRequest, ctx?: AdapterFetchContext): Promise<Response> {
-        return transport === "agy" ? fetchAgy(request, ctx) : googleFetch.call(google, request, ctx);
+        return isAgyRequest(request) ? fetchAgy(request, ctx) : googleFetch.call(google, request, ctx);
       },
     } : {}),
 
