@@ -522,6 +522,8 @@ export async function handleOauthAccountRoutes(ctx: ManagementContext): Promise<
     const supportsPause = effectiveProvider !== undefined
       && (isAnthropicOAuthInstance(provider) && effectiveProvider.authMode === "oauth"
         || isGenericFailoverProvider(provider, effectiveProvider));
+    const antigravityModelSupport = provider === "google-antigravity"
+      ? (await import("../../providers/antigravity-account-roster")).antigravityAccountModelSupport : undefined;
     const {
       oauthAccountHealthFields,
       projectOAuthAccountHealth,
@@ -551,7 +553,8 @@ export async function handleOauthAccountRoutes(ctx: ManagementContext): Promise<
             ...(isAnthropicOAuthInstance(provider) && supportsPause ? { autoSwitchThresholdOverride: full?.autoSwitchThresholdOverride ?? null,
               effectiveAutoSwitchThreshold: effectiveAnthropicAccountThresholdForInstance(provider as AnthropicInstanceId, config, full),
               autoSwitchThreshold: effectiveAnthropicAccountThresholdForInstance(provider as AnthropicInstanceId, config) } : {}),
-            ...(provider === "kiro" && full ? kiroAutoSelection(full) : {}) };
+            ...(provider === "kiro" && full ? kiroAutoSelection(full) : {}),
+            ...(antigravityModelSupport ? { modelSupport: antigravityModelSupport(provider, summary.id) } : {}) };
         }),
       };
     };

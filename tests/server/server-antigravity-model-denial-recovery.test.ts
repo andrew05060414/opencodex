@@ -1,6 +1,9 @@
-import { expect, test } from "bun:test";
-import { isAntigravityModelNotFoundRefusal } from "../../src/server/responses/antigravity-validation-refusal";
+import { expect, spyOn, test } from "bun:test";
+import * as retry from "../../src/lib/upstream-retry";
+import { antigravityModelNotFoundStrength, isAntigravityModelNotFoundRefusal } from "../../src/server/responses/antigravity-validation-refusal";
 import { fetchAntigravityWithRetry } from "../../src/adapters/google-http";
+import { antigravityRateLimit } from "../../src/adapters/antigravity-refusal";
+import { antigravityPoolBreakerSeconds, planAntigravity429Rotation, resetAntigravityRateLimitPolicy, withDeclinedCause } from "../../src/oauth/antigravity-rate-limit-policy";
 
 const model = "gemini-3.8-flash";
 async function normalized(body: string | ReadableStream<Uint8Array>, status = 404): Promise<Response> {
@@ -26,12 +29,23 @@ test("CCA model 404 classification requires original model-specific evidence", a
 });
 
 test("ambiguous and mismatched original resource errors cannot authorize model denial", async () => {
-  for (const body of [JSON.stringify({ error: { status: "NOT_FOUND", message: "Requested entity was not found." } }),
+  for (const body of [
     envelope("Requested entity was not found.", "projects/synthetic-project"),
     envelope("Requested entity was not found.", "models/other-model"),
     envelope("Requested entity was not found.", `projects/synthetic-project/models/${model}`),
     envelope(`Model '${model}' was not found.`, "projects/synthetic-project")])
     expect(await isAntigravityModelNotFoundRefusal(await normalized(body))).toBe(false);
+});
+
+test("Google's bare CCA model 404 is bare evidence: it may rotate but is not strong evidence", async () => {
+  const bare = JSON.stringify({ error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" } });
+  const response = await normalized(bare);
+  expect(await isAntigravityModelNotFoundRefusal(response)).toBe(true);
+  expect(antigravityModelNotFoundStrength(response)).toBe("bare");
+  expect(antigravityModelNotFoundStrength(await normalized(envelope()))).toBe("strong");
+  expect(antigravityModelNotFoundStrength(response, AbortSignal.abort())).toBeUndefined();
+  for (const message of ["Requested entity was not found. Also something else", "Not found", "entity missing"])
+    expect(antigravityModelNotFoundStrength(await normalized(JSON.stringify({ error: { code: 404, status: "NOT_FOUND", message } })))).toBeUndefined();
 });
 
 test("incidental model mentions without ResourceInfo cannot authorize model denial", async () => {
@@ -99,4 +113,56 @@ test("cancellation while reading an original 404 body propagates by identity", a
   await atRead;
   controller.abort(reason);
   await expect(pending).rejects.toBe(reason);
+});
+
+const rateLimitBody = (reason: string | undefined, metadata: object, retryDelay?: string) => JSON.stringify({ error: { code: 429,
+  status: "RESOURCE_EXHAUSTED", message: "synthetic", details: [
+    ...(reason ? [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason, metadata }] : []),
+    ...(retryDelay ? [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay }] : []),
+  ] } });
+
+test("every Antigravity 429 carries its parsed reason and Retry-After, not only quota exhaustion", async () => {
+  const sleep = spyOn(retry, "sleepWithAbort").mockImplementation(async () => {});
+  try { await rateLimitAssertions(); } finally { sleep.mockRestore(); }
+});
+
+async function rateLimitAssertions(): Promise<void> {
+  const send = async (body: string) => fetchAntigravityWithRetry({ url: "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent",
+    method: "POST", headers: {}, body: JSON.stringify({ model }) }, { executor: (async () => new Response(body, { status: 429 })) as typeof fetch });
+  const quota = await send(rateLimitBody("QUOTA_EXHAUSTED", { quotaResetDelay: "1h16m0.5s" }));
+  expect(antigravityRateLimit(quota)).toMatchObject({ kind: "quota", reasoned: true, waitSeconds: 4561 });
+  expect(quota.headers.get("retry-after")).toBe("4561");
+  const capacity = await send(rateLimitBody("MODEL_CAPACITY_EXHAUSTED", {}, "2s"));
+  expect(antigravityRateLimit(capacity)).toMatchObject({ kind: "capacity", reasoned: true, retryDelaySeconds: 2 });
+  expect(capacity.headers.get("retry-after")).toBe("2");
+  const plain = await send(rateLimitBody(undefined, {}));
+  expect(antigravityRateLimit(plain)).toMatchObject({ kind: "declined", reasoned: false });
+  expect(plain.headers.has("retry-after")).toBe(false);
+  const retryOnly = await send(rateLimitBody(undefined, {}, "3s"));
+  expect(antigravityRateLimit(retryOnly)).toMatchObject({ kind: "unreasoned", reasoned: false, retryDelaySeconds: 3 });
+  const rate = await send(rateLimitBody("RATE_LIMIT_EXCEEDED", {}, "7s"));
+  expect(antigravityRateLimit(rate)).toMatchObject({ kind: "unreasoned", reasoned: true, retryDelaySeconds: 7 });
+  expect(rate.headers.get("retry-after")).toBe("7");
+}
+
+test("the pool breaker opens after three accounts answer reasonless 429s for one model inside a minute", async () => {
+  resetAntigravityRateLimitPolicy();
+  const request = {};
+  const now = Date.now();
+  for (const account of ["a", "b"]) planAntigravity429Rotation({}, undefined, account, "m", undefined, now);
+  expect(antigravityPoolBreakerSeconds("m", now)).toBe(0);
+  planAntigravity429Rotation({}, undefined, "c", "m", undefined, now);
+  expect(antigravityPoolBreakerSeconds("m", now)).toBeGreaterThanOrEqual(30);
+  expect(antigravityPoolBreakerSeconds("m", now)).toBeLessThanOrEqual(60);
+  expect(antigravityPoolBreakerSeconds("other-model", now)).toBe(0);
+  expect(antigravityPoolBreakerSeconds("m", now + 61_000)).toBe(0);
+  const declined = await fetchAntigravityWithRetry({ url: "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent",
+    method: "POST", headers: {}, body: JSON.stringify({ model }) }, { executor: (async () => new Response(rateLimitBody(undefined, {}), { status: 429 })) as typeof fetch });
+  const hint: { causeHint?: string } = {};
+  expect(withDeclinedCause(planAntigravity429Rotation({}, declined, "x", "m3", undefined, now), hint)).toEqual({ rotate: false, declined: true });
+  expect(hint.causeHint).toBe("payload-rejected");
+  expect(antigravityPoolBreakerSeconds("m3", now)).toBe(0);
+  expect(planAntigravity429Rotation(request, undefined, "d", "m2", undefined, now).rotate).toBe(true);
+  expect(planAntigravity429Rotation(request, undefined, "e", "m2", undefined, now).rotate).toBe(false);
+  resetAntigravityRateLimitPolicy();
 });
