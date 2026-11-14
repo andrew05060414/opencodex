@@ -176,9 +176,11 @@ export function withAgyTransport(
   return {
     ...google,
 
-    buildRequest(parsed: OcxParsedRequest, incoming: IncomingMeta) {
-      if (chooseAntigravityTransport(provider, incoming.headers) !== "agy") return google.buildRequest(parsed, incoming);
-      return buildAgyRequest(parsed, incoming);
+    async buildRequest(parsed: OcxParsedRequest, incoming: IncomingMeta) {
+      const transport = chooseAntigravityTransport(provider, incoming.headers);
+      const request = transport === "agy" ? await buildAgyRequest(parsed, incoming) : await google.buildRequest(parsed, incoming);
+      request.antigravityTransport = transport;
+      return request;
     },
 
     ...(googleFetch ? {
