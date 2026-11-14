@@ -3,7 +3,7 @@
 - Upstream package: `@magpie-community/opencode-agy-cli-auth`
 - Version: 0.1.49 (`.bun-tag` sha512 in the source package)
 - License: MIT. Copyright (c) 2026 DylanLIiii, Copyright (c) 2026 gitxm, Copyright (c) 2026 yce. Full text in `LICENSE`; provenance in `NOTICE.md`.
-- Source path: `C:/Users/Andrew/.config/magpie/plugins/node_modules/@magpie-community/opencode-agy-cli-auth/`
+- Source path: `~/.config/magpie/plugins/node_modules/@magpie-community/opencode-agy-cli-auth/`
 - Vendored: 2026-11-14
 
 ## Files
