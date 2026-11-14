@@ -17,7 +17,6 @@ import {
   type PersistedJevDecisionV1,
 } from "./jev-stats";
 import { normalizeAttemptDeliverySummary } from "./attempt-delivery";
-import { antigravityTransportField, lastAttemptAntigravityTransport, type AntigravityTransportLabel } from "./antigravity-transport";
 import {
   isRequestCloseReason,
   isRequestTerminalStatus,
@@ -199,8 +198,6 @@ export interface PersistedUsageAttempt {
   reasoningWireValue?: string | number | boolean;
   /** Adapter-produced tier fact for this physical attempt; absent on pre-B0 rows. */
   tierOutcome?: AttemptTierOutcome;
-  /** google-antigravity only: whether this attempt went through the agy bridge or the direct transport. */
-  antigravityTransport?: AntigravityTransportLabel;
   /**
    * #4191: content-free stage record of a Codex WS upstream exchange that
    * served this attempt (frame size, counters, close code, versions). Absent
@@ -367,7 +364,6 @@ export interface PersistedUsageEntry extends LinkRequestLogCarrier {
   responseServiceTier?: string;
   /** Summary of the final physical attempt for dashboard consumers. */
   tierOutcome?: AttemptTierOutcome;
-  antigravityTransport?: AntigravityTransportLabel;
   status: number;
   durationMs: number;
   /** TTFT relative to the request start (WP4); unset for non-streaming/tool-only. */
@@ -859,7 +855,6 @@ function normalizeUsageAttempt(raw: unknown): PersistedUsageAttempt | null {
         : { reasoningWireValue: attempt.reasoningWireValue }
       : {}),
     ...(tierOutcome ? { tierOutcome } : {}),
-    ...antigravityTransportField(attempt.antigravityTransport),
     ...(codexWsStage ? { codexWsStage } : {}),
     ...(deliverySummary ? { deliverySummary } : {}),
     ...normalizeRequestFailureAttribution(attempt),
@@ -1143,7 +1138,6 @@ function normalizeUsageEntry(entry: PersistedUsageEntry): PersistedUsageEntry {
       : {}),
     ...(responseServiceTier ? { responseServiceTier } : {}),
     ...(tierOutcome ? { tierOutcome } : {}),
-    ...antigravityTransportField(entry.antigravityTransport ?? lastAttemptAntigravityTransport(attempts)),
     status: entry.status,
     durationMs: entry.durationMs,
     ...(isNonNegativeFiniteNumber(entry.firstOutputMs)

@@ -9,7 +9,6 @@ export { aggregateAttemptUsage } from "./request-log-attempt-usage";
 
 import { KEY_ACCOUNT_LOG_LABEL_RE } from "../codex/account-label";
 import { attemptAccountChanged, sealRequestAttemptIdentity } from "./request-log-account-rotation";
-import { recordAdapterTransport } from "./request-log-antigravity-transport";
 export { sealRequestAttemptIdentity };
 export { noteAttemptRecoveryWithheld } from "./request-log-attempt-recovery";
 import { bareVerdictRowErrorCode, captureUpstreamTerminalDiagnostics, guardedRowCopy, linkLogField, notifyLinkTurnFinal, upstreamDiagnosticLogFields, type LinkRequestLogCarrier, type UpstreamErrorDiagnostics, type UpstreamErrorPayload } from "./request-log-terminal-status";
@@ -914,7 +913,6 @@ export function recordAdapterTier(
   request: AdapterRequest,
 ): void {
   recordAdapterTierMetadata(logCtx, request.tierLog);
-  recordAdapterTransport(logCtx, request);
 }
 
 /** Attach adapter-owned metadata for transports that expose no AdapterRequest (runTurn). */
