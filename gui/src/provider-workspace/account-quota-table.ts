@@ -147,6 +147,9 @@ function clampRemaining(usedPercent: number): number {
 
 function accountFlag(account: QuotaTableAccount): { flag: AccountFlag; probeStatus?: string } {
   if (account.banned) return { flag: "banned" };
+  // A parked account is probed only when the operator tests it by name; a suspended verdict from that probe
+  // is the one fact that outranks "paused", because it says the account is gone, not parked.
+  if (account.probe?.status === "suspended") return { flag: "probeFailed", probeStatus: "suspended" };
   if (account.paused) return { flag: "paused" };
   if (account.verifyRequired) return { flag: "verify" };
   if (account.needsReauth || account.health?.status === "reauth_required") return { flag: "reauth" };

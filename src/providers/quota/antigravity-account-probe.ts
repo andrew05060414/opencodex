@@ -104,6 +104,7 @@ async function probeOneAntigravityAccount(
   activeAccountId: string | undefined,
   now: number,
   signal?: AbortSignal,
+  explicit = false,
 ): Promise<AccountProbeResult> {
   const credential = account.credential;
   const maskedLabel = maskedAccountLabel(credential?.email);
@@ -119,8 +120,10 @@ async function probeOneAntigravityAccount(
   const local = (status: AccountProbeStatus, reason: string | null): AccountProbeResult => ({
     ...base, status, httpStatus: null, reason, message: null, latencyMs: 0, quota: null,
   });
-  // A paused account is left alone: no request, so probing never touches an account the operator parked.
-  if (account.paused === true) return local("paused", null);
+  // A paused account is left alone by a roster-wide probe, so bulk probing never touches an account the
+  // operator parked. Probing that one account by name is the operator asking about it directly, and
+  // it is the only way to learn whether a parked account was banned upstream.
+  if (account.paused === true && !explicit) return local("paused", null);
   if (!credential?.access) return local("error", "missing_token");
   // Read-only contract: an expired token is reported, never refreshed.
   if (expiresAt !== null && expiresAt <= now) return local("token_expired", null);
@@ -139,7 +142,7 @@ async function probeOneAntigravityAccount(
  * Probe stored Google Antigravity accounts with their own stored access tokens.
  *
  * Uses passive store reads and never changes the credential, active account or health.
- * Returns null when `accountId` names no stored account.
+ * A paused account is skipped unless `accountId` names it. Returns null when `accountId` names no stored account.
  */
 export async function probeAntigravityAccounts(options: {
   accountId?: string;
@@ -157,7 +160,7 @@ export async function probeAntigravityAccounts(options: {
       // Re-read the roster as each probe starts: a pause made after the snapshot must suppress the request.
       const latest = peekAuthStore()[PROVIDER];
       const current = latest?.accounts.find(account => account.id === targets[index]);
-      if (current) results[index] = await probeOneAntigravityAccount(current, latest?.activeAccountId, options.now ?? Date.now(), options.signal);
+      if (current) results[index] = await probeOneAntigravityAccount(current, latest?.activeAccountId, options.now ?? Date.now(), options.signal, options.accountId !== undefined);
     }
   };
   await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, targets.length) }, worker));
