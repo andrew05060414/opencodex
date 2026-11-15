@@ -76,6 +76,13 @@ describe("account quota table", () => {
     ]);
   });
 
+  test("a suspended probe verdict outranks paused, so a parked account that was banned shows as such", () => {
+    const [row] = buildQuotaTable([antigravity("p", { paused: true, probe: { status: "suspended", latencyMs: 200 } })], NOW).rows;
+    expect([row!.flag, row!.probeStatus]).toEqual(["probeFailed", "suspended"]);
+    const [still] = buildQuotaTable([antigravity("p", { paused: true, probe: { status: "paused", latencyMs: 0 } })], NOW).rows;
+    expect(still!.flag).toBe("paused");
+  });
+
   test("plan names come from the upstream tier field; missing tier stays unknown", () => {
     expect(planDisplayName("g1-pro-tier")).toBe("Pro");
     expect(planDisplayName("free-tier")).toBe("Free");

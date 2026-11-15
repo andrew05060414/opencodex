@@ -413,8 +413,9 @@ export function useProviderAccountPools(deps: {
         : p.hasApiKey && p.authMode !== "oauth" && p.authMode !== "forward" ? [{ provider, kind: "api-key" as const }] : []);
     const results = await Promise.all(targets.map(async ({ provider, kind }) => {
       const key = `${kind === "oauth" ? "oauth" : "key"}:${provider}`;
-      // PUT settlement always reconciles, including events received while it is pending.
-      if (selectionMutationsRef.current.has(key)) return false;
+      // PUT settlement always reconciles, including events received while it is pending. Not a failed
+      // read, so it must not report one: callers turn `false` into a "could not load accounts" toast.
+      if (selectionMutationsRef.current.has(key)) return true;
       const generation = (rosterGenerationRef.current[key] ?? 0) + 1;
       rosterGenerationRef.current[key] = generation;
       const ownsRoster = () => aliveRef.current && mountedRef.current && serverRef.current === serverIdentity
@@ -426,7 +427,8 @@ export function useProviderAccountPools(deps: {
           const data = await readRoster<{ activeAccountId?: string | null; accounts?: OAuthAccount[] }>(
             `${apiBase}/api/oauth/accounts?provider=${encodeURIComponent(provider)}`, signal);
           if (!Array.isArray(data.accounts)) throw new Error("Invalid account roster");
-          if (!currentRequest()) return false;
+          // A newer read owns the roster now and reports its own failure; this one was superseded, not lost.
+          if (!currentRequest()) return true;
           const rows = selectionRows(data.accounts, data.activeAccountId);
           setAccountSets(current => currentRequest() ? { ...current, [provider]: {
             activeAccountId: data.activeAccountId === undefined ? rows.find(row => row.active)?.id ?? null : data.activeAccountId,
@@ -436,7 +438,8 @@ export function useProviderAccountPools(deps: {
         } else {
           const data = await readRoster<{ activeId?: string | null; keys?: ApiKeyEntry[] }>(
             `${apiBase}/api/providers/keys?name=${encodeURIComponent(provider)}`, signal);
-          if (!Array.isArray(data.keys) || !currentRequest()) return false;
+          if (!Array.isArray(data.keys)) throw new Error("Invalid key roster");
+          if (!currentRequest()) return true;
           const rows = selectionRows(data.keys, data.activeId);
           setKeyPools(current => currentRequest() ? { ...current, [provider]: mergeRosterRows(rows, current[provider] ?? []) } : current);
         }
