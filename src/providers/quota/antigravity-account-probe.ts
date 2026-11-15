@@ -111,6 +111,7 @@ async function probeOneAntigravityAccount(
   activeAccountId: string | undefined,
   now: number,
   signal?: AbortSignal,
+  explicit = false,
 ): Promise<AccountProbeResult> {
   const credential = account.credential;
   const maskedLabel = maskedAccountLabel(credential?.email);
@@ -126,8 +127,10 @@ async function probeOneAntigravityAccount(
   const local = (status: AccountProbeStatus, reason: string | null): AccountProbeResult => ({
     ...base, status, httpStatus: null, reason, message: null, latencyMs: 0, quota: null,
   });
-  // A paused account is left alone: no request, so probing never touches an account the operator parked.
-  if (account.paused === true) return local("paused", null);
+  // A paused account is left alone by a roster-wide probe, so bulk probing never touches an account the
+  // operator parked. Probing that one account by name is the operator asking about it directly, and
+  // it is the only way to learn whether a parked account was banned upstream.
+  if (account.paused === true && !explicit) return local("paused", null);
   if (!credential?.access) return local("error", "missing_token");
   // Read-only contract: an expired token is reported, never refreshed.
   if (expiresAt !== null && expiresAt <= now) return local("token_expired", null);
@@ -141,7 +144,7 @@ async function probeOneAntigravityAccount(
  * Probe stored Google Antigravity accounts with their own stored access tokens.
  *
  * Reads the auth store once and never writes it: no refresh, no re-login, no pause/active/health
- * change. Returns null when `accountId` names no stored account.
+ * change. A paused account is skipped unless `accountId` names it. Returns null when `accountId` names no stored account.
  */
 export async function probeAntigravityAccounts(options: {
   accountId?: string;
@@ -162,7 +165,7 @@ export async function probeAntigravityAccounts(options: {
       // Re-read the roster as each probe starts: a pause made after the snapshot must suppress the request.
       const latest = getAccountSet("google-antigravity");
       const current = latest?.accounts.find(account => account.id === target.id) ?? target;
-      results[index] = await probeOneAntigravityAccount(current, latest?.activeAccountId ?? set?.activeAccountId, now, options.signal);
+      results[index] = await probeOneAntigravityAccount(current, latest?.activeAccountId ?? set?.activeAccountId, now, options.signal, options.accountId !== undefined);
     }
   };
   await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, targets.length) }, worker));
