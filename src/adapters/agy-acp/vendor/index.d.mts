@@ -12,6 +12,8 @@ export interface AgyBridgeOptions {
 export interface AgyBridge {
   /** Anthropic Messages in, Anthropic JSON or SSE Response out. */
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
+  /** Stops the warm spare agy process; the next one boots with the current token file. */
+  dropSpare(): Promise<void>
   /** Stops every agy process this instance owns. */
   shutdown(): Promise<void>
 }

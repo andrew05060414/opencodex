@@ -38,5 +38,6 @@
   "agy-bridge-pool.test.ts": "adapters/agy-acp",
   "agy-registry.test.ts": "adapters/agy-acp",
   "agy-conflict-retry.test.ts": "adapters/agy-acp",
-  "agy-usage-transport-label.test.ts": "adapters/agy-acp"
+  "agy-usage-transport-label.test.ts": "adapters/agy-acp",
+  "agy-warm-spare.test.ts": "adapters/agy-acp"
 }

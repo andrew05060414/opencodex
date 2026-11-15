@@ -2,6 +2,8 @@ import { registerOptionalShutdownHook } from "../../lib/optional-shutdown-hooks"
 
 export interface AgyBridge {
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  /** Stops the warm spare process, if any, so the next one reads the current token file. */
+  dropSpare?(): Promise<void>;
   shutdown(): Promise<void>;
 }
 

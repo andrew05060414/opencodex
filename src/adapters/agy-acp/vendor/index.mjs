@@ -1578,17 +1578,8 @@ class Turn {
 class Proc {
   constructor(agyPath, convKey, opts) {
     this.agyPath = agyPath
-    this.convKey = convKey
-    this.model = opts.model
-    this.selection = opts.selection
-    this.tools = opts.tools
-    this.toolsSignature = JSON.stringify(opts.tools)
     this.workDir = opts.workDir
-    this.instructions = opts.instructions || ""
-    this.userId = opts.userId || ""
-    this.openingText = openingTextOf(opts.messages?.[0])
-    this.openingImages = openingImagesOf(opts.messages?.[0])
-    this.resumeFrom = opts.resume || null
+    this.#assign(convKey, opts)
     this.token = randomUUID()
     this.sessionId = null
     this.currentModel = null
@@ -1631,7 +1622,53 @@ class Proc {
     allProcs.add(this)
   }
 
+  // OCX patch: start() = #launch() + a guarded handshake. warm() boots a spare
+  // process ahead of any request; adopt() turns that spare into this
+  // conversation's process, so only session/new and the model switch remain.
   async start() {
+    await this.#launch()
+    await this.#guardStart(async () => {
+      await this.#initialize()
+      await this.#openSession()
+    })
+  }
+
+  async warm() {
+    await this.#launch()
+    await this.#guardStart(async () => {
+      await this.#initialize()
+      // agy boots its backend on the first session/new (about a second); a
+      // throwaway session pays that before any request needs it.
+      const boot = await this.conn.request("session/new", { cwd: this.workspace, mcpServers: [] })
+      if (boot?.sessionId) await this.conn.request("session/close", { sessionId: boot.sessionId }).catch(() => {})
+    })
+    this.lastUsed = Date.now()
+  }
+
+  async adopt(convKey, opts) {
+    const before = this.toolsSignature
+    this.#assign(convKey, opts)
+    this.lastUsed = Date.now()
+    await this.#guardStart(async () => {
+      if (this.toolsSignature !== before) await this.#announceTools()
+      await this.#openSession()
+    })
+  }
+
+  #assign(convKey, opts) {
+    this.convKey = convKey
+    this.model = opts.model
+    this.selection = opts.selection
+    this.tools = opts.tools ?? []
+    this.toolsSignature = JSON.stringify(this.tools)
+    this.instructions = opts.instructions || ""
+    this.userId = opts.userId || ""
+    this.openingText = openingTextOf(opts.messages?.[0])
+    this.openingImages = openingImagesOf(opts.messages?.[0])
+    this.resumeFrom = opts.resume || null
+  }
+
+  async #launch() {
     await ensureControlServer()
     const bin = await ensureShimDir()
     sessions.set(this.token, this)
@@ -1686,7 +1723,9 @@ class Proc {
       onRequest: (method, params) => this.#onRequest(method, params),
       onProtocolError: (error) => this.fail(error),
     })
+  }
 
+  async #guardStart(step) {
     const timeoutMs = configuredTimeout("AGY_BRIDGE_START_TIMEOUT_MS", DEFAULT_PROC_START_TIMEOUT_MS)
     let timer
     const timeout = new Promise((_resolve, reject) => {
@@ -1695,7 +1734,7 @@ class Proc {
       )), timeoutMs)
     })
     try {
-      await Promise.race([this.#handshake(), timeout])
+      await Promise.race([step(), timeout])
     } catch (error) {
       if (this.dead && this.deadError && error !== this.deadError && !/timed out starting/.test(error.message)) {
         throw new Error(`agy failed before the ACP session started: ${this.deadError.message}`)
@@ -1706,7 +1745,7 @@ class Proc {
     }
   }
 
-  async #handshake() {
+  async #initialize() {
     const init = await this.conn.request("initialize", {
       protocolVersion: 1,
       // The plugin's own name. agy decides which models it offers this client,
@@ -1720,9 +1759,13 @@ class Proc {
     const capabilities = init?.agentCapabilities ?? {}
     this.supportsImages = capabilities.promptCapabilities?.image === true ||
       capabilities.prompt_capabilities?.image === true
-    const appendable = capabilities._meta?.antigravity?.systemPrompt?.append === true
-    const resumable = !!(capabilities.sessionCapabilities?.resume ?? capabilities.session_capabilities?.resume)
-    this.instructionsInSession = appendable && !!this.instructions
+    this.appendable = capabilities._meta?.antigravity?.systemPrompt?.append === true
+    this.resumable = !!(capabilities.sessionCapabilities?.resume ?? capabilities.session_capabilities?.resume)
+  }
+
+  async #openSession() {
+    const resumable = this.resumable
+    this.instructionsInSession = this.appendable && !!this.instructions
     const meta = this.instructionsInSession
       ? { _meta: { antigravity: { systemPrompt: { append: outgoing(this.instructions) } } } }
       : {}
@@ -2759,6 +2802,49 @@ function takeParked(convKey, opts) {
   return { sessionId: entry.sessionId, expectedMessages: opts.history }
 }
 
+// OCX patch: one warm agy process per bridge instance (one instance per
+// account). It is booted for the agyPath and workDir of the last new process,
+// handed to the next new conversation that matches, and refilled after.
+// AGY_BRIDGE_SPARE=0 turns it off.
+let spare = null
+let spareClosed = false
+
+function spareKey(agyPath, workDir) {
+  return `${agyPath}\0${workDir ?? ""}`
+}
+
+function refillSpare(agyPath, workDir) {
+  if (spareClosed || process.env.AGY_BRIDGE_SPARE === "0" || spare || allProcs.size >= maxProcs()) return
+  const proc = new Proc(agyPath, null, { workDir, tools: [] })
+  const entry = { key: spareKey(agyPath, workDir), proc, ready: null }
+  entry.ready = proc.warm().then(() => true, () => false)
+  spare = entry
+  entry.ready.then((ok) => { if (!ok || spareClosed) discardSpare(entry) })
+}
+
+async function discardSpare(entry = spare) {
+  if (!entry) return
+  if (spare === entry) spare = null
+  await entry.proc.stop().catch(() => {})
+}
+
+// A warm process for this agyPath and workDir, or null. One that is still
+// booting is awaited: the rest of its boot is shorter than a cold start.
+async function takeSpare(agyPath, workDir) {
+  const entry = spare
+  if (!entry) return null
+  if (entry.key !== spareKey(agyPath, workDir)) {
+    await discardSpare(entry)
+    return null
+  }
+  spare = null
+  if (!(await entry.ready) || entry.proc.dead) {
+    await entry.proc.stop().catch(() => {})
+    return null
+  }
+  return entry.proc
+}
+
 async function retire(key, proc) {
   proc.retiring = true
   park(proc)
@@ -2781,6 +2867,7 @@ async function evictIdle() {
     }
   }
   for (const [key, proc] of victims) await retire(key, proc)
+  if (spare && (spare.proc.dead || spare.proc.lastUsed < cutoff)) await discardSpare(spare)
   for (const { proc, turn, reason } of stale) {
     if (proc.turn !== turn || proc.retiring) continue
     logBridgeEvent(proc, turn, "reclaim", reason, {}, { trigger: "evict_idle" })
@@ -2940,24 +3027,43 @@ async function acquireProcLocked(agyPath, convKey, opts, isFreshConversation, fo
     dropFromPool(existing)
     await existing.stop().catch(() => {})
   }
-  while (allProcs.size >= maxProcs()) {
-    if (!(await evictLRU())) {
-      throw new BusyError(`agy bridge: ${maxProcs()} agy processes are running and all have unfinished responses`)
+  const resume = forceNew || isFreshConversation ? null : takeParked(convKey, opts)
+  let proc = await takeSpare(agyPath, opts.workDir)
+  const warm = !!proc
+  if (proc) {
+    try {
+      await proc.adopt(convKey, { ...opts, resume })
+    } catch (error) {
+      // A spare that died under us falls back to a cold start; any other
+      // failure would repeat on a fresh process.
+      const died = proc.dead
+      await proc.stop().catch(() => {})
+      if (!died) throw error
+      proc = null
     }
   }
-  const resume = forceNew || isFreshConversation ? null : takeParked(convKey, opts)
-  const proc = new Proc(agyPath, convKey, { ...opts, resume })
-  try {
-    await proc.start()
-  } catch (error) {
-    await proc.stop().catch(() => {})
-    throw error
+  if (!proc) {
+    // The spare holds a slot of its own; free it before evicting live work.
+    if (allProcs.size >= maxProcs()) await discardSpare()
+    while (allProcs.size >= maxProcs()) {
+      if (!(await evictLRU())) {
+        throw new BusyError(`agy bridge: ${maxProcs()} agy processes are running and all have unfinished responses`)
+      }
+    }
+    proc = new Proc(agyPath, convKey, { ...opts, resume })
+    try {
+      await proc.start()
+    } catch (error) {
+      await proc.stop().catch(() => {})
+      throw error
+    }
   }
   pool.set(convKey, proc)
+  refillSpare(agyPath, opts.workDir)
   // Why this request got a new agy session, so a cache that never hits can be
   // traced to the check that failed (#1058). Counts only, never content.
   logSessionEvent(proc, why, {
-    fresh: !!isFreshConversation, resumed: !!proc.resumed,
+    fresh: !!isFreshConversation, resumed: !!proc.resumed, warm,
     parked: !!resume, history: Array.isArray(opts.history) ? opts.history.length : null,
   })
   return { proc, history: opts.history }
@@ -6095,7 +6201,11 @@ process.once("exit", reapOnExit)
   const bridge = () => (loaded ??= AntigravityBridgePlugin().then((plugin) => plugin.auth.loader()))
   return {
     fetch: async (input, init) => (await bridge()).fetch(input, init),
+    // OCX patch: the account's credential changed; the next spare boots with it.
+    dropSpare: () => discardSpare(),
     shutdown: async () => {
+      spareClosed = true
+      await discardSpare()
       clearInterval(evictTimer)
       process.off("exit", reapOnExit)
       reapOnExit()

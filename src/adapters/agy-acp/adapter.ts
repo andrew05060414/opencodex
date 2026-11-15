@@ -26,8 +26,11 @@ export function defaultAgyTransportDeps(): AgyTransportDeps {
     accountForToken: accessToken => listAccounts(ANTIGRAVITY_PROVIDER_ID).find(account => account.credential.access === accessToken),
     bridgeFor: async (account, agyPath) => {
       const home = agyAccountHome(account.id);
-      await ensureAgyTokenFile(account, home);
-      return defaultAgyBridgePool().bridgeFor(account.id, home, agyPath);
+      const tokenFile = await ensureAgyTokenFile(account, home);
+      const bridge = await defaultAgyBridgePool().bridgeFor(account.id, home, agyPath);
+      // A spare agy booted before this write would keep the old credential.
+      if (tokenFile === "written") await bridge.dropSpare?.();
+      return bridge;
     },
   };
 }
