@@ -138,6 +138,14 @@ export function withAgyTransport(
   async function buildAgyRequest(parsed: OcxParsedRequest, incoming: IncomingMeta): Promise<AdapterRequest> {
     const request = await anthropic.buildRequest(parsed, incoming);
     const body = JSON.parse(request.body) as Record<string, unknown>;
+    const own = parsed._codexOwnThreadId?.trim();
+    const parent = parsed._clientThreadId?.trim();
+    if (own || parent) {
+      // Root requests omit the parent header. Keep both ids so parallel children and roots
+      // with identical opening instructions cannot share the bridge's conversation lock.
+      body.metadata = { ...(body.metadata as Record<string, unknown> | undefined),
+        user_id: `codex-thread:${JSON.stringify([parent || null, own || null])}` };
+    }
     // agy validates every MCP tool schema and rejects the whole session on one bad schema (a
     // duplicated `required` entry, an unknown keyword); the direct transport sends the same tools
     // through this cleaner, so both transports accept the same client tools.

@@ -1,9 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAgyBridge, type AgyBridge } from "../../../src/adapters/agy-acp/vendor/index.mjs";
 import { fixturePath } from "../../helpers/repo-root";
+import { withAgyTransport } from "../../../src/adapters/agy-acp/adapter";
+import type { ProviderAdapter } from "../../../src/adapters/base";
+import { parseRequest } from "../../../src/responses/parser";
+import { createTestTranslatorBudget } from "../../helpers/translator-budget";
 
 interface FakeEvent { pid: number; event: string; sessionId?: string }
 
@@ -63,6 +67,47 @@ const starts = (events: FakeEvent[]) => events.filter(event => event.event === "
 const prompted = (events: FakeEvent[]) => events.filter(event => event.event === "session/prompt");
 
 describe("agy warm spare process", () => {
+  test("identical Responses openings in concurrent Codex threads have different conversation keys and retain their session on the next turn", async () => {
+    const { bridge, events } = fakeBridge();
+    const rows: Array<{ action?: string; conv?: string }> = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const capture = spyOn(process.stderr, "write").mockImplementation(chunk => {
+      const line = String(chunk);
+      if (line.startsWith("[agy-bridge] ")) rows.push(JSON.parse(line.slice(13)));
+      return originalWrite(chunk);
+    });
+    cleanups.push(() => { capture.mockRestore(); });
+    const wrapper = withAgyTransport({ name: "google" } as ProviderAdapter, {
+      adapter: "google", baseUrl: "https://daily-cloudcode-pa.googleapis.com", apiKey: "fake-token",
+      agyTransport: { enabled: true },
+    });
+    const opening = { model: "gemini-3.8-flash", instructions: "shared workspace instructions", stream: false,
+      input: [{ role: "user", content: "shared permissions instructions" }] };
+    const requestFor = async (thread: string, next = false) => {
+      const parsed = parseRequest({ ...opening, input: next ? [...opening.input,
+        { role: "assistant", content: "OK" }, { role: "user", content: "next turn" }] : opening.input });
+      parsed._codexOwnThreadId = thread;
+      return wrapper.buildRequest(parsed, { headers: new Headers(), translatorBudget: createTestTranslatorBudget() });
+    };
+    const [a, b] = await Promise.all([requestFor("root-a"), requestFor("root-b")]);
+    expect(JSON.parse(a.body).messages).toEqual(JSON.parse(b.body).messages);
+    expect(JSON.parse(a.body).system).toEqual(JSON.parse(b.body).system);
+    const send = async (body: string) => {
+      const response = await bridge.fetch("agy://local/v1/messages", { method: "POST", body });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ content: [{ type: "text", text: "OK" }] });
+    };
+    await Promise.all([send(a.body), send(b.body)]);
+    const initial = prompted(events());
+    expect(initial).toHaveLength(2);
+    expect(initial[0]!.sessionId).not.toBe(initial[1]!.sessionId);
+    const keys = rows.filter(row => row.action === "session_new" && row.conv).map(row => row.conv);
+    expect(new Set(keys).size).toBe(2);
+    await send((await requestFor("root-a", true)).body);
+    expect(initial.map(event => event.sessionId)).toContain(prompted(events()).at(-1)!.sessionId);
+    expect(rows.filter(row => row.action === "session_new" && row.conv)).toHaveLength(2);
+  }, 30_000);
+
   test("a new conversation runs on the process warmed after the previous one, and a new spare follows", async () => {
     const { bridge, events } = fakeBridge();
 

@@ -5,6 +5,7 @@ import type { AgyAccountRef } from "../../../src/adapters/agy-acp/account-home";
 import type { AgyBridge } from "../../../src/adapters/agy-acp/bridge-pool";
 import type { OcxParsedRequest, OcxProviderConfig } from "../../../src/types";
 import { createTestTranslatorBudget } from "../../helpers/translator-budget";
+import { bindAnthropicAccountMetadata, extractAnthropicCallerSessionId } from "../../../src/adapters/anthropic/account-metadata";
 
 const AGY_HEADER = { "x-opencodex-antigravity-transport": "agy" };
 const DIRECT_HEADER = { "x-opencodex-antigravity-transport": "direct" };
@@ -110,6 +111,8 @@ describe("agy transport routing", () => {
     expect(first.messages).toEqual(second.messages);
     expect(first.metadata?.user_id).toBeString();
     expect(first.metadata.user_id).not.toBe(second.metadata?.user_id);
+    expect(extractAnthropicCallerSessionId(first)).toBeUndefined();
+    expect(bindAnthropicAccountMetadata(first, "11111111-1111-4111-8111-111111111111")).toBe(first);
   });
 
   test("the parent and own thread pair isolates siblings and children of different parents", async () => {
