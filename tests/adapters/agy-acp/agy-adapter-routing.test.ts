@@ -102,6 +102,50 @@ function googleStub(): { adapter: ProviderAdapter; googleRequest: AdapterRequest
 }
 
 describe("agy transport routing", () => {
+  test("Codex root threads with the same opening instructions have separate bridge identities", async () => {
+    const { deps } = depsWith(fakeBridge().bridge);
+    const wrapper = withAgyTransport(googleStub().adapter, provider(), deps);
+    const first = JSON.parse((await wrapper.buildRequest(parsed({ _codexOwnThreadId: "root-a" }), incoming(AGY_HEADER))).body);
+    const second = JSON.parse((await wrapper.buildRequest(parsed({ _codexOwnThreadId: "root-b" }), incoming(AGY_HEADER))).body);
+    expect(first.messages).toEqual(second.messages);
+    expect(first.metadata?.user_id).toBeString();
+    expect(first.metadata.user_id).not.toBe(second.metadata?.user_id);
+  });
+
+  test("the parent and own thread pair isolates siblings and children of different parents", async () => {
+    const { deps } = depsWith(fakeBridge().bridge);
+    const wrapper = withAgyTransport(googleStub().adapter, provider(), deps);
+    const identities = await Promise.all([
+      { _clientThreadId: "parent-a", _codexOwnThreadId: "child-a" },
+      { _clientThreadId: "parent-a", _codexOwnThreadId: "child-b" },
+      { _clientThreadId: "parent-b", _codexOwnThreadId: "child-a" },
+      { _clientThreadId: "parent-a" },
+      { _codexOwnThreadId: "parent-a" },
+    ].map(async ids => JSON.parse((await wrapper.buildRequest(parsed(ids), incoming(AGY_HEADER))).body).metadata?.user_id));
+    expect(identities.every(id => typeof id === "string")).toBe(true);
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("history growth and retries keep the thread identity; shared cache keys do not identify a thread", async () => {
+    const { deps } = depsWith(fakeBridge().bridge);
+    const wrapper = withAgyTransport(googleStub().adapter, provider(), deps);
+    const ids = { _codexOwnThreadId: "root-a", _clientThreadId: "parent-a" };
+    const opening = parsed({ ...ids, options: { promptCacheKey: "cohort-a" } });
+    const next = parsed({ ...ids, options: { promptCacheKey: "cohort-b" }, context: { messages: [
+      ...opening.context.messages,
+      { role: "assistant", content: "ok", timestamp: 1 },
+      { role: "user", content: "next", timestamp: 2 },
+    ] } });
+    const bodies = await Promise.all([opening, next, next].map(async value => JSON.parse((await wrapper.buildRequest(value, incoming(AGY_HEADER))).body)));
+    expect(bodies[0].metadata?.user_id).toBeString();
+    expect(bodies[1].metadata.user_id).toBe(bodies[0].metadata.user_id);
+    expect(bodies[2].metadata.user_id).toBe(bodies[0].metadata.user_id);
+    for (const ids of [{}, { _codexOwnThreadId: "  ", _clientThreadId: " " }]) {
+      const legacy = await wrapper.buildRequest(parsed({ ...ids, options: { promptCacheKey: "shared-cohort" } }), incoming(AGY_HEADER));
+      expect(JSON.parse(legacy.body)).not.toHaveProperty("metadata");
+    }
+  });
+
   test("an agy request goes to the bridge of the account holding the provider token, as an Anthropic Messages body", async () => {
     const stub = fakeBridge();
     const { deps, bridged } = depsWith(stub.bridge);
