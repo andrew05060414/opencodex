@@ -322,6 +322,20 @@ describe("probeAntigravityAccounts", () => {
     expect(seen).toHaveLength(1);
     expect(await probeAntigravityAccounts({ accountId: "missing" })).toBeNull();
   });
+
+  test("probing a paused account by name reaches upstream, so a banned parked account is found; a roster-wide probe still skips it", async () => {
+    writeStore([account("okacct1", "tok-ok"), { ...account("parked1", "tok-parked"), paused: true }]);
+    const seen = installUpstream({
+      "tok-ok": () => new Response(summaryBody, { status: 200 }),
+      "tok-parked": () => new Response(googleError(403, "PERMISSION_DENIED", "This account has been suspended for violating the Terms of Service."), { status: 403 }),
+    });
+    const bulk = await probeAntigravityAccounts();
+    expect(bulk?.find(row => row.accountId === "parked1")).toMatchObject({ status: "paused", httpStatus: null });
+    expect(seen.map(row => row.auth)).not.toContain("Bearer tok-parked");
+    const named = await probeAntigravityAccounts({ accountId: "parked1" });
+    expect(named?.[0]).toMatchObject({ status: "suspended", httpStatus: 403, paused: true });
+    expect(seen.map(row => row.auth)).toContain("Bearer tok-parked");
+  });
 });
 
 describe("management routes", () => {
