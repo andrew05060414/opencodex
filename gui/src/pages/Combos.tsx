@@ -698,7 +698,7 @@ export default function Combos({
   return (
     <div className={`combos-workspace-shell${view === "overview" ? " combos-workspace-shell--overview" : ""}`}>
       {status && (
-        <div className="combos-workspace-shell-banner">
+        <div className={statusOk ? "combos-workspace-shell-banner combos-workspace-shell-toast" : "combos-workspace-shell-banner"}>
           <Notice tone={statusOk ? "ok" : "err"}>{status}</Notice>
         </div>
       )}
