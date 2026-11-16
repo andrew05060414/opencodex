@@ -133,7 +133,9 @@ describe("gcp-sa:file: credential storage", () => {
     saveConfig({ port: 10199, providers: {} } as unknown as OcxConfig);
     cleanupRemovedGcpCredentials([marker(file), "gcp-sa:p/b"]);
     expect(existsSync(file)).toBe(true);
-    expect(keychainTouches).toEqual(["delete:p/b"]);
+    // The OS-store account is deleted (and re-read to confirm); the file account is never touched.
+    expect(keychainTouches).toContain("delete:p/b");
+    expect(keychainTouches.filter(touch => touch.includes("file:"))).toEqual([]);
   });
 
   test("the key-pool paste path admits an in-bounds file reference and refuses others", () => {
