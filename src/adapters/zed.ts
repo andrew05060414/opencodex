@@ -12,6 +12,7 @@ import type { AdapterEvent, OcxParsedRequest, OcxProviderConfig } from "../types
 import { createTranslatorBudget, releaseTranslatedEvent, retainTranslatedEvent, type TranslatorBudget } from "../lib/translator-budget";
 import { releaseCompactionCiphertextLease } from "../responses/compaction";
 import { redactSecretString } from "../lib/redact";
+import { credentialGeneration, getAccountSet, markAccountNeedsReauthIfGeneration } from "../oauth/store";
 import {
   normalizeZedProvider,
   resolveZedModels,
@@ -288,6 +289,20 @@ function zedSignInRejection(error: unknown): Response {
   } }), { status, headers: { "Content-Type": "application/json" } });
 }
 
+/**
+ * Zed's native token never expires locally, so the refresh path never re-checks it. When Zed
+ * itself answers 401 at the account lookup or token exchange, mark the stored account that owns
+ * this token as needing sign-in, so the dashboard, `ocx status` and `ocx doctor` say so before
+ * the next failed call. Generation-checked: a re-login that landed meanwhile stays usable.
+ */
+async function markZedSignInRejected(error: unknown, accessToken: string): Promise<void> {
+  if ((error as { status?: unknown } | null)?.status !== 401) return;
+  try {
+    const account = getAccountSet("zed")?.accounts.find(row => row.credential?.access === accessToken);
+    if (account) await markAccountNeedsReauthIfGeneration("zed", account.id, credentialGeneration(account.credential));
+  } catch { /* health marking is best effort; the 401 answer below still reaches the caller */ }
+}
+
 export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: AnthropicCacheRetention): ProviderAdapter {
   let delegate: ZedDelegate | undefined;
   let credentials: ZedCredentials | undefined;
@@ -430,6 +445,7 @@ export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: A
     buildRequest,
     async fetchResponse(request, ctx) {
       if (!credentials) throw new Error("Zed request credentials were not initialized");
+      const requestCredentials = credentials;
       const fetchFn = ctx?.executor ?? globalThis.fetch;
       const send = createAdapterPhysicalSend(ctx);
       let completionAttempts = 0;
@@ -453,7 +469,10 @@ export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: A
           headers: request.headers,
           body: request.body,
         },
-      }).catch(zedSignInRejection);
+      }).catch(async (error: unknown) => {
+        await markZedSignInRejected(error, requestCredentials.accessToken);
+        return zedSignInRejection(error);
+      });
     },
     async *parseStream(response: Response, budget: TranslatorBudget): AsyncGenerator<AdapterEvent> {
       if (!response.body) {
