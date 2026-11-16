@@ -395,6 +395,20 @@ export function hasKeyPoolFailover(provider: OcxProviderConfig): boolean {
 }
 
 /**
+ * Whether an upstream 403 is credential-scoped for this provider and may rotate like a 401.
+ *
+ * Only a Vertex pool of service-account (`gcp-sa:`) credentials qualifies: each SA bills and is
+ * authorized in its own Google Cloud project, so PERMISSION_DENIED / BILLING_DISABLED from one
+ * (an exhausted trial, a disabled API) says nothing about its siblings. Other providers keep 403
+ * as a request-level refusal.
+ */
+export function isCredentialScoped403(provider: OcxProviderConfig, status: number): boolean {
+  return status === 403 && provider.adapter === "google" && provider.googleMode === "vertex"
+    && typeof provider.apiKey === "string" && provider.apiKey.startsWith("gcp-sa:")
+    && hasKeyPoolFailover(provider);
+}
+
+/**
  * Process-local round-robin cursor per provider, deliberately parallel to `keyCooldowns`
  * rather than borrowing the Codex pool-rotation state: an API key is not an OAuth account
  * and must not share a quota scope key. Multi-process desync is the same accepted limit

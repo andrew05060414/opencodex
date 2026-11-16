@@ -8,6 +8,8 @@ import { VERTEX_PROJECT_AUTO } from "./google-vertex-key-project";
  * endpoint (location defaults to `global`), otherwise the projectless express endpoint is used.
  * `provider.project: "auto"` resolves the project of each key it sends (see
  * google-vertex-key-project.ts), so one key pool may span several projects.
+ * ADC with a service-account credential and no explicit project (or `"auto"`) uses that
+ * credential's `project_id` (location defaults to `global`).
  * Ambient GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT / GOOGLE_CLOUD_LOCATION belong to ADC, so an
  * unrelated gcloud default in the shell cannot move an express-mode key onto another project.
  */
@@ -21,6 +23,8 @@ export function selectVertexEndpoint(
   provider: VertexEndpointConfig,
   hasApiKey: boolean,
   env: NodeJS.ProcessEnv = process.env,
+  /** `project_id` of the service account this request sends with (gcp-sa marker), if any. */
+  credentialProject?: string,
 ): VertexEndpointSelection {
   // A blank or whitespace-only project is unset: it must not select a /projects/%20/ endpoint.
   const rawProject = provider.project?.trim() || undefined;
@@ -29,13 +33,16 @@ export function selectVertexEndpoint(
     if (!configuredProject) return { kind: "express" };
     return { kind: "project", project: configuredProject, location: provider.location || "global" };
   }
-  // "auto" names a per-key lookup, never a project id; ADC has no key to resolve it from.
-  if (configuredProject === VERTEX_PROJECT_AUTO) {
-    throw new Error('Vertex AI project "auto" requires an API key; set provider.project to a project id for ADC.');
+  // A pooled service account bills its own project: unset or "auto" follows the credential's
+  // `project_id`, so each SA in a key pool lands on the project it belongs to. An explicit
+  // provider.project still wins, and ambient env only fills in when the credential names none.
+  if (configuredProject === VERTEX_PROJECT_AUTO && !credentialProject) {
+    throw new Error('Vertex AI project "auto" requires an API key or a service-account credential with a project_id; set provider.project to a project id for ADC.');
   }
-  const project = configuredProject || env.GOOGLE_CLOUD_PROJECT || env.GCLOUD_PROJECT;
+  const explicitProject = configuredProject === VERTEX_PROJECT_AUTO ? undefined : configuredProject;
+  const project = explicitProject || credentialProject || env.GOOGLE_CLOUD_PROJECT || env.GCLOUD_PROJECT;
   if (!project) throw new Error("Vertex AI requires a project id (provider.project or GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT).");
-  const location = provider.location || env.GOOGLE_CLOUD_LOCATION;
+  const location = provider.location || env.GOOGLE_CLOUD_LOCATION || (project === credentialProject ? "global" : undefined);
   if (!location) throw new Error("Vertex AI requires a location (provider.location or GOOGLE_CLOUD_LOCATION).");
   return { kind: "project", project, location };
 }

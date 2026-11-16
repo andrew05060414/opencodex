@@ -1,6 +1,6 @@
 # Google Provider
 
-Created: 2026-10-16 | Updated: 2026-11-16 | Version: 1.4 (Vertex discovery destination authority)
+Created: 2026-10-16 | Updated: 2026-11-16 | Version: 1.5 (Vertex discovery destination authority; service-account file pools)
 
 ## Streaming input accounting
 
@@ -125,6 +125,23 @@ Reference retention compares OS account identities across both `gcp-sa:` and `ke
 spellings. `src/providers/key-store.ts` leaves GCP markers stored during ordinary keychain
 store/restore and refuses to restore GCP JSON through a keychain alias; the shared classification
 in `src/providers/api-key-resolve.ts` reports those markers as OS-stored credentials.
+
+## Vertex service-account file pools
+
+A service-account JSON (~2.4 KB) exceeds the Windows Credential Manager blob limit, so
+`src/lib/gcp-credential-file.ts` adds `gcp-sa:file:<absolute .json path>` accounts that reference
+the JSON in place instead of copying it into the OS store. The path must be absolute, `.json`, free
+of `..`, and resolve (after symlinks) inside `$OPENCODEX_HOME/gcp-credentials` or a directory
+listed in `OPENCODEX_GCP_CREDENTIAL_DIRS`; reads are bounded. File accounts are not OS-store
+accounts (`src/local-credentials/references.ts`), and cleanup never deletes the referenced file.
+When `provider.project` is unset or `"auto"`, `selectVertexEndpoint` uses the selected
+credential's `project_id` (location defaults to `global`); an explicit project still wins, and
+ambient `GOOGLE_CLOUD_PROJECT` only fills a credential without one, so the routed snapshot no
+longer bakes env into a marker row. Token cache entries stay per credential source. In
+`src/server/responses/adapter-dispatch.ts`, `isCredentialScoped403` (`src/providers/key-failover.ts`)
+lets a Vertex `gcp-sa:` pool rotate on a per-project 403 exactly like a 401.
+`tests/adapters/google/gcp-sa-file-pool.test.ts` covers storage bounds, per-SA projects and token
+caching, and 403 rotation.
 
 ## OpenCode Go Gemini transport
 
