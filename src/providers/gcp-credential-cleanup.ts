@@ -1,5 +1,6 @@
 import { mutatePersistedConfig, readConfigAdmissionSnapshot, withConfigMutationLockSync } from "../config";
 import { GCP_CREDENTIAL_MARKER_PREFIX, gcpCredentialMarkerAccount } from "../lib/gcp-adc";
+import { isGcpCredentialFileAccount } from "../lib/gcp-credential-file";
 import type { OcxConfig, OcxProviderConfig } from "../types";
 import { isKeychainReference, keychainAccount, providerKeychainEntry } from "./api-key-resolve";
 
@@ -48,7 +49,9 @@ export function cleanupRemovedGcpCredentials(markers: readonly string[]): void {
           })));
       for (const marker of new Set(markers)) {
         const account = cleanupGcpCredentialAccount(marker);
-        if (account && !retained.has(account)) providerKeychainEntry(account).deletePassword();
+        // A `file:` account references a user-owned file; there is no OS-store entry to remove,
+        // and the file itself is never deleted (gcp-credential-file).
+        if (account && !retained.has(account) && !isGcpCredentialFileAccount(account)) providerKeychainEntry(account).deletePassword();
       }
       return { changed: false, value: true };
     });
