@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { saveConfigPreservingClaudeCode } from "../config";
 import type { OcxConfig, OcxProviderConfig } from "../types";
 import { GCP_CREDENTIAL_MARKER_PREFIX, isGcpCredentialMaterial, parseGcpCredentialJson } from "../lib/gcp-adc";
+import { GCP_CREDENTIAL_FILE_ACCOUNT_PREFIX, readGcpCredentialFile, resolveGcpCredentialFilePath } from "../lib/gcp-credential-file";
 import { invalidateResolvedProviderKeyCache, probeProviderKeychain, providerKeychainEntry } from "./api-key-resolve";
 import { clearPassiveKeyAccount } from "./passive-key-observation";
 import type { AccountQuotaFields } from "./quota-types";
@@ -63,6 +64,16 @@ export function splitCredentialPaste(value: string): Array<string | { credential
     }
     if (isGcpCredentialMaterial(trimmed)) {
       throw new Error("Invalid credential JSON: paste a GCP credential object without wrapping it in an array or string.");
+    }
+    // An explicit `gcp-sa:file:` reference is the supported way to name a credential file
+    // (gcp-credential-file.ts); admit it only when it resolves inside an allowed root to a
+    // readable credential, so a typo fails here instead of at request time.
+    if (trimmed.startsWith(`${GCP_CREDENTIAL_MARKER_PREFIX}${GCP_CREDENTIAL_FILE_ACCOUNT_PREFIX}`)) {
+      const account = trimmed.slice(GCP_CREDENTIAL_MARKER_PREFIX.length);
+      const resolved = resolveGcpCredentialFilePath(account);
+      if ("error" in resolved) throw new Error(resolved.error);
+      if (!parseGcpCredentialJson(readGcpCredentialFile(account) ?? "")) throw new Error("GCP credential file is not a valid service-account or authorized_user JSON");
+      return [trimmed];
     }
     if (/^(?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\.{1,2}[\\/])/.test(trimmed) || /^[^\s{}]+\.json$/i.test(trimmed)) {
       throw new Error("This looks like a file path. Paste the full JSON body of the credential, not a file path.");
