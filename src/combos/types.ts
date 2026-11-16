@@ -313,7 +313,9 @@ export function comboConfigIssues(
     issues.push({ path: ["onUnservable"], message: 'onUnservable must be "degrade" or "reject"' });
   }
 
-  if (body.alias !== undefined) {
+  // null means "unset" for alias and displayName: GET reports an unset alias that way
+  // (and older builds reported displayName too), so a GET-to-PUT round trip must pass.
+  if (body.alias !== undefined && body.alias !== null) {
     if (typeof body.alias !== "string") {
       issues.push({ path: ["alias"], message: "alias must be a string" });
     } else {
@@ -330,7 +332,7 @@ export function comboConfigIssues(
   if (body.nativeAlias !== undefined && typeof body.nativeAlias !== "boolean") {
     issues.push({ path: ["nativeAlias"], message: "nativeAlias must be a boolean" });
   }
-  if (body.displayName !== undefined) {
+  if (body.displayName !== undefined && body.displayName !== null) {
     if (typeof body.displayName !== "string") {
       issues.push({ path: ["displayName"], message: "displayName must be a string" });
     } else if (body.displayName.trim().length > 128 || /[\u0000-\u001f\u007f]/.test(body.displayName)) {
