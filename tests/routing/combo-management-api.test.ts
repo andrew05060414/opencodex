@@ -201,6 +201,46 @@ afterEach(async () => {
 }, 60_000);
 
 describe("combo management API", () => {
+  test("every GET /api/combos row PUTs back unchanged (null means unset)", async () => {
+    await withTempHome(async () => {
+      const config = baseConfig({
+        combos: {
+          plain: { strategy: "failover", targets: [{ provider: "a", model: "m1" }] },
+          named: {
+            strategy: "round-robin",
+            stickyLimit: 2,
+            alias: "named-alias",
+            displayName: "Named",
+            description: "described",
+            defaultEffort: "high",
+            reasoningEffortMode: "adaptive",
+            targets: [{ provider: "a", model: "m1" }, { provider: "b", model: "m2", weight: 3 }],
+          },
+          jev: { strategy: "jev", targets: [{ provider: "a", model: "m1" }, { provider: "c", model: "m3" }] },
+        },
+      });
+      saveConfig(config);
+      const readAll = async () => (await responseJson(await comboApi(config, "GET", "/api/combos"))).combos as Array<Record<string, unknown>>;
+      const before = await readAll();
+      // The wire shape carries explicit nulls for unset fields; that is what a client echoes back.
+      expect(before.find(row => row.id === "plain")).toMatchObject({ alias: null, defaultEffort: null });
+      for (const row of before) {
+        const { id, model: _model, ...combo } = row;
+        const res = await comboApi(config, "PUT", "/api/combos", { id, combo });
+        expect({ id, status: res?.status, body: res?.status === 200 ? null : await res?.json() }).toEqual({ id, status: 200, body: null });
+      }
+      expect(await readAll()).toEqual(before);
+      // Explicit nulls on the optional strings are "unset", never a type error.
+      const nulls = await comboApi(config, "PUT", "/api/combos", {
+        id: "plain",
+        combo: { targets: [{ provider: "a", model: "m1" }], alias: null, displayName: null, defaultEffort: null },
+      });
+      expect(nulls?.status).toBe(200);
+      expect(config.combos?.plain).not.toHaveProperty("alias");
+      expect(config.combos?.plain).not.toHaveProperty("displayName");
+    });
+  });
+
   test("bare alias precedence yields back to a non-OpenAI selector after rename and deletion", async () => {
     await withTempHome(async () => {
       const selector = "deepseek/deepseek-chat";
