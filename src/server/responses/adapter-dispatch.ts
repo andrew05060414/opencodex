@@ -55,6 +55,7 @@ import {
   rateLimitRetryDelayMs,
   readQuotaResetAt,
   rotateProviderTransportOn429,
+  isCredentialScoped403,
 } from "../../providers/key-failover";
 import {
   fetchWithTransientRetry,
@@ -1116,7 +1117,9 @@ export async function prepareAdapterExchange(
       // provider: one revoked or mistyped key says nothing about its siblings. OAuth providers
       // refresh above and never enter here — `hasKeyPoolFailover` rejects oauth/forward modes.
       // Runs after the OAuth replay so a refreshable token is never treated as a dead key.
-      while (upstreamResponse.status === 401 && hasKeyPoolFailover(route.provider)) {
+      // A Vertex service-account pool's 403 is per-project, so it rotates the same way.
+      while ((upstreamResponse.status === 401 || isCredentialScoped403(route.provider, upstreamResponse.status))
+        && hasKeyPoolFailover(route.provider)) {
         const rotated = rotateProviderTransportOn401(config, route.providerName, route.provider, {
           now: Date.now(),
           attemptedKey: route.provider.apiKey,

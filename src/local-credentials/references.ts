@@ -22,7 +22,8 @@ export function osStoreAccounts(config: unknown): string[] {
       if (typeof key !== "string") continue;
       for (const prefix of OS_STORE_PREFIXES) {
         const account = key.startsWith(prefix) ? key.slice(prefix.length) : "";
-        if (account.trim() && account.length <= 1024) accounts.add(account);
+        // `gcp-sa:file:<path>` names a file the user owns, not an OS-store account (gcp-credential-file).
+        if (account.trim() && account.length <= 1024 && !(prefix === "gcp-sa:" && account.startsWith("file:"))) accounts.add(account);
       }
     }
   }

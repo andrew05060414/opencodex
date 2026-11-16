@@ -126,7 +126,9 @@ function snapshotVertexEnvironment(provider: OcxProviderConfig): OcxProviderConf
   if (!marker && (configuredKey || process.env.GOOGLE_CLOUD_API_KEY)) return provider;
   return {
     ...provider,
-    project: provider.project?.trim() ? provider.project : process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
+    // A marker without an explicit project resolves per request from its own SA `project_id`
+    // (selectVertexEndpoint), which must outrank ambient env, so env is not baked in here.
+    project: provider.project?.trim() || marker ? provider.project : process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
     location: provider.location || process.env.GOOGLE_CLOUD_LOCATION,
   };
 }
