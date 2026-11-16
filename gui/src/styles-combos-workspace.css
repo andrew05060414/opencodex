@@ -25,10 +25,15 @@
   overflow: hidden;
 }
 
-/* Save/load banners float over the workspace instead of taking a row: a success banner
-   clears itself after 5s, and in flow it pushed the whole editor down and back up on
-   every save, which read as the page jumping. */
 .combos-workspace-shell-banner {
+  flex-shrink: 0;
+  padding: 10px 16px 0;
+}
+
+/* A success banner clears itself after 5s. In flow it pushed the list and editor down about
+   63px on every save and pulled them back up, which read as the page jumping, so it floats.
+   Errors stay until the next save and keep their row, so they never cover the list header. */
+.combos-workspace-shell-toast {
   position: absolute;
   top: 0;
   left: 50%;
@@ -36,11 +41,11 @@
   width: max-content;
   max-width: calc(100% - 32px);
   z-index: 5;
-  padding-top: 10px;
+  padding: 10px 0 0;
   pointer-events: none;
 }
 
-.combos-workspace-shell-banner > * {
+.combos-workspace-shell-toast > * {
   pointer-events: auto;
 }
 
