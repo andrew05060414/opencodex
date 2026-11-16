@@ -16,6 +16,7 @@
 }
 
 .combos-workspace-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -24,9 +25,23 @@
   overflow: hidden;
 }
 
+/* Save/load banners float over the workspace instead of taking a row: a success banner
+   clears itself after 5s, and in flow it pushed the whole editor down and back up on
+   every save, which read as the page jumping. */
 .combos-workspace-shell-banner {
-  flex-shrink: 0;
-  padding: 10px 16px 0;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  z-index: 5;
+  padding-top: 10px;
+  pointer-events: none;
+}
+
+.combos-workspace-shell-banner > * {
+  pointer-events: auto;
 }
 
 /* Revalidation shell: keeps the workspace body stable while aria-busy and an
