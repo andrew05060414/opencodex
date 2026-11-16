@@ -20,7 +20,7 @@ import type {
 import { isAllowedToolChoice, namespacedToolName, resolveToolChoiceWireName, toolChoiceToolPredicate } from "../types";
 import type { OcxTool } from "../types";
 import { contentPartsToText, parseDataUrl } from "./image";
-import { bindVertexRequestAuthority, GCP_CREDENTIAL_MARKER_PREFIX, gcpCredentialMarkerAccount, getVertexAccessTokenWithAuthority } from "../lib/gcp-adc";
+import { bindVertexRequestAuthority, GCP_CREDENTIAL_MARKER_PREFIX, gcpCredentialMarkerAccount, gcpCredentialProjectId, getVertexAccessTokenWithAuthority } from "../lib/gcp-adc";
 import { isProviderApiKeyPaused, ProviderApiKeyPausedError } from "../providers/api-key-pause";
 import { fetchAntigravityWithRetry, fetchVertexWithRetry } from "./google-http";
 import { safeAntigravityHttpErrorMessage, safeVertexHttpErrorMessage } from "./google-errors";
@@ -1261,7 +1261,9 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           incoming?.beforePhysicalSend?.();
           if (ambientAuthority && !vertexAmbientKeyIsCurrent(ambientAuthority)) throw new Error("Vertex credential authority changed before auxiliary send");
         };
-        let vertexEndpoint = selectVertexEndpoint(provider, Boolean(apiKey));
+        // Resolve each marker per request; never share a process-global active account.
+        const markerAccount = apiKey ? undefined : gcpCredentialMarkerAccount(provider.apiKey);
+        let vertexEndpoint = selectVertexEndpoint(provider, Boolean(apiKey), process.env, gcpCredentialProjectId(markerAccount));
         if (apiKey && vertexEndpoint.kind === "project" && vertexEndpoint.project === VERTEX_PROJECT_AUTO) {
           // Unresolved keys use express for this request so Google's status drives key failover.
           const project = await resolveVertexApiKeyProject(apiKey, {
@@ -1293,8 +1295,6 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
         let adcAuthority: Awaited<ReturnType<typeof getVertexAccessTokenWithAuthority>> | undefined;
         if (apiKey) headers["x-goog-api-key"] = apiKey;
         else {
-          // Resolve each marker per request; never share a process-global active account.
-          const markerAccount = gcpCredentialMarkerAccount(provider.apiKey);
           adcAuthority = await getVertexAccessTokenWithAuthority({ markerAccount, signal: incoming?.abortSignal, beforeSend: beforeCredentialSend });
           headers["Authorization"] = `Bearer ${adcAuthority.token}`;
         }

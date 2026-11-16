@@ -3,7 +3,8 @@
  *
  * Direct WebCrypto + REST implementation (no `google-auth-library`). Sources, in priority order:
  *   0. A `gcp-sa:<account>` reference (the provider's active key resolving to one) → the Service
- *      Account / authorized_user JSON stored in the OS credential store under that account
+ *      Account / authorized_user JSON stored in the OS credential store under that account, or,
+ *      for a `gcp-sa:file:<path>` account, read from that root-confined file (gcp-credential-file)
  *      (`keychain:<account>` secret, written by the key-store save path when the user pastes a
  *      credential JSON directly into the API-key slot). See resolveGcpCredentialMarker.
  *   1. `GOOGLE_APPLICATION_CREDENTIALS` env → file with `type: "service_account"` (RS256 JWT
@@ -26,6 +27,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { GCP_CREDENTIAL_MARKER_PREFIX, providerKeychainEntry } from "../providers/api-key-resolve";
 import { vertexAmbientKeyIsCurrent, type VertexAmbientKeyAuthority } from "../providers/vertex-environment-authority";
 export { isGcpCredentialMaterial } from "./gcp-credential-input";
+import { isGcpCredentialFileAccount, readGcpCredentialFile } from "./gcp-credential-file";
 import {
   captureConfigGeneration,
   sweepExpiredOnWrite,
@@ -99,6 +101,7 @@ interface ServiceAccountCredentials {
   client_email: string;
   private_key: string;
   private_key_id?: string;
+  project_id?: string;
 }
 
 interface AuthorizedUserCredentials {
@@ -214,12 +217,25 @@ function readJsonFile<T>(filePath: string): { value: T; content: string } | unde
  */
 function readMarkerCredential(account: string): AdcFileCredentials | undefined {
   try {
-    const raw = providerKeychainEntry(account).getPassword();
+    // `file:<path>` accounts read a bounded, root-confined file instead of the OS store
+    // (gcp-credential-file.ts): SA JSON exceeds the Windows Credential Manager blob limit.
+    const raw = isGcpCredentialFileAccount(account) ? readGcpCredentialFile(account) : providerKeychainEntry(account).getPassword();
     if (typeof raw !== "string" || !raw.trim()) return undefined;
     return parseGcpCredentialJson(raw);
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The `project_id` a marker's service-account JSON names, read locally (no network). Vertex uses
+ * it when `provider.project` is unset or `"auto"`, so each pooled SA bills its own project.
+ */
+export function gcpCredentialProjectId(markerAccount: string | undefined): string | undefined {
+  if (!markerAccount) return undefined;
+  const creds = readMarkerCredential(markerAccount);
+  const project = creds?.type === "service_account" ? creds.project_id?.trim() : undefined;
+  return project || undefined;
 }
 
 function loadAdcCredentials(markerAccount: string | undefined): { source: string; creds: AdcFileCredentials } | undefined {
