@@ -9,6 +9,7 @@ import { saveConfig } from "../../../src/config";
 import { __resetVertexTokenCache, gcpCredentialProjectId, getVertexAccessToken } from "../../../src/lib/gcp-adc";
 import { readGcpCredentialFile, resolveGcpCredentialFilePath } from "../../../src/lib/gcp-credential-file";
 import { osStoreAccounts } from "../../../src/local-credentials/references";
+import { splitCredentialPaste } from "../../../src/providers/api-keys";
 import { cleanupRemovedGcpCredentials } from "../../../src/providers/gcp-credential-cleanup";
 import { clearKeyCooldowns, isCredentialScoped403, rotateKeyOn401 } from "../../../src/providers/key-failover";
 import { setProviderKeychainEntryFactoryForTests } from "../../../src/providers/key-store";
@@ -26,6 +27,7 @@ let home: string;
 let outside: string;
 const previous = { home: process.env.OPENCODEX_HOME, dirs: process.env.OPENCODEX_GCP_CREDENTIAL_DIRS, project: process.env.GOOGLE_CLOUD_PROJECT };
 let pem = "";
+const keychainTouches: string[] = [];
 
 function parsed(modelId = "gemini-3.8-flash"): OcxParsedRequest {
   return {
@@ -68,10 +70,11 @@ beforeEach(async () => {
     pem = `${armor("BEGIN")}\n${Buffer.from(pkcs8).toString("base64").match(/.{1,64}/g)!.join("\n")}\n${armor("END")}\n`;
   }
   // Any OS-store access in these tests is a bug: file accounts never touch the keychain.
-  setProviderKeychainEntryFactoryForTests(() => ({
-    getPassword: () => { throw new Error("keychain must not be read for a file account"); },
-    setPassword: () => { throw new Error("keychain must not be written for a file account"); },
-    deletePassword: () => { throw new Error("keychain must not be deleted for a file account"); },
+  keychainTouches.length = 0;
+  setProviderKeychainEntryFactoryForTests((_service, account) => ({
+    getPassword: () => { keychainTouches.push(`get:${account}`); return null; },
+    setPassword: () => { keychainTouches.push(`set:${account}`); },
+    deletePassword: () => { keychainTouches.push(`delete:${account}`); return true; },
   }));
   clearKeyCooldowns();
 });
@@ -128,8 +131,20 @@ describe("gcp-sa:file: credential storage", () => {
     const config = { providers: { v: { apiKey: marker(file), apiKeyPool: [{ id: "a", key: marker(file) }, { id: "b", key: "gcp-sa:p/b" }] } } };
     expect(osStoreAccounts(config)).toEqual(["p/b"]);
     saveConfig({ port: 10199, providers: {} } as unknown as OcxConfig);
-    cleanupRemovedGcpCredentials([marker(file)]);
+    cleanupRemovedGcpCredentials([marker(file), "gcp-sa:p/b"]);
     expect(existsSync(file)).toBe(true);
+    expect(keychainTouches).toEqual(["delete:p/b"]);
+  });
+
+  test("the key-pool paste path admits an in-bounds file reference and refuses others", () => {
+    const file = writeServiceAccount(join(home, "gcp-credentials"), "proj-a");
+    expect(splitCredentialPaste(marker(file))).toEqual([marker(file)]);
+    writeServiceAccount(outside, "proj-x");
+    expect(() => splitCredentialPaste(marker(join(outside, "proj-x.json")))).toThrow(/outside the allowed directories/);
+    writeFileSync(join(home, "gcp-credentials", "junk.json"), JSON.stringify({ type: "other" }));
+    expect(() => splitCredentialPaste(marker(join(home, "gcp-credentials", "junk.json")))).toThrow(/not a valid/);
+    expect(() => splitCredentialPaste(file)).toThrow(/file path/);
+    expect(keychainTouches).toEqual([]);
   });
 });
 
@@ -171,6 +186,7 @@ describe("vertex project follows the service account", () => {
       // One exchange per SA: the second round is served from the per-credential cache.
       expect(issuers.sort()).toEqual(["svc@proj-a.iam.gserviceaccount.com", "svc@proj-b.iam.gserviceaccount.com"]);
       expect(await getVertexAccessToken({ markerAccount: marker(files[0]!).slice("gcp-sa:".length) })).toBe("tok-proj-a");
+      expect(keychainTouches).toEqual([]);
     } finally {
       globalThis.fetch = realFetch;
     }
