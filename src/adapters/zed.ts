@@ -273,6 +273,21 @@ function createDelegate(provider: OcxProviderConfig, zedProvider: ZedProvider, c
   return createOpenAIChatAdapter(config);
 }
 
+/**
+ * The account lookup and token exchange run before any completion is sent, and throw. A 401/403
+ * there means Zed no longer accepts the stored sign-in; answer with that status so the combo
+ * layer sees an auth failure instead of a 502 "provider unreachable". Other errors pass through.
+ */
+function zedSignInRejection(error: unknown): Response {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (status !== 401 && status !== 403) throw error;
+  const detail = error instanceof Error ? error.message : String(error);
+  return new Response(JSON.stringify({ error: {
+    code: "zed_sign_in_rejected",
+    message: `${detail}; the stored Zed sign-in was rejected, run \`ocx login zed\` again`,
+  } }), { status, headers: { "Content-Type": "application/json" } });
+}
+
 export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: AnthropicCacheRetention): ProviderAdapter {
   let delegate: ZedDelegate | undefined;
   let credentials: ZedCredentials | undefined;
@@ -438,7 +453,7 @@ export function createZedAdapter(provider: OcxProviderConfig, cacheRetention?: A
           headers: request.headers,
           body: request.body,
         },
-      });
+      }).catch(zedSignInRejection);
     },
     async *parseStream(response: Response, budget: TranslatorBudget): AsyncGenerator<AdapterEvent> {
       if (!response.body) {
