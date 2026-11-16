@@ -242,6 +242,34 @@ describe("Zed Hosted AI provider", () => {
     expect(await completionRequest?.clone().text()).toBe(request.body);
   });
 
+  for (const [stage, responses] of [
+    ["account lookup", () => [new Response("Unauthorized", { status: 401 })]],
+    ["token exchange", () => [jsonResponse({ default_organization_id: "org-1" }), new Response("Unauthorized", { status: 401 })]],
+  ] as const) test(`a rejected sign-in at the ${stage} answers 401, not a thrown 502`, async () => {
+    globalThis.fetch = (async () => new Response("Unauthorized", { status: 401 })) as typeof globalThis.fetch;
+    const provider: OcxProviderConfig = { adapter: "zed", baseUrl: "https://cloud.zed.dev", authMode: "oauth", apiKey: "dead-access-token" };
+    const parsed = parseRequest({ model: "gpt-5.6", input: "hello", stream: true });
+    parsed._zedAuthContext = { userId: "user-dead" };
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    const request = await adapter.buildRequest(parsed);
+    const queue: Response[] = responses();
+    let completions = 0;
+    const response = await adapter.fetchResponse!(request, {
+      executor: (async (input: RequestInfo | URL) => {
+        if (String(input instanceof Request ? input.url : input).includes("/client/")) return queue.shift()!;
+        completions++;
+        return new Response("{}");
+      }) as typeof globalThis.fetch,
+    });
+    expect(completions).toBe(0);
+    expect(response.status).toBe(401);
+    const text = await response.text();
+    expect(JSON.parse(text).error.code).toBe("zed_sign_in_rejected");
+    expect(text).toContain("ocx login zed");
+    expect(text).not.toContain("dead-access-token");
+    expect(text).not.toContain("user-dead");
+  });
+
   test("normalizes Anthropic string message content to sequence blocks for Zed backend", async () => {
     const responses = [
       jsonResponse({ default_organization_id: "org-1" }),
