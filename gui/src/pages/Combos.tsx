@@ -540,7 +540,9 @@ export default function Combos({
         : await res.json().catch(() => null) as unknown;
       const serverError = responseError(data);
       if (!res.ok || serverError || !responseSucceeded(data)) {
-        const err = serverError || t("cws.saveFailed");
+        // A body-less failure (proxy 502 while the service restarts, an HTML error page) still
+        // names its status, so "could not save" is never the whole story.
+        const err = serverError || (res.ok ? t("cws.saveFailed") : `${t("cws.saveFailed")} (HTTP ${res.status})`);
         if (!overview) notify(err, false);
         return { ok: false as const, error: err };
       }
@@ -552,8 +554,10 @@ export default function Combos({
         true,
       );
       return { ok: true as const };
-    } catch {
-      const err = t("cws.saveFailed");
+    } catch (error) {
+      // fetch rejects only when the request never got an answer: the service is down or restarting.
+      const reason = error instanceof Error && error.message ? error.message : "network error";
+      const err = `${t("cws.saveFailed")} (${reason})`;
       if (!overview) notify(err, false);
       return { ok: false as const, error: err };
     }
