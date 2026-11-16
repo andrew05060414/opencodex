@@ -9,7 +9,7 @@ import { createTranslatorBudget } from "../../src/lib/translator-budget";
 import { releaseCompactionCiphertextLease } from "../../src/responses/compaction";
 import { setIcaclsRunnerForTests, resetHardenedStateForTests } from "../../src/lib/windows-secret-acl";
 import { getValidAccessTokenSnapshot } from "../../src/oauth";
-import { saveCredential } from "../../src/oauth/store";
+import { getAccountSet, saveCredential } from "../../src/oauth/store";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
 import { withTestTranslatorBudget } from "../helpers/translator-budget";
 import {
@@ -1089,5 +1089,32 @@ describe("Zed OAuth identity", () => {
     expect(snapshot.accountId).not.toBe("zed-user-7");
     expect(buildZedUserAuthHeader({ userId: snapshot.providerUserId!, accessToken: snapshot.accessToken }))
       .toBe("zed-user-7 zed-access-token");
+  });
+
+  test("Zed rejecting the stored sign-in marks the account as needing sign-in; a fresh login clears it", async () => {
+    await saveCredential("zed", {
+      access: "zed-dead-token", refresh: "zed-dead-token", expires: Number.MAX_SAFE_INTEGER,
+      accountId: "zed-user-dead", source: "oauth",
+    });
+    const snapshot = await getValidAccessTokenSnapshot("zed");
+    const provider: OcxProviderConfig = { adapter: "zed", baseUrl: "https://cloud.zed.dev", authMode: "oauth", apiKey: snapshot.accessToken };
+    const parsed = parseRequest({ model: "gpt-5.6", input: "hello", stream: true });
+    parsed._zedAuthContext = { userId: snapshot.providerUserId! };
+    globalThis.fetch = (async () => new Response("Unauthorized", { status: 401 })) as typeof globalThis.fetch;
+    const adapter = withTestTranslatorBudget(createZedAdapter(provider));
+    const request = await adapter.buildRequest(parsed);
+    const response = await adapter.fetchResponse!(request, {
+      executor: (async () => new Response("Unauthorized", { status: 401 })) as typeof globalThis.fetch,
+    });
+    expect(response.status).toBe(401);
+    const marked = getAccountSet("zed")?.accounts.find(row => row.id === snapshot.accountId);
+    expect(marked?.needsReauth).toBe(true);
+
+    await saveCredential("zed", {
+      access: "zed-fresh-token", refresh: "zed-fresh-token", expires: Number.MAX_SAFE_INTEGER,
+      accountId: "zed-user-dead", source: "oauth",
+    });
+    const relogged = getAccountSet("zed")?.accounts.find(row => row.credential.access === "zed-fresh-token");
+    expect(relogged?.needsReauth).toBeUndefined();
   });
 });
