@@ -361,7 +361,7 @@ export default function Combos({
       if (!res.ok || serverError || !responseSucceeded(data)) {
         // A body-less failure (proxy 502 while the service restarts, an HTML error page) still
         // names its status, so "could not save" is never the whole story.
-        const err = serverError || (res.ok ? t("cws.saveFailed") : `${t("cws.saveFailed")} (HTTP ${res.status})`);
+        const err = serverError || (res.ok ? t("cws.saveFailed") : `${t("cws.saveFailed")} (${res.status})`);
         notify(err, false);
         return { ok: false as const, error: err };
       }
