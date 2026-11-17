@@ -658,3 +658,39 @@ describe("reveal mode: originals are not cached and do not outlive revealValues"
     globalPrivacyStats.reset();
   });
 });
+
+describe("adversarial probe: bare vendor token shapes and password values the name rule could not see", () => {
+  // Built at runtime: literals would trip the gitleaks pre-commit hook.
+  const fill = (s: string, n: number) => s.repeat(Math.ceil(n / s.length)).slice(0, n);
+  const mixed = "Zq81mVb03kLpXy7TwR2nDs5GhJ4cFe6U";
+  const hex = "0123456789abcdef";
+  const pw = fill("Tr0ub4dor", 14);
+  const lines = [
+    "glpat-" + fill(mixed, 20),
+    "npm_" + fill(mixed, 36),
+    "SG." + fill(mixed, 22) + "." + fill(mixed, 43),
+    "sbp_" + fill(hex, 40),
+    "rk_" + "live_" + fill(mixed, 24),
+    "key-" + fill(hex, 32),
+    "xoxb-" + "123456789012-1234567890123-" + fill(mixed, 24),
+    "dp.st.prd." + fill(mixed, 40),
+    "DB_" + "PASSWORD=P@ss" + "w0rd!2024",
+    "pass" + 'word: "correct horse battery staple"',
+    'os.environ["DB_' + 'PASSWORD"] = "' + pw + '"',
+    "mysql --pass" + "word " + pw + " -u root",
+    '{\\"pass' + 'word\\": \\"' + pw + '\\"}',
+  ];
+  for (const line of lines) {
+    it(`masks ${JSON.stringify(line.slice(0, 20))}...`, () => {
+      const outcome = redactPlainText(line);
+      expect(outcome.hits.length).toBe(1);
+      expect(outcome.body).not.toContain(line.includes(pw) ? pw : line.slice(-8));
+    });
+  }
+
+  it("leaves password-named type hints and prose alone", () => {
+    for (const line of ["password_hash: str", "use a password manager", "PWD=/home/andrew/code"]) {
+      expect(redactPlainText(line).body).toBe(line);
+    }
+  });
+});
