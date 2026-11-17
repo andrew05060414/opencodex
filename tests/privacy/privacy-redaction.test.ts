@@ -688,9 +688,25 @@ describe("adversarial probe: bare vendor token shapes and password values the na
     });
   }
 
-  it("leaves password-named type hints and prose alone", () => {
-    for (const line of ["password_hash: str", "use a password manager", "PWD=/home/andrew/code"]) {
-      expect(redactPlainText(line).body).toBe(line);
+  it("leaves password-named type hints, variable references, other flags and cwd paths alone", () => {
+    const kept = [
+      "password: string;",
+      "(password: boolean) =>",
+      "password=$DB_PASSWORD",
+      '--password "${db_password}"',
+      "docker login --password-stdin registry.example.com",
+      "--password-file /run/secrets/db",
+      "mysql --password --user=root",
+      "use a password manager",
+      "OLDPWD=/home/andrew/code-v2",
+      "PWD=/opt/python3.11/bin",
+    ];
+    for (const line of kept) expect(redactPlainText(line).body).toBe(line);
+  });
+
+  it("still masks a $-leading password and a short password with a digit", () => {
+    for (const line of ["PASS" + "WORD=$ecret" + "Pw9", "pass" + "word: hunter22"]) {
+      expect(redactPlainText(line).hits.length).toBe(1);
     }
   });
 });

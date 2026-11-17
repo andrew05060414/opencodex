@@ -233,6 +233,8 @@ function isPasswordLikeName(name: string): boolean {
  */
 export function looksLikeSecretValue(value: string, following: string, name = ""): boolean {
   if (isPasswordLikeName(name)) return true;
+  if (/^(?:OLD)?PWD$/.test(name) && /^(?:~|\.{1,2})?\//.test(value)) return false; // shell cwd path
+
   const words = value.split(/[_.-]+/).filter(Boolean);
   if (words.length > 0 && !words.some(looksRandom)) {
     if (following.startsWith("(") || following.startsWith("[")) return false;
@@ -315,16 +317,23 @@ const RULES: Rule[] = [
   // (`DB_PASSWORD=P@ss...!`), a quoted passphrase with spaces, `os.environ["DB_PASSWORD"] = "..."`,
   // escaped JSON (`\"password\": \"...\"`) and a `--password value` flag. Same linear name
   // anchoring as the rule above; an unquoted value followed by `(` / `[` is a call, not a password.
+  // Not a password either: a type annotation (`password: string;`), a SCREAMING_CASE or braced
+  // variable reference (`password=$DB_PASSWORD`, `--password "${pw}"`; `$ecretPw9` stays a
+  // password), or the next word after a flag that is not
+  // `--password` / `--passwd` itself (`--password-stdin registry`, `--password-file /run/...`) or
+  // that is another flag (`--password --user=root` prompts for it).
   {
     kind: "password",
-    pattern: () => /(?<![A-Za-z0-9_-])((?=[A-Za-z0-9_-]*?(?:pass(?:word|wd)|pwd))[A-Za-z0-9_-]+)(\\?["']?\]?\s*[:=]\s*|\s+)(?:(\\?["'])([^"'\\\n]{6,})(\\?["'])|([^\s"'\\,;(){}[\]]{6,}))/gi,
+    pattern: () => /(?<![A-Za-z0-9_-])((?=[A-Za-z0-9_-]*?(?:pass(?:word|wd)|pwd))[A-Za-z0-9_-]+)(\\?["']?\]?\s*[:=]\s*|[ \t]+)(?:(\\?["'])([^"'\\\n]{6,})(\\?["'])|([^\s"'\\,;(){}[\]]{6,}))/gi,
     extract: (m) => {
       const name = m[1]!;
       const separator = m[2]!;
       if (!isPasswordLikeName(name)) return null;
-      if (!/[:=]/.test(separator) && !name.startsWith("-")) return null; // whitespace only after a --flag
       const quoted = m[4] !== undefined;
       const secret = quoted ? m[4]! : m[6]!;
+      if (!/[:=]/.test(separator) && (!/^--pass(?:word|wd)$/i.test(name) || secret.startsWith("-"))) return null;
+      if (/^(?:string|boolean|number|bigint|integer|unknown|object)$/i.test(secret)) return null;
+      if (/^\$(?:[A-Z_][A-Z0-9_]*|\{[A-Za-z_]\w*\})$/.test(secret)) return null;
       if (!quoted && /[([]/.test((m.input ?? "").charAt(m.index + m[0].length))) return null;
       return { fullMatch: m[0], secret, prefix: `${name}${separator}${m[3] ?? ""}`, suffix: m[5] ?? "" };
     },
