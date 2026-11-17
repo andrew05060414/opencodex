@@ -1081,12 +1081,17 @@ locally and send nothing: `paused` (the account is paused; resume it to test it)
 never changes pause, active, cooldown or health state. The dashboard's **Test** and **Test all**
 buttons on Antigravity account rows call the same endpoint, `POST /api/oauth/accounts/probe`.
 
-### `ocx models discover <provider> [--json]`
+### `ocx models discover <provider>|--native [--json]`
 
 Runs the provider's live model discovery now instead of waiting for the next scheduled refresh, and
 prints how many live models it saw and which ones are new. It is the same action as **Discover now**
 under the provider's settings (`POST /api/model-discovery/refresh`). Providers without live
 discovery report that discovery is off.
+
+`ocx models discover --native [--json]` does the same for native GPT models, which come from the
+ChatGPT/Codex account roster rather than a routed provider. It runs the roster read the hourly
+catalog auto-refresh runs, records GPT models this build does not ship yet, republishes the
+catalog, and lists the new ones. Running Codex sessions need a restart to see them.
 
 ### `ocx account auto-switch <provider> <on|off|status|threshold <0-100>> [--json]`
 
