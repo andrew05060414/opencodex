@@ -321,17 +321,18 @@ const RULES: Rule[] = [
   // variable reference (`password=$DB_PASSWORD`, `--password "${pw}"`; `$ecretPw9` stays a
   // password), or the next word after a flag that is not
   // `--password` / `--passwd` itself (`--password-stdin registry`, `--password-file /run/...`) or
-  // that is another flag (`--password --user=root` prompts for it).
+  // that is another flag (`--password --user=root` prompts for it). The flag check lives in the
+  // regex, not in `extract`: a rejected match would swallow the next word, and with it an
+  // assignment like `--no-password --password=P@ss...!`, so that span must not match at all.
   {
     kind: "password",
-    pattern: () => /(?<![A-Za-z0-9_-])((?=[A-Za-z0-9_-]*?(?:pass(?:word|wd)|pwd))[A-Za-z0-9_-]+)(\\?["']?\]?\s*[:=]\s*|[ \t]+)(?:(\\?["'])([^"'\\\n]{6,})(\\?["'])|([^\s"'\\,;(){}[\]]{6,}))/gi,
+    pattern: () => /(?<![A-Za-z0-9_-])((?=[A-Za-z0-9_-]*?(?:pass(?:word|wd)|pwd))[A-Za-z0-9_-]+)(\\?["']?\]?\s*[:=]\s*|(?<=(?<![A-Za-z0-9_-])--pass(?:word|wd))[ \t]+(?![ \t-]))(?:(\\?["'])([^"'\\\n]{6,})(\\?["'])|([^\s"'\\,;(){}[\]]{6,}))/gi,
     extract: (m) => {
       const name = m[1]!;
       const separator = m[2]!;
       if (!isPasswordLikeName(name)) return null;
       const quoted = m[4] !== undefined;
       const secret = quoted ? m[4]! : m[6]!;
-      if (!/[:=]/.test(separator) && (!/^--pass(?:word|wd)$/i.test(name) || secret.startsWith("-"))) return null;
       if (/^(?:string|boolean|number|bigint|integer|unknown|object)$/i.test(secret)) return null;
       if (/^\$(?:[A-Z_][A-Z0-9_]*|\{[A-Za-z_]\w*\})$/.test(secret)) return null;
       if (!quoted && /[([]/.test((m.input ?? "").charAt(m.index + m[0].length))) return null;
