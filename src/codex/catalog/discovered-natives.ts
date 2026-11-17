@@ -125,6 +125,11 @@ export function loadDiscoveredNativeModels(now = Date.now()): void {
   publish(readModels(path, now));
 }
 
+/** The discovered natives this process currently publishes, as `{ id, at }` with `at` the first sighting. */
+export function discoveredNativeModelArrivals(): Array<{ id: string; at: string }> {
+  return models.map(entry => ({ id: entry.slug, at: new Date(entry.firstSeenAt).toISOString() }));
+}
+
 /** Monotonic process-local catalog evidence generation, independent of account identity. */
 export function discoveredNativeModelsGeneration(): number {
   return generation;
