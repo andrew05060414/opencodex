@@ -15,6 +15,12 @@ import type { PrivacyStatsRange } from "../../privacy";
 const MAX_ALLOW_VALUE_LENGTH = 4096;
 const ALLOW_VALUES_PREFIX = "/api/privacy/allow-values/";
 
+/** The originals reveal mode serves are real secrets: no browser or proxy may cache them. */
+function noStore(response: Response): Response {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 function parseRange(url: URL): PrivacyStatsRange {
   const raw = url.searchParams.get("range");
   return raw === "30d" ? "30d" : "7d";
@@ -45,7 +51,13 @@ function allowValuesView(config: ManagementContext["config"]): Array<{ id: strin
 export async function handlePrivacyRoutes(ctx: ManagementContext): Promise<Response | null> {
   const { req, url, config } = ctx;
 
+  // With reveal mode off, nothing may stay retained: it could have been turned off by `ocx config
+  // set` or a hand edit rather than PUT below, and would otherwise resurface when turned back on.
+  // The dashboard polls stats and values, so either read forgets leftover originals.
+  const reveal = config.privacy?.revealValues === true;
+
   if (url.pathname === "/api/privacy/stats" && req.method === "GET") {
+    if (!reveal) globalPrivacyStats.dropSamples();
     const range = parseRange(url);
     const summary = globalPrivacyStats.summary(range, isPrivacyRedactionEnabled(config));
     return jsonResponse(summary, 200, req, config);
@@ -55,14 +67,14 @@ export async function handlePrivacyRoutes(ctx: ManagementContext): Promise<Respo
   // operator to check for false positives. Behind the same admin token as every management
   // route; with the flag off nothing was retained, so the answer is an empty list.
   if (url.pathname === "/api/privacy/values" && req.method === "GET") {
-    const reveal = config.privacy?.revealValues === true;
-    if (!reveal) return jsonResponse({ reveal: false, values: [] }, 200, req, config);
+    if (!reveal) globalPrivacyStats.dropSamples();
+    if (!reveal) return noStore(jsonResponse({ reveal: false, values: [] }, 200, req, config));
     const kind = url.searchParams.get("kind");
     const limitRaw = Number(url.searchParams.get("limit") ?? "100");
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 1000) : 100;
     const all = globalPrivacyStats.revealedValues(parseRange(url), 1000);
     const values = (kind ? all.filter((value) => value.kind === kind) : all).slice(0, limit);
-    return jsonResponse({ reveal: true, values }, 200, req, config);
+    return noStore(jsonResponse({ reveal: true, values }, 200, req, config));
   }
 
   if (url.pathname === "/api/privacy/config" && req.method === "GET") {

@@ -30,6 +30,8 @@ export class PrivacyStatsStore {
   private readonly buffer: PrivacyRequestRecord[];
   private head = 0;
   private count = 0;
+  /** Whether any record may still carry `samples`, so `dropSamples` is free when none do. */
+  private holdsSamples = false;
 
   constructor(options: { capacity?: number } = {}) {
     this.capacity = options.capacity ?? 2000;
@@ -41,6 +43,7 @@ export class PrivacyStatsStore {
     if (entry.hits.length === 0) return null;
     const id = randomUUID();
     const record: PrivacyRequestRecord = { ...entry, id };
+    if (entry.samples && entry.samples.length > 0) this.holdsSamples = true;
     this.buffer[this.head] = record;
     this.head = (this.head + 1) % this.capacity;
     if (this.count < this.capacity) this.count += 1;
@@ -79,10 +82,12 @@ export class PrivacyStatsStore {
 
   /** Forget every retained original (reveal mode turned off) without touching counts or hashes. */
   dropSamples(): void {
+    if (!this.holdsSamples) return;
     for (let i = 0; i < this.count; i += 1) {
       const item = this.buffer[i];
       if (item) delete item.samples;
     }
+    this.holdsSamples = false;
   }
 
   reset(): void {
@@ -90,6 +95,7 @@ export class PrivacyStatsStore {
     this.count = 0;
     this.buffer.length = 0;
     this.buffer.length = this.capacity;
+    this.holdsSamples = false;
   }
 
   /**
@@ -188,6 +194,9 @@ export function recordPrivacyHitsBestEffort(entry: {
   /** Reveal mode only (`privacy.revealValues`). */
   samples?: RedactionSample[];
 }): string | null {
+  // No `samples` means the caller redacted with reveal mode off: forget the originals kept while
+  // it was on, however it was turned off (PUT /api/privacy/config, `ocx config set`, a hand edit).
+  if (entry.samples === undefined) globalPrivacyStats.dropSamples();
   if (entry.hits.length === 0) return null;
   try {
     return globalPrivacyStats.record({
