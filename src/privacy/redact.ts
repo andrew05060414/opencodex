@@ -142,6 +142,21 @@ interface Rule {
   pattern: () => RegExp;
   /** Return null to skip a match that the pattern caught but that is not a secret. */
   extract?: (m: RegExpExecArray) => { fullMatch: string; secret: string; prefix?: string; suffix?: string; kind?: RedactionKind } | null;
+  /**
+   * Offset past which no match can end, so the scan stops there (0 = nothing to find). Lets a
+   * lazy multi-line pattern skip the tail where each start would scan to the end and fail.
+   */
+  scanLimit?: (text: string) => number;
+}
+
+/** Offset just past the last complete `-----END ... PRIVATE KEY-----` marker, or 0 without one. */
+function lastPemEnd(text: string): number {
+  const end = /-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/y;
+  for (let at = text.lastIndexOf("-----END"); at >= 0; at = at > 0 ? text.lastIndexOf("-----END", at - 1) : -1) {
+    end.lastIndex = at;
+    if (end.test(text)) return end.lastIndex;
+  }
+  return 0;
 }
 
 /**
@@ -179,11 +194,12 @@ function looksRandom(word: string): boolean {
 }
 
 /** The identifier conventions a non-secret value may follow (each word is checked separately). */
-const IDENTIFIER_CONVENTIONS: readonly RegExp[] = [
-  /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/, // snake_case
-  /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/, // SCREAMING_SNAKE (env var names)
-  /^(?!.*(?:[A-Z].*\d|\d.*[A-Z]))[A-Za-z]+(?:-[A-Za-z0-9]+)+$/, // kebab-case, not upper case mixed with digits
-  /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/, // dotted path
+const IDENTIFIER_CONVENTIONS: readonly ((value: string) => boolean)[] = [
+  (v) => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(v), // snake_case
+  (v) => /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(v), // SCREAMING_SNAKE (env var names)
+  // kebab-case, not upper case mixed with digits (two plain tests: a lookahead form was quadratic)
+  (v) => /^[A-Za-z]+(?:-[A-Za-z0-9]+)+$/.test(v) && !(/[A-Z]/.test(v) && /\d/.test(v)),
+  (v) => /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(v), // dotted path
 ];
 
 /**
@@ -220,7 +236,7 @@ export function looksLikeSecretValue(value: string, following: string, name = ""
   const words = value.split(/[_.-]+/).filter(Boolean);
   if (words.length > 0 && !words.some(looksRandom)) {
     if (following.startsWith("(") || following.startsWith("[")) return false;
-    if (IDENTIFIER_CONVENTIONS.some((convention) => convention.test(value))) return false;
+    if (IDENTIFIER_CONVENTIONS.some((convention) => convention(value))) return false;
   }
   if (/\d/.test(value)) return true;
   return value.split(/[^A-Za-z]+/).some(looksRandom);
@@ -228,15 +244,19 @@ export function looksLikeSecretValue(value: string, following: string, name = ""
 
 const RULES: Rule[] = [
   // Private key PEM blocks -- replace the WHOLE block as one unit so no fragment of the key
-  // material survives, including the base64 payload between BEGIN/END.
+  // material survives, including the base64 payload between BEGIN/END. A BEGIN after the last END
+  // cannot match, and scanning to the end of the text from each one is quadratic, so stop there.
   {
     kind: "private_key",
     pattern: () => /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]+?-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/g,
+    scanLimit: lastPemEnd,
   },
   // Connection string password: proto://user:PASSWORD@host -- only the password segment is secret.
+  // The scheme starts only at the first letter of its run (`(?<!...)`), so a long letter run is
+  // tried once instead of from every letter in it (quadratic on 50 KB of `aaaa`).
   {
     kind: "connection_string",
-    pattern: () => /([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s:@/]+:)([^\s:@/]+)(@[^\s/]+)/g,
+    pattern: () => /((?=[a-zA-Z])(?<![a-zA-Z][0-9+.-]*)[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s:@/]+:)([^\s:@/]+)(@[^\s/]+)/g,
     extract: (m) => ({ fullMatch: m[0], secret: m[2]!, prefix: m[1], suffix: m[3] }),
   },
   // Google API key.
@@ -249,8 +269,9 @@ const RULES: Rule[] = [
   { kind: "api_key", pattern: () => /\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g },
   // Hugging Face access tokens: hf_ + 34 letters, no digits.
   { kind: "api_key", pattern: () => /\bhf_[A-Za-z]{34}\b/g },
-  // JWTs (three dot-separated base64url segments).
-  { kind: "token", pattern: () => /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*\b/g },
+  // JWTs (three dot-separated base64url segments). Only the first `eyJ` of a base64url run starts a
+  // match (a later one can only match a suffix of the same token), which keeps `eyJ-eyJ-...` linear.
+  { kind: "token", pattern: () => /\beyJ(?<!\beyJ[A-Za-z0-9_-]*?eyJ)[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*\b/g },
   // Bearer <token>.
   {
     kind: "token",
@@ -262,22 +283,27 @@ const RULES: Rule[] = [
   // assigned a sufficiently long value is treated as a secret, in free text, query strings, JSON,
   // and .env-style lines (`XXX_KEY=...`, `XXX_SECRET=...`, `XXX_TOKEN=...`) alike. The name may
   // also BE the keyword (`password=...`, `token: ...`, `config.secret=...`).
+  // Linear by construction: the name is a whole `[A-Za-z0-9_-]` run, starting only where such a
+  // run starts (`(?<!...)`), consumed once, with the keyword found by one lookahead over it. The
+  // earlier `[...]*?(?:key|...)[...]*` form retried every start and split inside a run, which took
+  // seconds to minutes on 50 KB of `keykeykey...` (a request body is attacker-reachable through
+  // tool output, so that was a denial of service).
   {
     kind: "other",
-    pattern: () => /(["']?[A-Za-z0-9_-]*?(?:key|secret|token|password|passwd|pwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([A-Za-z0-9+/_.~-]{8,})\2/gi,
+    pattern: () => /(["']?)(?<![A-Za-z0-9_-])((?=[A-Za-z0-9_-]*?(?:key|secret|token|password|passwd|pwd))[A-Za-z0-9_-]+)(["']?\s*[:=]\s*)(["']?)([A-Za-z0-9+/_.~-]{8,})\4/gi,
     extract: (m) => {
-      const secret = m[3]!;
-      // Classify by the NAME alone: the full match also holds the value.
-      const name = m[1]!.replace(/["'\s:=]/g, "");
+      const name = m[2]!;
+      const secret = m[5]!;
       if (isUsageCounter(name, secret)) return null;
       const following = (m.input ?? "").slice(m.index + m[0].length, m.index + m[0].length + 1);
       if (!looksLikeSecretValue(secret, following, name)) return null;
-      return { fullMatch: m[0], secret, prefix: `${m[1]}${m[2] ?? ""}`, suffix: m[2] ?? "", kind: kindForFieldName(name) };
+      const quote = m[4] ?? "";
+      return { fullMatch: m[0], secret, prefix: `${m[1]}${name}${m[3]}${quote}`, suffix: quote, kind: kindForFieldName(name) };
     },
   },
 ];
 
-const EMAIL_RULE: Rule = { kind: "email", pattern: () => /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g };
+const EMAIL_RULE: Rule = { kind: "email", pattern: () => /\b(?<![A-Za-z0-9_][.%+-]*)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g };
 
 /** Thrown only for genuinely unexpected failures; callers map this to a fail-closed 503. */
 export class PrivacyRedactionError extends Error {
@@ -348,10 +374,13 @@ class RedactionSession {
   }
 
   private applyRule(text: string, rule: Rule): string {
+    const limit = rule.scanLimit ? rule.scanLimit(text) : text.length;
+    if (limit === 0) return text;
+    const scanned = limit < text.length ? text.slice(0, limit) : text;
     const regex = rule.pattern();
     const matches: RuleMatch[] = [];
     let m: RegExpExecArray | null;
-    while ((m = regex.exec(text)) !== null) {
+    while ((m = regex.exec(scanned)) !== null) {
       let secret: string;
       let kind: RedactionKind = rule.kind;
       let prefix = "";
@@ -374,12 +403,15 @@ class RedactionSession {
       if (m[0].length === 0) regex.lastIndex += 1;
     }
     if (matches.length === 0) return text;
-    let result = text;
+    // One pass over the (ordered, non-overlapping) matches. Replacing each match's text everywhere
+    // with split/join was quadratic in the number of distinct matches.
+    const parts: string[] = [];
+    let copied = 0;
     for (const match of matches) {
       if (this.allow.has(match.secret)) continue;
       const placeholder = generatePlaceholder(match.secret);
-      const replacement = `${match.prefix}${placeholder}${match.suffix}`;
-      result = result.split(match.fullMatch).join(replacement);
+      parts.push(text.slice(copied, match.index), match.prefix, placeholder, match.suffix);
+      copied = match.index + match.fullMatch.length;
       this.recordHit(
         match.kind,
         placeholderHash(placeholder),
@@ -387,7 +419,8 @@ class RedactionSession {
         this.sampling ? { text: sampleWindow(text, match.index, match.fullMatch.length), source: "pattern" } : undefined,
       );
     }
-    return result;
+    parts.push(text.slice(copied));
+    return parts.join("");
   }
 
   redactPlainText(text: string): string {
