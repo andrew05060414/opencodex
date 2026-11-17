@@ -87,6 +87,7 @@ import {
   type V2Status,
 } from "./models-shared";
 import { DiscoveryDependencyHint, EmptyProviderHint } from "./models-provider-hints";
+import { NativeModelDiscovery } from "./models-native-discovery";
 import PlaintextV2ConsentModal from "../components/PlaintextV2ConsentModal";
 import SubagentSurfaceWarningModal from "../components/SubagentSurfaceWarningModal";
 import { SUBAGENT_SURFACE_GUIDE_URL, confirmsPlaintextV2Mode, readSubagentSurfaceAdvisory, subagentSurfaceModes, type SubagentSurfaceMode } from "../subagent-surface";
@@ -1644,6 +1645,7 @@ export default function Models({ apiBase, restartEpoch = 0, connected = false, c
         {!isCollapsed && (
           <div className="models-provider-body">
             {nativeProviderGroup && <p className="muted text-label models-provider-hint">{t("models.nativeHint")}</p>}
+            {nativeProviderGroup && <NativeModelDiscovery apiBase={apiBase} onCatalogChanged={() => { void load(true); }} />}
             {rows.length === 0 && (
               <EmptyProviderHint liveModels={liveModels} discovery={discovery} showFailureBadge={false} />
             )}
