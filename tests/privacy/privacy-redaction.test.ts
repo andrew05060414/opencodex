@@ -704,8 +704,16 @@ describe("adversarial probe: bare vendor token shapes and password values the na
     for (const line of kept) expect(redactPlainText(line).body).toBe(line);
   });
 
-  it("still masks a $-leading password and a short password with a digit", () => {
-    for (const line of ["PASS" + "WORD=$ecret" + "Pw9", "pass" + "word: hunter22"]) {
+  it("still masks a $-leading password, a short password with a digit, and an assignment after a skipped flag", () => {
+    const punctuated = "P@ss" + "!w0rd99";
+    const lines = [
+      "PASS" + "WORD=$ecret" + "Pw9",
+      "pass" + "word: hunter22",
+      "pg_dump --no-password --pass" + "word=" + punctuated,
+      "mysql --password --db-pass" + "word=" + punctuated,
+      "set password DB_PASS" + "WORD=" + punctuated,
+    ];
+    for (const line of lines) {
       expect(redactPlainText(line).hits.length).toBe(1);
     }
   });
