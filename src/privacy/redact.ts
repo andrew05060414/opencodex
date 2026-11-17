@@ -269,6 +269,16 @@ const RULES: Rule[] = [
   { kind: "api_key", pattern: () => /\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g },
   // Hugging Face access tokens: hf_ + 34 letters, no digits.
   { kind: "api_key", pattern: () => /\bhf_[A-Za-z]{34}\b/g },
+  // Vendor token shapes that also appear bare (no credential-named variable next to them):
+  // GitLab, npm, SendGrid, Supabase, Stripe restricted/secret, Mailgun, Slack, Doppler.
+  { kind: "token", pattern: () => /\bglpat-[A-Za-z0-9_-]{20,}\b/g },
+  { kind: "token", pattern: () => /\bnpm_[A-Za-z0-9]{36}\b/g },
+  { kind: "api_key", pattern: () => /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b/g },
+  { kind: "token", pattern: () => /\bsbp_[0-9a-f]{40}\b/g },
+  { kind: "api_key", pattern: () => /\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}\b/g },
+  { kind: "api_key", pattern: () => /\bkey-[0-9a-f]{32}\b/g },
+  { kind: "token", pattern: () => /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g },
+  { kind: "token", pattern: () => /\bdp\.(?:st|ct|sa|scim|audit)\.(?:[a-z0-9_-]+\.)?[A-Za-z0-9]{40,}\b/g },
   // JWTs (three dot-separated base64url segments). Only the first `eyJ` of a base64url run starts a
   // match (a later one can only match a suffix of the same token), which keeps `eyJ-eyJ-...` linear.
   { kind: "token", pattern: () => /\beyJ(?<!\beyJ[A-Za-z0-9_-]*?eyJ)[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*\b/g },
@@ -299,6 +309,24 @@ const RULES: Rule[] = [
       if (!looksLikeSecretValue(secret, following, name)) return null;
       const quote = m[4] ?? "";
       return { fullMatch: m[0], secret, prefix: `${m[1]}${name}${m[3]}${quote}`, suffix: quote, kind: kindForFieldName(name) };
+    },
+  },
+  // Password-named values the generic rule's character set cannot see: punctuation
+  // (`DB_PASSWORD=P@ss...!`), a quoted passphrase with spaces, `os.environ["DB_PASSWORD"] = "..."`,
+  // escaped JSON (`\"password\": \"...\"`) and a `--password value` flag. Same linear name
+  // anchoring as the rule above; an unquoted value followed by `(` / `[` is a call, not a password.
+  {
+    kind: "password",
+    pattern: () => /(?<![A-Za-z0-9_-])((?=[A-Za-z0-9_-]*?(?:pass(?:word|wd)|pwd))[A-Za-z0-9_-]+)(\\?["']?\]?\s*[:=]\s*|\s+)(?:(\\?["'])([^"'\\\n]{6,})(\\?["'])|([^\s"'\\,;(){}[\]]{6,}))/gi,
+    extract: (m) => {
+      const name = m[1]!;
+      const separator = m[2]!;
+      if (!isPasswordLikeName(name)) return null;
+      if (!/[:=]/.test(separator) && !name.startsWith("-")) return null; // whitespace only after a --flag
+      const quoted = m[4] !== undefined;
+      const secret = quoted ? m[4]! : m[6]!;
+      if (!quoted && /[([]/.test((m.input ?? "").charAt(m.index + m[0].length))) return null;
+      return { fullMatch: m[0], secret, prefix: `${name}${separator}${m[3] ?? ""}`, suffix: m[5] ?? "" };
     },
   },
 ];
