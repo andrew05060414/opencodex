@@ -6,6 +6,7 @@ import {
   PrivacyRedactionError,
   PrivacyStatsStore,
   privacyOptionsFromConfig,
+  recordPrivacyHitsBestEffort,
   redactClientBody,
   redactPlainText,
   secretValueId,
@@ -511,6 +512,10 @@ describe("reveal mode (privacy.revealValues): originals kept in memory for the o
     const off = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/values"), { privacy: { enabled: true } }));
     expect(await off?.json()).toEqual({ reveal: false, values: [] });
 
+    globalPrivacyStats.record({
+      ts: Date.now(), hits: [{ kind: "api_key", count: 1 }], placeholderHashes: ["hx"],
+      samples: [{ kind: "api_key", value: secret, context: "ctx", source: "pattern" }],
+    });
     const config = { privacy: { enabled: true, revealValues: true } };
     const on = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/values?kind=api_key"), config));
     const body = await on?.json();
@@ -616,4 +621,40 @@ describe("redaction stays linear on adversarial input", () => {
       expect(performance.now() - started).toBeLessThan(1_000);
     });
   }
+});
+
+describe("reveal mode: originals are not cached and do not outlive revealValues", () => {
+  const seed = (secret: string) => {
+    globalPrivacyStats.reset();
+    globalPrivacyStats.record({
+      ts: Date.now(), hits: [{ kind: "api_key", count: 1 }], placeholderHashes: ["hx"],
+      samples: [{ kind: "api_key", value: secret, context: "ctx", source: "pattern" }],
+    });
+  };
+
+  it("GET /api/privacy/values is never cacheable, on or off", async () => {
+    seed(fakeOpenAiKey("no-store"));
+    const on = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/values"), { privacy: { revealValues: true } }));
+    expect(on?.headers.get("cache-control")).toBe("no-store");
+    const off = await handlePrivacyRoutes(ctxFor(new Request("http://localhost/api/privacy/values"), { privacy: {} }));
+    expect(off?.headers.get("cache-control")).toBe("no-store");
+    globalPrivacyStats.reset();
+  });
+
+  it("revealValues turned off outside PUT (config edit) drops the originals on the next stats or values read", async () => {
+    for (const path of ["/api/privacy/stats", "/api/privacy/values"]) {
+      seed(fakeOpenAiKey("edited-off"));
+      await handlePrivacyRoutes(ctxFor(new Request(`http://localhost${path}`), { privacy: { enabled: true } }));
+      expect(globalPrivacyStats.revealedValues("7d", 10)).toEqual([]);
+    }
+    globalPrivacyStats.reset();
+  });
+
+  it("a request redacted with reveal off drops originals retained while it was on", () => {
+    seed(fakeOpenAiKey("request-off"));
+    const outcome = redactClientBody({ input: fakeOpenAiKey("next") }, privacyOptionsFromConfig({ privacy: { enabled: true } } as never));
+    recordPrivacyHitsBestEffort({ hits: outcome.hits, placeholderHashes: outcome.placeholderHashes, samples: outcome.samples });
+    expect(globalPrivacyStats.revealedValues("7d", 10)).toEqual([]);
+    globalPrivacyStats.reset();
+  });
 });
