@@ -316,11 +316,12 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "PUT", path: "/api/storage/cleanup-policy", module: "server/management/logs-usage-routes", mutates: true },
   // server/management/privacy-routes
   { method: "GET", path: "/api/privacy/stats", module: "server/management/privacy-routes", mutates: false, exempt: { reason: "scrape-target", why: "Operator diagnostic endpoint exposing privacy redaction statistics for a monitoring/dashboard UI, in the same family as /api/metrics." } },
-  { method: "GET", path: "/api/privacy/config", module: "server/management/privacy-routes", mutates: false },
-  { method: "PUT", path: "/api/privacy/config", module: "server/management/privacy-routes", mutates: true },
+  { method: "GET", path: "/api/privacy/config", module: "server/management/privacy-routes", mutates: false, exempt: { reason: "gui-only", why: "Read by the dashboard Privacy page, which needs allowValues projected to ids; the CLI has no privacy verb and ocx config get privacy reads the same block on disk." } },
+  { method: "GET", path: "/api/privacy/values", module: "server/management/privacy-routes", mutates: false, exempt: { reason: "gui-only", why: "Reveal-mode review list for the dashboard Privacy page. It returns redacted originals, so no CLI verb prints them into terminal scrollback or shell logs." } },
+  { method: "PUT", path: "/api/privacy/config", module: "server/management/privacy-routes", mutates: true, exempt: { reason: "gui-only", why: "The dashboard Privacy page's enabled/revealValues toggles; the CLI has no privacy verb and ocx config set privacy.<field> edits the same block on disk." } },
   { method: "POST", path: "/api/privacy/test", module: "server/management/privacy-routes", mutates: false, exempt: { reason: "interactive-preview", why: "GUI-only 'try a value' tool for previewing redaction output; it deliberately records nothing and has no CLI workflow to drive." } },
-  { method: "POST", path: "/api/privacy/allow-values", module: "server/management/privacy-routes", mutates: true },
-  { method: "DELETE", path: "/api/privacy/allow-values/{id}", module: "server/management/privacy-routes", mutates: true, mechanism: "regex" },
+  { method: "POST", path: "/api/privacy/allow-values", module: "server/management/privacy-routes", mutates: true, exempt: { reason: "gui-only", why: "The dashboard Privacy page's 'never mask this value' action; the CLI has no privacy verb and ocx config set privacy.allowValues edits the same list on disk." } },
+  { method: "DELETE", path: "/api/privacy/allow-values/{id}", module: "server/management/privacy-routes", mutates: true, mechanism: "regex", exempt: { reason: "gui-only", why: "Removes an allowlisted value by the hash id the dashboard Privacy page lists; the CLI has no privacy verb and ocx config set privacy.allowValues edits the same list on disk." } },
   // server/management/metrics-routes
   { method: "GET", path: "/api/metrics", module: "server/management/metrics-routes", mutates: false, exempt: { reason: "scrape-target", why: "This machine scrape target exposes authenticated text exposition for monitoring systems; a CLI JSON verb would be a different contract." } },
   // server/management/model-routes
