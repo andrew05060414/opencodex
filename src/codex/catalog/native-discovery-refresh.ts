@@ -6,8 +6,13 @@ export interface NativeDiscoveryRefreshDeps {
   /** Publishes the catalog after discovery; the management route passes its convergence. */
   converge: () => Promise<unknown>;
   /** Defaults to the authenticated roster read the hourly catalog auto-refresh runs. */
-  discover?: (config: OcxConfig) => Promise<CodexNativeRosterDiscoveryOutcome>;
+  discover?: (config: OcxConfig, signal: AbortSignal) => Promise<CodexNativeRosterDiscoveryOutcome>;
+  /** The caller's request signal; a disconnected client stops the roster read. */
+  signal?: AbortSignal;
 }
+
+/** Same bound the auto-refresh tick gives this read: it tries each Codex account in turn. */
+const NATIVE_DISCOVERY_WAIT_MS = 15_000;
 
 /**
  * Operator-triggered native GPT discovery. The hourly catalog auto-refresh is otherwise the only
@@ -16,9 +21,10 @@ export interface NativeDiscoveryRefreshDeps {
  */
 export async function refreshNativeModelDiscovery(config: OcxConfig, deps: NativeDiscoveryRefreshDeps) {
   const before = new Set(discoveredNativeModelArrivals().map(row => row.id));
-  const discover = deps.discover
-    ?? (async (current: OcxConfig) => (await import("../model-entitlements")).discoverCodexNativeRoster(current));
-  const outcome = await discover(config).catch(() => "unavailable" as const);
+  const discover = deps.discover ?? (async (current: OcxConfig, signal: AbortSignal) =>
+    (await import("../model-entitlements")).discoverCodexNativeRoster(current, { signal }));
+  const signal = AbortSignal.any([AbortSignal.timeout(NATIVE_DISCOVERY_WAIT_MS), ...(deps.signal ? [deps.signal] : [])]);
+  const outcome = await discover(config, signal).catch(() => "unavailable" as const);
   const catalogRefresh = await deps.converge();
   const disabled = new Set(config.disabledModels ?? []);
   const recentArrivals = discoveredNativeModelArrivals()
