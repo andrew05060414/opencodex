@@ -3,12 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireAccountLease, type AccountLease } from "../../../src/oauth/kiro-account-load";
+import { clearPoolRotationState } from "../../../src/oauth/pool-kernel";
 import { getAccountSet, saveCredential, setActiveAccount } from "../../../src/oauth/store";
 import type { ProviderAccount } from "../../../src/oauth/types";
 import type { OcxConfig, OcxProviderConfig } from "../../../src/types";
 import {
-  clearGenericFailoverHealth, preferredInitialAccount, refusalAwareInitialKiroAccount,
-  rotateGenericOAuthAccountOn429,
+  clearGenericFailoverHealth, noteGenericPoolSelection, preferredInitialAccount,
+  refusalAwareInitialKiroAccount, rotateGenericOAuthAccountOn429,
 } from "../../../src/oauth/generic-account-failover";
 import { awaitKiroModelRefreshForTests, clearKiroAccountModels,
   refreshKiroAccountModelsDetached } from "../../../src/providers/kiro-model-catalog";
@@ -26,6 +27,7 @@ function setup(): void {
   process.env.OPENCODEX_KIRO_MODEL_DISCOVERY = "1";
   clearKiroAccountModels();
   clearGenericFailoverHealth("kiro");
+  clearPoolRotationState();
 }
 
 afterEach(() => {
@@ -33,6 +35,7 @@ afterEach(() => {
   leases = [];
   clearKiroAccountModels();
   clearGenericFailoverHealth("kiro");
+  clearPoolRotationState();
   if (originalHome === undefined) delete process.env.OPENCODEX_HOME;
   else process.env.OPENCODEX_HOME = originalHome;
   if (originalSwitch === undefined) delete process.env.OPENCODEX_KIRO_MODEL_DISCOVERY;
@@ -138,4 +141,50 @@ test("explicit proactive off keeps the healthy active account despite model evid
     Date.now(), "wanted")).toBeNull();
   expect(refusalAwareInitialKiroAccount(config("quota", undefined, false), a.id,
     Date.now(), "wanted")).toBeNull();
+});
+
+/**
+ * One admission the way the transport does it: propose, take the lease, then commit the pick.
+ * The lease is held while the selection is noted, so the admitted account counts toward its own cap.
+ */
+async function admitRoundRobin(cfg: OcxConfig, model: string): Promise<string> {
+  const active = getAccountSet("kiro")!.activeAccountId!;
+  const admitted = preferredInitialAccount(cfg, "kiro", Date.now(), model) ?? active;
+  const lease = await acquireAccountLease("kiro", admitted, {
+    maxConcurrentPerAccount: cfg.providers.kiro!.oauthAccountFailover!.maxConcurrentPerAccount });
+  expect(lease).not.toBeNull();
+  noteGenericPoolSelection(cfg, "kiro", admitted, model);
+  await setActiveAccount("kiro", admitted);
+  lease!.release();
+  return admitted;
+}
+
+test("round-robin keeps rotating under a per-account cap when the model is positively listed", async () => {
+  setup();
+  const a = await add("a");
+  const b = await add("b");
+  const c = await add("c");
+  await setActiveAccount("kiro", a.id);
+  for (const account of [a, b, c]) await prime(account, ["wanted"]);
+  const cfg = config("round-robin", 1);
+  cfg.providers.kiro!.oauthAccountFailover!.stickyLimit = 1;
+  const order: string[] = [];
+  for (let turn = 0; turn < 6; turn += 1) order.push(await admitRoundRobin(cfg, "wanted"));
+  expect(order.slice(0, 3).sort()).toEqual([a.id, b.id, c.id].sort());
+  expect(order.slice(3)).toEqual(order.slice(0, 3));
+});
+
+test("round-robin rotation without a cap is unchanged by the same flow", async () => {
+  setup();
+  const a = await add("a");
+  const b = await add("b");
+  const c = await add("c");
+  await setActiveAccount("kiro", a.id);
+  for (const account of [a, b, c]) await prime(account, ["wanted"]);
+  const cfg = config("round-robin");
+  cfg.providers.kiro!.oauthAccountFailover!.stickyLimit = 1;
+  const order: string[] = [];
+  for (let turn = 0; turn < 6; turn += 1) order.push(await admitRoundRobin(cfg, "wanted"));
+  expect(order.slice(0, 3).sort()).toEqual([a.id, b.id, c.id].sort());
+  expect(order.slice(3)).toEqual(order.slice(0, 3));
 });
