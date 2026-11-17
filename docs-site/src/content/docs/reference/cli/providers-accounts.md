@@ -1109,7 +1109,7 @@ The table shows each account’s plan, remaining quota by pool, reset times, and
 If a quota refresh fails, the table keeps the cached quota and shows the failure and read times.
 A batch runs up to four checks at a time. Wait for the current check to finish before starting another.
 
-### `ocx models discover <provider> [--json]`
+### `ocx models discover <provider>|--native [--json]`
 
 Runs the provider's live model discovery now instead of waiting for the next scheduled refresh, and
 prints how many live models it saw and which ones are new. It is the same action as **Discover now**
@@ -1118,6 +1118,11 @@ for that provider, the action reports it is in progress (HTTP 409, `discovery_in
 contacting the provider. For 30 seconds after a failed fetch, the action reports that failure
 and keeps the last good list without contacting the provider again. The separate Codex catalog
 sync can pick up the refreshed list. Providers without live discovery report that discovery is off.
+
+`ocx models discover --native [--json]` does the same for native GPT models, which come from the
+ChatGPT/Codex account roster rather than a routed provider. It runs the roster read the hourly
+catalog auto-refresh runs, records GPT models this build does not ship yet, republishes the
+catalog, and lists the new ones. Running Codex sessions need a restart to see them.
 
 ### `ocx account auto-switch <provider> <on|off|status|threshold <0-100>> [--json]`
 
