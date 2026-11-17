@@ -525,3 +525,95 @@ describe("reveal mode (privacy.revealValues): originals kept in memory for the o
     globalPrivacyStats.reset();
   });
 });
+
+describe("name rule: word-like credentials are still masked, code identifiers are not", () => {
+  // Built at runtime: a literal would trip the gitleaks pre-commit hook. Every line here leaked
+  // through the identifier exemption before it was narrowed.
+  const hex = (n: number) => "0123456789abcdef".repeat(4).slice(0, n);
+  const leakLines = [
+    "SUPABASE_ACCESS_" + "TOKEN=sbp_" + hex(40),
+    "STRIPE_SECRET_" + "KEY=rk_live_" + hex(10) + "ghijklmnopqrst",
+    "OPENAI_API_" + "KEY=proj_" + "abcdefghijklmnop",
+    "MAILGUN_API_" + "KEY=key-" + hex(32),
+    "SLACK_" + "TOKEN=xoxb-" + "123456789012-1234567890123-" + "abcdefghijklmnopqrstuvwx",
+    "DOPPLER_" + "TOKEN=dp.st.prd." + "aB3dEfGhIjKlMnOpQrStUvWxYz" + hex(10) + "AbCd",
+    "secret_" + "key = abc." + "DefGhiJklMnoPqrStu",
+    "HF_" + "TOKEN=hf_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgH",
+    "client_" + "secret=" + "AbCdEfGhIjKlMnOpQrStUvWx",
+    "api_" + "key=" + "AbCdEfGhIjKlMnOpQrStUvWx",
+    "DB_" + "PASSWORD=" + "CorrectHorseBatteryStaple",
+    "DB_" + "PASSWORD: " + "letmeinplease",
+    "DB_" + "PASSWORD=" + "correct-horse-battery-staple",
+    "DB_" + 'PASSWORD = "' + 'SuperSecretValue"',
+    "ADMIN_" + "PASSWORD=" + "HUNTER_TWO_X",
+    "api_" + "key=" + "Zx9QwErTy7Ui[0]",
+    "pass" + "word=" + "Tr0ub4dor99xyz",
+    "tok" + "en: " + "ghx9a8b7c6d5e4f3",
+    "sec" + "ret=" + "Zq81mVb03kLp",
+    "config.pass" + "word=" + "Tr0ub4dor99xyz",
+    "refresh_" + "tokens: " + "98765432109876543210",
+    "api_" + "key=live_" + hex(32),
+  ];
+  for (const line of leakLines) {
+    it(`masks ${JSON.stringify(line.slice(0, 24))}...`, () => {
+      const outcome = redactPlainText(line);
+      expect(outcome.hits.length).toBe(1);
+      expect(outcome.body).not.toBe(line);
+    });
+  }
+
+  it("masks a bare Hugging Face token by shape", () => {
+    const token = "hf_" + "aBcDeFgHiJkLmNoPqRsTuVwXyZ" + "aBcDeFgH";
+    expect(redactPlainText(`see ${token} here`).hits).toEqual([{ kind: "api_key", count: 1 }]);
+  });
+
+  it("still scans the value of prompt_cache_key for secret shapes and embedded assignments", () => {
+    const ghp = "ghp_" + "AbCdEfGhIjKlMnOpQrStUvWxYz" + "0123456789";
+    for (const body of [
+      { prompt_cache_key: fakeOpenAiKey("pck") },
+      { input: [{ type: "function_call_output", output: JSON.stringify({ prompt_cache_key: ghp }) }] },
+      { prompt_cache_key: "x pass" + "word=" + "Tr0ub4dor99xyz" },
+    ]) {
+      expect(JSON.stringify(redactClientBody(body).body)).toContain("{{SECRET_");
+    }
+  });
+
+  const keptLines = [
+    "token = getUserToken",
+    "max_tokens: MAX_TOKENS_DEFAULT",
+    "api_key = user.session.key",
+    "keyFn = config.getApiKeyFromEnvironment",
+    "cache_key = self._build_cache_key(request)",
+    '"input_tokens": 1234, "output_tokens": 56',
+    "PWD=/home/andrew/code",
+    "OLDPWD=/home/andrew/code",
+  ];
+  for (const line of keptLines) {
+    it(`leaves ${JSON.stringify(line)} alone`, () => {
+      expect(redactPlainText(line).body).toBe(line);
+    });
+  }
+});
+
+describe("redaction stays linear on adversarial input", () => {
+  // Each of these took seconds (the first four over five) on 50 KB before the rules were
+  // made linear; they finish in milliseconds now, so the bound is only a tripwire.
+  const N = 50_000;
+  const inputs: Record<string, string> = {
+    "keyword run": "key".repeat(N / 3),
+    "keyword run with separators": "pwd_".repeat(N / 4) + "key-".repeat(N / 4),
+    "letter run": "a".repeat(N),
+    "scheme then letters": "a://" + "b".repeat(N),
+    "repeated JWT starts": "eyJ-".repeat(N / 4),
+    "PEM BEGIN without END": "-----BEGIN PRIVATE KEY-----".repeat(N / 27),
+    "many distinct assignments": Array.from({ length: N / 16 }, (_, i) => `key=Ab${String(i).padStart(6, "0")}x `).join(""),
+  };
+  for (const [label, text] of Object.entries(inputs)) {
+    it(`${label} (${text.length} chars) finishes quickly`, () => {
+      const started = performance.now();
+      redactPlainText(text, { redactEmails: true });
+      redactClientBody({ api_key: text, input: text });
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+  }
+});
