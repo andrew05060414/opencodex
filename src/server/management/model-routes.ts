@@ -315,7 +315,7 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
     // Native GPT models are not a routed provider: they come from the authenticated Codex roster.
     if (body?.native === true) {
       const { refreshNativeModelDiscovery } = await import("../../codex/catalog/native-discovery-refresh");
-      return jsonResponse(await refreshNativeModelDiscovery(config, { converge: convergeCodexCatalog }));
+      return jsonResponse(await refreshNativeModelDiscovery(config, { converge: convergeCodexCatalog, signal: req.signal }));
     }
     const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
     if (!provider || !hasOwnProvider(config.providers, provider)) return jsonResponse({ error: "unknown provider" }, 404);
