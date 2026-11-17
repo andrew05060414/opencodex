@@ -385,4 +385,16 @@ describe("operator-triggered native discovery", () => {
     expect(result.newArrivals).toEqual([]);
     expect(converged).toBe(1);
   });
+
+  test("the roster read gets a bounded signal that follows the caller's", async () => {
+    const caller = new AbortController();
+    let seen: AbortSignal | undefined;
+    await refreshNativeModelDiscovery({} as OcxConfig, {
+      converge: async () => null, signal: caller.signal,
+      discover: async (_config, signal) => { seen = signal; return "not-modified"; },
+    });
+    expect(seen?.aborted).toBe(false);
+    caller.abort();
+    expect(seen?.aborted).toBe(true);
+  });
 });
