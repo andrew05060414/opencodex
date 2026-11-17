@@ -24,6 +24,7 @@ import {
   resetConfiguredNativeOpenAiModelsForTests,
   setConfiguredNativeOpenAiModels,
 } from "../../src/codex/catalog/native-models";
+import { refreshNativeModelDiscovery } from "../../src/codex/catalog/native-discovery-refresh";
 import {
   nativeOpenAiContextTier,
   nativeOpenAiContextWindow,
@@ -351,5 +352,37 @@ describe("discovery store under concurrency and repeated fetches", () => {
     await discoverCodexNativeRoster({}, { credentials: [credential], fetcher, now: start });
     await discoverCodexNativeRoster({}, { credentials: [credential], fetcher, now: start + 25 * 60 * 60 * 1000 });
     expect(seen).toEqual([null, null]);
+  });
+});
+
+describe("operator-triggered native discovery", () => {
+  test("reports a model the roster read recorded as new, converges, and later reports it as known", async () => {
+    let converged = 0;
+    const converge = async () => { converged++; return { changed: true }; };
+    const first = await refreshNativeModelDiscovery({} as OcxConfig, {
+      converge,
+      discover: async () => { recordDiscoveredNativeModels([row()], CODEX_ROSTER_DISCOVERY_CLIENT_VERSION); return "recorded"; },
+    });
+    expect(first).toMatchObject({ ok: true, native: true, discovery: { status: "ok" }, catalogRefresh: { changed: true } });
+    expect(first.newArrivals.map(entry => [entry.id, entry.state])).toEqual([[FUTURE, "enabled"]]);
+    expect(converged).toBe(1);
+
+    const again = await refreshNativeModelDiscovery({ disabledModels: [FUTURE] } as OcxConfig, {
+      converge, discover: async () => "not-modified",
+    });
+    expect(again.discovery).toEqual({ status: "ok", reason: "not_modified" });
+    expect(again.newArrivals).toEqual([]);
+    expect(again.recentArrivals.map(entry => [entry.id, entry.state])).toEqual([[FUTURE, "disabled"]]);
+  });
+
+  test("an unavailable roster reports failure and still publishes the existing catalog", async () => {
+    let converged = 0;
+    const result = await refreshNativeModelDiscovery({} as OcxConfig, {
+      converge: async () => { converged++; return null; },
+      discover: async () => { throw new Error("offline"); },
+    });
+    expect(result.discovery).toEqual({ status: "failed", reason: "roster_unavailable" });
+    expect(result.newArrivals).toEqual([]);
+    expect(converged).toBe(1);
   });
 });
