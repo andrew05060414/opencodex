@@ -184,9 +184,15 @@ export const PROVIDER_MODEL_CAPABILITIES: readonly Capability[] = [
   },
   {
     command: ["models", "discover"], summary: "Re-fetch one provider's live model list now and report new arrivals.",
-    usage: "ocx models discover <provider> [--json]", routes: [{ method: "POST", path: "/api/model-discovery/refresh" }], mutates: true, json: "payload",
-    flags: [{ name: "--json", value: "boolean", summary: "Emit discovery status, newArrivals and recentArrivals." }],
-    details: ["Clears the provider's model cache and runs catalog convergence; new models follow the configured new-model policy. Providers with liveModels off report applicable:false."],
+    usage: "ocx models discover <provider>|--native [--json]", routes: [{ method: "POST", path: "/api/model-discovery/refresh" }], mutates: true, json: "payload",
+    flags: [
+      { name: "--native", value: "boolean", summary: "Read the ChatGPT/Codex roster now for new native GPT models instead of a routed provider." },
+      { name: "--json", value: "boolean", summary: "Emit discovery status, newArrivals and recentArrivals." },
+    ],
+    details: [
+      "Clears the provider's model cache and runs catalog convergence; new models follow the configured new-model policy. Providers with liveModels off report applicable:false.",
+      "--native runs the authenticated roster read the hourly catalog auto-refresh runs, records unpinned GPT models, and converges the catalog; running Codex sessions need a restart to see them.",
+    ],
   },
   {
     command: ["models", "context", "status"], summary: "Read routed-provider context caps.",

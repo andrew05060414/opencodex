@@ -46,7 +46,7 @@ const USAGE = `Usage:
   ocx models preset apply <provider> [--all] [--json]
   ocx models new-policy [on|off|admit] [--provider <name>] [--json]
   ocx models new-arrivals [--json]
-  ocx models discover <provider> [--json]
+  ocx models discover <provider>|--native [--json]
 ${MODELS_CONTEXT_USAGE}
   ocx models shadow <status|set> [model|-] [--enabled <on|off>] [--json]
   ocx models auto-review <status|set> [model|-] [--enabled <on|off>] [--json]
@@ -539,14 +539,21 @@ interface DiscoverResult {
 
 async function discover(argv: string[], deps: RuntimeApiDeps): Promise<number | void> {
   const args = [...argv]; const wantsJson = takeFlag(args, "--json");
-  const provider = args.shift()?.trim();
-  if (!provider) throw new CliUsageError("provider is required", USAGE);
+  // --native reads the ChatGPT/Codex roster for new GPT models; it takes no provider.
+  const native = takeFlag(args, "--native");
+  const provider = native ? "native GPT" : args.shift()?.trim();
+  if (!provider) throw new CliUsageError("provider or --native is required", USAGE);
   rejectArgs(args, USAGE);
   const result = await runtimeRequest<DiscoverResult>("/api/model-discovery/refresh", {
-    method: "POST", body: JSON.stringify({ provider }),
+    method: "POST", body: JSON.stringify(native ? { native: true } : { provider }),
   }, deps);
   const lines: string[] = [];
-  if (result.applicable === false) lines.push(`${provider}: live discovery is off for this provider (${result.reason ?? "static catalog"})`);
+  if (native) {
+    const status = result.discovery?.status === "failed" ? `failed (${result.discovery.reason ?? "unknown"})` : result.discovery?.status ?? "unknown";
+    lines.push(`${provider}: discovery ${status}; ${result.newArrivals?.length ?? 0} new`);
+    for (const row of result.newArrivals ?? []) lines.push(`  new  ${row.id}  [${row.state}]  ${row.at}`);
+    if (result.newArrivals?.length) lines.push("Restart Codex sessions to load the new models.");
+  } else if (result.applicable === false) lines.push(`${provider}: live discovery is off for this provider (${result.reason ?? "static catalog"})`);
   else {
     const status = result.discovery?.status === "failed"
       ? `failed (${result.discovery.reason ?? "unknown"}${result.discovery.httpStatus ? ` ${result.discovery.httpStatus}` : ""})`

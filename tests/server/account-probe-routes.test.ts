@@ -300,4 +300,23 @@ describe("ocx models discover", () => {
     expect(await discover({ ...failed, discovery: { status: "ok" }, liveModelCount: 3 })).toBe(0);
     expect(await discover({ ok: false, provider: "live", applicable: false, reason: "static_catalog" })).toBe(0);
   });
+
+  test("--native asks the server for the native GPT roster instead of a provider", async () => {
+    const bodies: unknown[] = [];
+    const log = console.log;
+    console.log = () => {};
+    try {
+      const exit = await handleModelsRuntimeCommand("discover", ["--native"], {
+        baseUrl: "http://127.0.0.1:1",
+        fetchImpl: async (_url: unknown, init?: RequestInit) => {
+          bodies.push(JSON.parse(String(init?.body)));
+          return Response.json({ ok: true, provider: "native", native: true, discovery: { status: "failed", reason: "roster_unavailable" }, newArrivals: [], recentArrivals: [] });
+        },
+      });
+      expect(exit).toBe(1);
+    } finally {
+      console.log = log;
+    }
+    expect(bodies).toEqual([{ native: true }]);
+  });
 });

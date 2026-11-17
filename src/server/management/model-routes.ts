@@ -307,8 +307,13 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
   // existing new-model policy. Reports only the arrivals this call recorded as `newArrivals`,
   // in the same `state` projection GET /api/model-discovery uses.
   if (url.pathname === "/api/model-discovery/refresh" && req.method === "POST") {
-    let body: { provider?: unknown };
+    let body: { provider?: unknown; native?: unknown };
     try { body = await readManagementJsonBody(req); } catch (error) { rethrowManagementBodyTooLarge(error); return jsonResponse({ error: "invalid JSON body" }, 400); }
+    // Native GPT models are not a routed provider: they come from the authenticated Codex roster.
+    if (body?.native === true) {
+      const { refreshNativeModelDiscovery } = await import("../../codex/catalog/native-discovery-refresh");
+      return jsonResponse(await refreshNativeModelDiscovery(config, { converge: convergeCodexCatalog }));
+    }
     const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
     if (!provider || !hasOwnProvider(config.providers, provider)) return jsonResponse({ error: "unknown provider" }, 404);
     if (config.providers[provider]!.liveModels === false) {
