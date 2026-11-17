@@ -57,9 +57,6 @@ function isAlreadyPlaceholder(value: string): boolean {
 const SKIPPED_KEYS = new Set([
   // Structural identifiers -- never secrets, and rewriting them breaks protocol dispatch.
   "id", "call_id", "tool_use_id", "name", "model", "type", "role",
-  // Client-chosen opaque cache/session identifier (Codex sends a UUID); its field name says "key",
-  // but it is not a credential and masking it only inflates the redaction counts.
-  "prompt_cache_key",
   // Protocol signatures / encrypted payloads -- must round-trip byte-for-byte.
   "signature", "thoughtsignature", "thought_signature", "encrypted_content", "encryptedcontent",
   // Base64 / data-URL blobs for images and files.
@@ -72,6 +69,18 @@ function isSkippedKey(key: string): boolean {
 
 /** Does an object KEY name itself look like a credential variable name? */
 const SENSITIVE_NAME_PATTERN = /(?:key|secret|token|password|passwd|pwd)/i;
+
+/**
+ * Field names that contain "key" but do not name a credential, so the by-NAME field rule leaves
+ * their value alone. The value is still scanned like any other string: a secret SHAPE (sk-, ghp_,
+ * JWT ...) or an embedded `password=...` inside it is masked. `prompt_cache_key` is the client's
+ * opaque cache id (Codex sends a UUID); masking it by name only inflated the redaction counts.
+ */
+const NOT_CREDENTIAL_NAMED_KEYS = new Set(["prompt_cache_key"]);
+
+function isCredentialNamedKey(key: string): boolean {
+  return SENSITIVE_NAME_PATTERN.test(key) && !NOT_CREDENTIAL_NAMED_KEYS.has(key.toLowerCase());
+}
 
 function kindForFieldName(key: string): RedactionKind {
   const lower = key.toLowerCase();
@@ -136,29 +145,85 @@ interface Rule {
 }
 
 /**
- * Is the VALUE half of a `name = value` match plausibly a credential, rather than a code
- * identifier that merely sits next to a name containing key/token/secret/password? Real
- * transcripts of source files, diffs and tool output hit the name rule constantly with
- * `api_key = get_api_key(...)`, `foreign_keys="TranslationEdition"`, `STORAGE_KEY = "pxread-x"`,
- * `max_output_tokens=MAX_OUTPUT`, `confidence: Optional[int]`; masking those only corrupts the code
- * the model is reading. Values with a recognisable secret SHAPE (sk-, ghp_, JWT, Bearer ...) never get
- * here: they have their own rules above.
- *
- * A value is kept as a secret when it is not shaped like an identifier:
- *  - not followed by `(` or `[` (a call or a generic/index expression);
- *  - not snake_case / SCREAMING_SNAKE / kebab-case / a dotted path;
- *  - with a digit: accepted (random tokens almost always carry digits);
- *  - without a digit: only a long (>=20) single-case run of letters, so camelCase / PascalCase
- *    names and short words are left alone.
+ * `cache_read_tokens: 32559727`, `total_tokens=1200000`: a usage counter, not a credential. Only a
+ * plural `*tokens` name with a count below a trillion qualifies, so a long numeric credential
+ * (`refresh_tokens: 98765432109876543210`) is still masked.
  */
-export function looksLikeSecretValue(value: string, following: string): boolean {
-  if (following.startsWith("(") || following.startsWith("[")) return false;
-  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(value)) return false; // snake_case
-  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value)) return false; // SCREAMING_SNAKE (env var names)
-  if (/^[a-z]+(?:-[a-z0-9]+)+$/i.test(value) && !/[A-Z].*\d|\d.*[A-Z]/.test(value)) return false; // kebab-case
-  if (/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/.test(value)) return false; // dotted path
+function isUsageCounter(name: string, value: string): boolean {
+  return /tokens$/i.test(name) && /^\d{1,12}$/.test(value);
+}
+
+/** Case / digit humps of a separator-free run: `getHTTPResponse2` -> get, HTTP, Response, 2. */
+const HUMP_PATTERN = /[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g;
+
+/** A same-case letter run this long is not a word: `abcdefghijklmnop`, a hex body, a token tail. */
+const MAX_WORD_HUMP_LEN = 16;
+/** A digit run longer than this is not a version or a bit width (`v2`, `sha256`, `x86`). */
+const MAX_WORD_DIGIT_RUN = 4;
+
+/**
+ * Does one separator-free run read as random rather than as a word of a code identifier?
+ * Words carry at most one short digit run, no same-case run of 16+ letters, and camelCase humps
+ * of three or more letters on average; random tokens break at least one of those
+ * (`a1b2c3d4`, `0123456789abcdef...`, `abcdefghijklmnop`, `aBcDeFgHiJkL...`).
+ */
+function looksRandom(word: string): boolean {
+  const humps = word.match(HUMP_PATTERN) ?? [];
+  const digitRuns = humps.filter((hump) => /^\d/.test(hump));
+  if (digitRuns.length > 1 || digitRuns.some((run) => run.length > MAX_WORD_DIGIT_RUN)) return true;
+  const letterHumps = humps.filter((hump) => !/^\d/.test(hump));
+  if (letterHumps.some((hump) => hump.length >= MAX_WORD_HUMP_LEN)) return true;
+  if (word.length < 8 || letterHumps.length < 2) return false;
+  const letters = letterHumps.reduce((sum, hump) => sum + hump.length, 0);
+  return letters / letterHumps.length < 3;
+}
+
+/** The identifier conventions a non-secret value may follow (each word is checked separately). */
+const IDENTIFIER_CONVENTIONS: readonly RegExp[] = [
+  /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/, // snake_case
+  /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/, // SCREAMING_SNAKE (env var names)
+  /^(?!.*(?:[A-Z].*\d|\d.*[A-Z]))[A-Za-z]+(?:-[A-Za-z0-9]+)+$/, // kebab-case, not upper case mixed with digits
+  /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/, // dotted path
+];
+
+/**
+ * Names whose value is a password or secret by definition, so no identifier exemption applies:
+ * `DB_PASSWORD=correct-horse-battery-staple` and `client_secret=AbCdEf...` are the credential
+ * itself however word-like they look. `PWD` / `OLDPWD` are the shell's working directory, not a
+ * password, and are classified like any other name.
+ */
+function isPasswordLikeName(name: string): boolean {
+  if (/^(?:old)?pwd$/i.test(name)) return false;
+  return /pass(?:word|wd)|pwd|secret/i.test(name);
+}
+
+/**
+ * Is the VALUE half of a `name = value` match plausibly a credential, rather than a code
+ * identifier that merely sits next to a name containing key/token? Real transcripts of source
+ * files, diffs and tool output hit the name rule constantly with `api_key = get_api_key(...)`,
+ * `foreign_keys="TranslationEdition"`, `STORAGE_KEY = "pxread-x"`, `max_output_tokens=MAX_OUTPUT`,
+ * `confidence: Optional[int]`; masking those only corrupts the code the model is reading. Values
+ * with a recognisable secret SHAPE (sk-, ghp_, hf_, JWT, Bearer ...) never get here: they have
+ * their own rules above.
+ *
+ * Over-masking is far cheaper than a leak, so the identifier exemption is narrow:
+ *  - never for a password/passwd/pwd/secret name (see `isPasswordLikeName`);
+ *  - only when EVERY word (split on `_ . -`) reads as a word (see `looksRandom`), so `sbp_<hex>`,
+ *    `key-<hex>`, `dp.st.prd.<token>`, `proj_<16 letters>` and `Zx9QwErTy7Ui[0]` stay secrets;
+ *  - and then only for a call / index (`get_api_key(`, `Optional[`) or a snake / SCREAMING /
+ *    kebab / dotted shape.
+ * Otherwise a value with a digit is a secret, and a value without one is a secret when a letter
+ * run in it reads as random.
+ */
+export function looksLikeSecretValue(value: string, following: string, name = ""): boolean {
+  if (isPasswordLikeName(name)) return true;
+  const words = value.split(/[_.-]+/).filter(Boolean);
+  if (words.length > 0 && !words.some(looksRandom)) {
+    if (following.startsWith("(") || following.startsWith("[")) return false;
+    if (IDENTIFIER_CONVENTIONS.some((convention) => convention.test(value))) return false;
+  }
   if (/\d/.test(value)) return true;
-  return value.length >= 20 && (/^[a-z]+$/.test(value) || /^[A-Z]+$/.test(value));
+  return value.split(/[^A-Za-z]+/).some(looksRandom);
 }
 
 const RULES: Rule[] = [
@@ -182,6 +247,8 @@ const RULES: Rule[] = [
   { kind: "api_key", pattern: () => /\bAKIA[0-9A-Z]{16}\b/g },
   // GitHub tokens (classic, fine-grained, oauth).
   { kind: "api_key", pattern: () => /\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g },
+  // Hugging Face access tokens: hf_ + 34 letters, no digits.
+  { kind: "api_key", pattern: () => /\bhf_[A-Za-z]{34}\b/g },
   // JWTs (three dot-separated base64url segments).
   { kind: "token", pattern: () => /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*\b/g },
   // Bearer <token>.
@@ -193,23 +260,19 @@ const RULES: Rule[] = [
   // Generic KEY=VALUE / "key": "value" credential assignment, matched by variable NAME rather
   // than value shape ("宁可误报，不要漏报"): any name containing key/secret/token/password/passwd/pwd
   // assigned a sufficiently long value is treated as a secret, in free text, query strings, JSON,
-  // and .env-style lines (`XXX_KEY=...`, `XXX_SECRET=...`, `XXX_TOKEN=...`) alike.
+  // and .env-style lines (`XXX_KEY=...`, `XXX_SECRET=...`, `XXX_TOKEN=...`) alike. The name may
+  // also BE the keyword (`password=...`, `token: ...`, `config.secret=...`).
   {
     kind: "other",
-    pattern: () => /(["']?[A-Za-z][A-Za-z0-9_-]*?(?:key|secret|token|password|passwd|pwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([A-Za-z0-9+/_.~-]{8,})\2/gi,
+    pattern: () => /(["']?[A-Za-z0-9_-]*?(?:key|secret|token|password|passwd|pwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([A-Za-z0-9+/_.~-]{8,})\2/gi,
     extract: (m) => {
       const secret = m[3]!;
-      // `cache_read_tokens: 32559727`, `total_tokens=1200000`: a usage counter, not a credential.
-      if (/^\d+$/.test(secret) && /tokens["']?\s*[:=]\s*$/i.test(m[1]!)) return null;
+      // Classify by the NAME alone: the full match also holds the value.
+      const name = m[1]!.replace(/["'\s:=]/g, "");
+      if (isUsageCounter(name, secret)) return null;
       const following = (m.input ?? "").slice(m.index + m[0].length, m.index + m[0].length + 1);
-      if (!looksLikeSecretValue(secret, following)) return null;
-      const label = m[0]!.toLowerCase();
-      const kind: RedactionKind = label.includes("password") || label.includes("passwd") || label.includes("pwd")
-        ? "password"
-        : label.includes("token")
-          ? "token"
-          : "api_key";
-      return { fullMatch: m[0], secret, prefix: `${m[1]}${m[2] ?? ""}`, suffix: m[2] ?? "", kind };
+      if (!looksLikeSecretValue(secret, following, name)) return null;
+      return { fullMatch: m[0], secret, prefix: `${m[1]}${m[2] ?? ""}`, suffix: m[2] ?? "", kind: kindForFieldName(name) };
     },
   },
 ];
@@ -393,7 +456,7 @@ class RedactionSession {
       for (const [key, v] of Object.entries(obj)) {
         if (isSkippedKey(key)) { result[key] = v; continue; }
         if (inlineMedia && key.toLowerCase() === "data") { result[key] = v; continue; }
-        if (typeof v === "string" && SENSITIVE_NAME_PATTERN.test(key)) {
+        if (typeof v === "string" && isCredentialNamedKey(key)) {
           result[key] = this.redactNamedValue(v, kindForFieldName(key), key);
           continue;
         }
