@@ -1122,7 +1122,8 @@ sync can pick up the refreshed list. Providers without live discovery report tha
 `ocx models discover --native [--json]` does the same for native GPT models, which come from the
 ChatGPT/Codex account roster rather than a routed provider. It runs the roster read the hourly
 catalog auto-refresh runs, records GPT models this build does not ship yet, republishes the
-catalog, and lists the new ones. Running Codex sessions need a restart to see them.
+catalog, and lists the new ones. Running Codex sessions need a restart to see them. The
+dashboard's **Check for new GPT models** button on the Models page's native GPT card does the same.
 
 ### `ocx account auto-switch <provider> <on|off|status|threshold <0-100>> [--json]`
 
