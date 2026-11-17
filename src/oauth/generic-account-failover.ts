@@ -279,9 +279,13 @@ function accountListsModel(providerName: string, accountId: string, model: strin
  * never returned, so a field of only such accounts answers EMPTY rather than falling back to them.
  * Callers treat empty as "no account to move to", and the transport refuses the request through
  * {@link routeAntigravityModel}. Kiro listings remain a preference only.
+ *
+ * `admittedId` names an account whose own lease the request being judged already holds. That
+ * lease is discounted from the account's load, so a cap of N does not make the account that was
+ * just admitted look full to the very request holding the slot.
  */
 export function preferKiroModelSupport(
-  providerName: string, ids: string[], model?: string | null, config?: OcxConfig,
+  providerName: string, ids: string[], model?: string | null, config?: OcxConfig, admittedId?: string,
 ): string[] {
   if (!model) return ids;
   if (providerName === "google-antigravity") {
@@ -293,7 +297,7 @@ export function preferKiroModelSupport(
   if (providerName !== "kiro") return ids;
   const cap = config?.providers?.kiro?.oauthAccountFailover?.maxConcurrentPerAccount;
   const withRoom = typeof cap === "number" && Number.isInteger(cap) && cap >= 1 && cap <= 100
-    ? ids.filter(id => accountInFlight("kiro", id) < cap) : ids;
+    ? ids.filter(id => accountInFlight("kiro", id) - (id === admittedId ? 1 : 0) < cap) : ids;
   const positive = withRoom.filter(id => kiroAccountSupportsModel(id, model) === true);
   return positive.length ? positive : ids;
 }
@@ -708,6 +712,8 @@ export function noteGenericPoolSelection(
     eligibleFailoverAccounts(providerName, Date.now(), family),
     requestedModelId,
     config,
+    // The Kiro lease for `accountId` is already held here; judge room as the proposal saw it.
+    accountId,
   );
   const picked = pickRoundRobinAccount(poolKey, eligible, limit);
   // The resolver may have admitted a different account than the ring proposed: a removal, a
