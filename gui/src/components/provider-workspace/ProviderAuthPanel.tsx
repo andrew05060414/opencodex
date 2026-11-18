@@ -13,7 +13,6 @@ import type { WorkspaceItem } from "../../provider-workspace/catalog";
 import { oauthAccountDisplayLabel, providerAuthSurface } from "../../provider-workspace/auth";
 import { oauthCredentialSlot } from "../../../../src/oauth/credential-siblings";
 import { oauthLabel } from "../../pages/providers-shared";
-import { displayAccountId } from "../../lib/privacy";
 import AccountAutoSwitchControl from "../AccountAutoSwitchControl";
 import {
   formatOAuthHealthSummary,
@@ -490,7 +489,7 @@ export default function ProviderAuthPanel({
             </>}
             {probeEnabled && (
               <button type="button" className="btn btn-ghost btn-sm" title={t("acctProbe.hint")}
-                aria-busy={accountProbe.allPending} disabled={accountProbe.allPending}
+                aria-busy={accountProbe.allPending} disabled={accountProbe.busy}
                 onClick={() => { void accountProbe.probeAll(accounts.map(account => account.id)); }}>
                 {accountProbe.allPending ? t("acctProbe.testing") : t("acctProbe.testAll")}
               </button>
@@ -692,7 +691,8 @@ export default function ProviderAuthPanel({
                       <span className={`pwi-auth-dot ${showReauth ? "pwi-auth-dot--warn" : account.active && !account.paused ? "pwi-auth-dot--ok" : "pwi-auth-dot--off"}`} aria-hidden="true" />
                       <span className="aqt-account-copy">
                         <span className="aqt-account-label">{row.account.label}</span>
-                        {!isAnthropicPool && <span className="aqt-account-id faint">{displayAccountId(account.id)}</span>}
+                        {account.maskedLabel && account.maskedLabel !== row.account.label &&
+                          <span className="aqt-account-secondary faint">{account.maskedLabel}</span>}
                       </span>
                       {account.active && !account.paused && <span className="badge badge-primary">{t("prov.accountActive")}</span>}
                       {kiroReason && <span className="badge badge-amber">{t(kiroReason)}</span>}
@@ -727,7 +727,7 @@ export default function ProviderAuthPanel({
                     )}
                     {probeEnabled && (
                       <AccountProbeButton controller={accountProbe} accountId={account.id} label={row.account.label}
-                        disabled={accountProbe.allPending} />
+                        disabled={accountProbe.busy} />
                     )}
                     <button type="button" className="btn btn-ghost btn-sm"
                       aria-label={`${t("prov.editAlias")} — ${row.account.label}`}
