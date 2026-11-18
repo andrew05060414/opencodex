@@ -137,7 +137,7 @@ import {
   resolveDesktop3pAlias,
   type Desktop3pModelEntry,
 } from "../../claude/desktop-3p";
-import { buildDesktopDiscoveryInputs } from "../../claude/desktop-discovery-inputs";
+import { buildDesktopDiscoveryInputs, desktopSnapshotPolicyIdentity } from "../../claude/desktop-discovery-inputs";
 import { observeModelCacheRevision } from "../../codex/model-cache";
 import { handleImages } from "../images";
 import {
@@ -274,7 +274,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
   let lastDesktopSnapshot: {
     models: Desktop3pModelEntry[];
     routes: ReadonlyArray<readonly [string, string | null]>;
-    enabled: boolean;
+    policyIdentity: string;
   } | undefined;
   const requestMetrics = metricsExportEnabled(config)
     ? createRequestMetricsOwner(Date.now() / 1000, cachedKiroQuotaMetricRows) : undefined;
@@ -967,9 +967,8 @@ export function createServeOptions(ctx: ServeOptionsContext) {
           return response;
         };
         const retryDesktopSnapshot = () => {
-          // Another listing can replace the registry after a snapshot was exported.
-          // Reuse the whole snapshot only while its IDs still route as published.
-          if (lastDesktopSnapshot?.enabled === (ctx.config.claudeCode?.enabled !== false)
+          // Hidden models can remain routable, so registry matches alone cannot validate the list.
+          if (lastDesktopSnapshot?.policyIdentity === desktopSnapshotPolicyIdentity(ctx.config)
             && lastDesktopSnapshot.routes.every(([name, route]) => route !== null && desktopSnapshotRoute(name) === route)) {
             return desktopSnapshotResponse(lastDesktopSnapshot.models);
           }
@@ -1113,7 +1112,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
               desktop3pModelOptions(config.claudeCode),
             ) : [];
             lastDesktopSnapshot = {
-              models, enabled,
+              models, policyIdentity: desktopSnapshotPolicyIdentity(config),
               routes: models.map(({ name }) => [name, desktopSnapshotRoute(name)]),
             };
             return desktopSnapshotResponse(models);
