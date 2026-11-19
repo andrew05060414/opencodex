@@ -17,6 +17,7 @@ import { ANTIGRAVITY_VALIDATION_REQUIRED_PREFIX } from "../../src/adapters/googl
 import { readUsageEntries } from "../../src/usage/log";
 import { classifyModelFamilyForQuota } from "../../src/oauth/account-quota-rank";
 import { clearGenericFailoverHealth, eligibleFailoverAccounts, genericFailoverRetryAfterSeconds, rotateAntigravityAccountOnAuthRefusal, rotateAntigravityAccountOnUpstreamFault } from "../../src/oauth/generic-account-failover";
+import { resetAntigravityRateLimitPolicy } from "../../src/oauth/antigravity-rate-limit-policy";
 import {
   durableReplayCredentialIdentity,
   durableReplayDestinationIdentity,
@@ -48,6 +49,7 @@ let originalFetch: typeof fetch;
 
 beforeEach(() => {
   clearGenericFailoverHealth();
+  resetAntigravityRateLimitPolicy();
   originalFetch = globalThis.fetch;
   previousHome = process.env.OPENCODEX_HOME;
   isolatedCodexHome = installIsolatedCodexHome("ocx-google-401-codex-");
@@ -57,6 +59,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearGenericFailoverHealth();
+  resetAntigravityRateLimitPolicy();
   globalThis.fetch = originalFetch;
   if (previousHome === undefined) delete process.env.OPENCODEX_HOME;
   else process.env.OPENCODEX_HOME = previousHome;
@@ -773,7 +776,7 @@ describe("Google Antigravity OAuth upstream 401 replay", () => {
       } finally { await server.stop(true); }
     });
 
-  test("access-denied 403 keeps walking the pool until an account answers", async () => {
+  test("access-denied 403 moves to one sibling and a second refused account ends the walk", async () => {
     await seedOAuth();
     await seedSibling();
     await seedThirdSibling();
@@ -782,24 +785,9 @@ describe("Google Antigravity OAuth upstream 401 replay", () => {
     const server = startServer(0);
     try {
       const response = await postResponses(server);
-      expect(response.status).toBe(200);
-      await response.text();
-      expect(observed.chatAuth).toEqual(["Bearer rejected-access", "Bearer access-b", "Bearer access-c"]);
-    } finally { await server.stop(true); }
-  });
-
-  test("access-denied 403 on every account ends in the refusal after one send per account", async () => {
-    await seedOAuth();
-    await seedSibling();
-    await seedThirdSibling();
-    saveConfig(antigravityConfig());
-    const observed = installOAuthFetch([403, 403, 403, 200]);
-    const server = startServer(0);
-    try {
-      const response = await postResponses(server);
       expect(response.status).toBe(403);
       await response.text();
-      expect(observed.chatAuth).toEqual(["Bearer rejected-access", "Bearer access-b", "Bearer access-c"]);
+      expect(observed.chatAuth).toEqual(["Bearer rejected-access", "Bearer access-b"]);
       for (const row of getAccountSet("google-antigravity")!.accounts) expect(row.needsReauth).not.toBe(true);
     } finally { await server.stop(true); }
   });

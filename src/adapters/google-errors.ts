@@ -7,6 +7,8 @@ export const ANTIGRAVITY_VALIDATION_REQUIRED_PREFIX = "Antigravity account valid
 export const ANTIGRAVITY_ACCESS_DENIED_PREFIX = "Antigravity access denied";
 /** Leading words of a normalized Antigravity refusal whose text names the credential itself. */
 export const ANTIGRAVITY_AUTH_FAILED_PREFIX = "Antigravity authentication failed";
+/** Leading words of a normalized Antigravity 429 that Google classified as hard quota exhaustion. */
+export const ANTIGRAVITY_QUOTA_EXHAUSTED_PREFIX = "Antigravity quota exhausted";
 /**
  * Written right after a normalized prefix only when the response carried Google's structured
  * `error.status: "PERMISSION_DENIED"`. Message wording alone never produces it, so a reader of the
@@ -252,7 +254,7 @@ function classifyGoogle(label: string, status: number | undefined, enumStatus: s
   if (reason === "RATE_LIMIT_EXCEEDED" && label === "Antigravity") return `${label} rate limit exceeded`;
   const lower = `${enumStatus ?? ""} ${text}`.toLowerCase();
   const quotaExhausted = isGoogleQuotaExhaustedText(lower);
-  if ((!enumStatus || enumStatus === "RESOURCE_EXHAUSTED") && quotaExhausted) return `${label} quota exhausted`;
+  if ((!enumStatus || enumStatus === "RESOURCE_EXHAUSTED") && quotaExhausted) return `${label} quota exhausted`; // keep in step with ANTIGRAVITY_QUOTA_EXHAUSTED_PREFIX
   if (status === 429 || enumStatus === "RESOURCE_EXHAUSTED" || lower.includes("rate limit")) {
     return `${label} rate limit exceeded`;
   }
@@ -340,4 +342,44 @@ export function isQuotaExhaustedBody(payloadText: string, label?: string): boole
 export function extractGoogleRetryAfterSeconds(payloadText: string): string | undefined {
   const ms = googleErrorDetails(payloadText).retryDelayMs;
   return ms !== undefined && ms > 0 ? String(Math.ceil(ms / 1000)) : undefined;
+}
+
+export interface GoogleRateLimitInfo {
+  /** `ErrorInfo.reason`, e.g. QUOTA_EXHAUSTED, RATE_LIMIT_EXCEEDED, MODEL_CAPACITY_EXHAUSTED. */
+  reason?: string;
+  /** `RetryInfo.retryDelay` in whole seconds, rounded up. */
+  retryDelaySeconds?: number;
+  /** `ErrorInfo.metadata.quotaResetDelay` in whole seconds, rounded up. */
+  quotaResetDelaySeconds?: number;
+  /** Whether the error carried any `details` entry at all. */
+  hasDetails?: boolean;
+}
+
+/** Google durations: "42.5s", or the long form "1h16m0.6s" some quota resets use. */
+function googleDurationSeconds(raw: unknown): number | undefined {
+  if (typeof raw !== "string") return undefined;
+  const match = /^\s*(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)s)?\s*$/i.exec(raw);
+  if (!match || (!match[1] && !match[2] && !match[3])) return undefined;
+  const seconds = Math.ceil(Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0));
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+/** Structured 429 facts from the error `details`; every field is absent when Google did not state it. */
+export function parseGoogleRateLimitInfo(payloadText: string): GoogleRateLimitInfo {
+  const details = googleErrorEnvelope(payloadText)?.details;
+  const info: GoogleRateLimitInfo = { hasDetails: Array.isArray(details) && details.length > 0 };
+  if (!Array.isArray(details)) return info;
+  for (const item of details) {
+    const rec = jsonRecord(item);
+    if (!rec) continue;
+    if (detailTypeMatches(rec, GOOGLE_ERROR_INFO_TYPE)) {
+      if (info.reason === undefined && typeof rec.reason === "string" && /^[A-Z][A-Z0-9_]{2,63}$/.test(rec.reason)) info.reason = rec.reason;
+      const metadata = jsonRecord(rec.metadata);
+      info.quotaResetDelaySeconds ??= googleDurationSeconds(metadata?.quotaResetDelay);
+    }
+    if (detailTypeMatches(rec, GOOGLE_RETRY_INFO_TYPE)) {
+      info.retryDelaySeconds ??= googleDurationSeconds(rec.retryDelay);
+    }
+  }
+  return info;
 }

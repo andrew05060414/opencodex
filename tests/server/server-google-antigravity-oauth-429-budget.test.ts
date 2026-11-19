@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveConfig } from "../../src/config";
 import { clearGenericFailoverHealth } from "../../src/oauth/generic-account-failover";
+import { resetAntigravityRateLimitPolicy } from "../../src/oauth/antigravity-rate-limit-policy";
 import { getAccountSet, saveCredential, setActiveAccount } from "../../src/oauth/store";
 import { handleResponses } from "../../src/server/responses";
 import type { OcxConfig } from "../../src/types";
@@ -34,6 +35,7 @@ beforeEach(() => {
   process.env.OPENCODEX_HOME = testDir;
   takeSpendHome();
   clearGenericFailoverHealth();
+  resetAntigravityRateLimitPolicy();
   sleepSpy = spyOn(retry, "sleepWithAbort").mockImplementation(async () => {});
 });
 
@@ -94,6 +96,7 @@ function transient429ErrorBody(): Record<string, unknown> {
       code: 429,
       message: "Resource has been exhausted: rate limit exceeded.",
       status: "RESOURCE_EXHAUSTED",
+      details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "RATE_LIMIT_EXCEEDED" }],
     },
   };
 }
@@ -212,7 +215,7 @@ describe("Google Antigravity OAuth 429 retry and multi-account budget (#5880)", 
     expect(sendBudget.used).toBe(1);
   });
 
-  test.each([4, 5])("%i accounts each receive three transient sends before terminal 429", async accountCount => {
+  test.each([4, 5])("%i accounts: a rate-limit 429 gets three sends on its account and at most one sibling", async accountCount => {
     const accounts = await seedAntigravityAccounts(accountCount);
     const cfg = antigravityConfig();
     saveConfig(cfg);
@@ -233,31 +236,26 @@ describe("Google Antigravity OAuth 429 retry and multi-account budget (#5880)", 
     );
 
     expect(res.status).toBe(429);
-
     expect(await res.text()).toContain("rate_limit_exceeded");
-    // Four accounts pin 3,3,3,3; five also proves the snapshot can exceed the old hop cap.
-    expect(observedSends).toHaveLength(accountCount * 3);
-
-    for (let acctIdx = 0; acctIdx < accountCount; acctIdx++) {
-      const sendsForAccount = observedSends.slice(acctIdx * 3, (acctIdx + 1) * 3);
-      expect(sendsForAccount).toHaveLength(3);
-      for (const send of sendsForAccount) {
+    expect(observedSends).toHaveLength(6);
+    for (let acctIdx = 0; acctIdx < 2; acctIdx++) {
+      for (const send of observedSends.slice(acctIdx * 3, (acctIdx + 1) * 3)) {
         expect(send).toEqual({ auth: accounts[acctIdx]!.auth, project: accounts[acctIdx]!.project });
       }
     }
   });
 
-  test("a roster larger than the per-request account cap funds only the cap", async () => {
-    // Eight enrolled accounts must not turn one request into 24 sends: the default ingress
-    // ceiling is GENERIC_OAUTH_MAX_ACCOUNTS_PER_REQUEST (6) accounts x 3 transient sends.
-    const accounts = await seedAntigravityAccounts(8);
+  test("a roster larger than the hop cap never lets one request touch more than three accounts", async () => {
+    // Five enrolled accounts must not turn one quota-exhausted request into a pool walk: the
+    // default is two sibling hops, so three accounts at most.
+    await seedAntigravityAccounts(5);
     const cfg = antigravityConfig();
     saveConfig(cfg);
 
     const observedSends: Array<{ auth: string; project: string }> = [];
     installAntigravityFetchMock(({ auth, project }) => {
       observedSends.push({ auth, project });
-      return new Response(JSON.stringify(transient429ErrorBody()), {
+      return new Response(JSON.stringify(hardQuota429ErrorBody()), {
         status: 429,
         headers: { "content-type": "application/json" },
       });
@@ -270,11 +268,9 @@ describe("Google Antigravity OAuth 429 retry and multi-account budget (#5880)", 
     );
 
     expect(res.status).toBe(429);
-    expect(observedSends).toHaveLength(18);
-    const usedAuth = new Set(observedSends.map(send => send.auth));
-    expect(usedAuth.size).toBe(6);
-    for (const account of accounts.slice(6)) expect(usedAuth.has(account.auth)).toBe(false);
-  });
+    expect(observedSends).toHaveLength(3);
+    expect(new Set(observedSends.map(send => send.auth)).size).toBe(3);
+  }, 30_000);
 
   test.each([2, 3])("single account succeeds attempt %i on transient 429", async successAttempt => {
     const accounts = await seedAntigravityAccounts(1);
@@ -333,11 +329,11 @@ describe("Google Antigravity OAuth 429 retry and multi-account budget (#5880)", 
 
     expect(res.status).toBe(429);
     // Hard quota must return immediately without burning transient retry attempts
-    expect(observedSends).toEqual(accounts.map(({ auth, project }) => ({ auth, project })));
+    expect(observedSends).toEqual(accounts.slice(0, 3).map(({ auth, project }) => ({ auth, project })));
     await res.text();
   });
 
-  test.each([2, 4, 7])("explicit %i-send caller ceiling remains unchanged", async ceiling => {
+  test.each([2, 4, 6])("explicit %i-send caller ceiling remains unchanged", async ceiling => {
     await seedAntigravityAccounts(4);
     const cfg = antigravityConfig();
     saveConfig(cfg);

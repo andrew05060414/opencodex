@@ -852,6 +852,11 @@ export interface OcxProviderConfig {
   oauthAccountFailover?: {
     /** Kiro OAuth only: active serving requests per account, 1..100. */
     maxConcurrentPerAccount?: number;
+    /**
+     * google-antigravity only: the most sibling accounts one request may move to after a refusal
+     * (any status). Integer 0..6; 2 when unset or invalid. 0 turns in-request account rotation off.
+     */
+    maxFailoverHopsPerRequest?: number;
     enabled?: boolean;
     /** Opt-in process-local conversation ownership; requires proactive enablement. */
     sessionAffinity?: "conversation" | "none";

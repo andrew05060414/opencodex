@@ -10,8 +10,11 @@ import {
   antigravityModelUnlistedMessage,
   antigravitySelectedAccountUnlistedMessage,
   clearGenericFailoverHealth,
+  eligibleFailoverAccounts,
 } from "../../src/oauth/generic-account-failover";
 import { createOAuthRefreshIntentLock, getAccountSet, saveCredential, setAccountPaused, setActiveAccount, getAccountCredentialWithStatus, mergeAccountCredential } from "../../src/oauth/store";
+import { resetAntigravityRateLimitPolicy } from "../../src/oauth/antigravity-rate-limit-policy";
+import { classifyModelFamilyForQuota } from "../../src/oauth/account-quota-rank";
 import { clearPoolRotationState } from "../../src/oauth/pool-kernel";
 import { antigravityAccountModelSupport, antigravityAccountSupportsModel, clearAntigravityAccountRosters, recordAntigravityAccountRoster } from "../../src/providers/antigravity-account-roster";
 import { handleResponses } from "../../src/server/responses";
@@ -50,6 +53,7 @@ beforeEach(async () => {
   release = acquireOwnedSpendHome();
   clearGenericFailoverHealth();
   clearPoolRotationState();
+  resetAntigravityRateLimitPolicy();
   originalFetch = globalThis.fetch;
   sleep = spyOn(retry, "sleepWithAbort").mockImplementation(async () => {});
   for (const slot of ["one", "two", "three"]) {
@@ -269,6 +273,145 @@ test("a bare 404 from every account stays a 404, stores no verdict and leaves ac
   onSend = undefined;
   expect((await turn(config(true))).status).toBe(200);
   expect(sends).toHaveLength(1);
+});
+
+function withHops(cfg: OcxConfig, maxFailoverHopsPerRequest: number): OcxConfig {
+  (cfg.providers[provider] as { oauthAccountFailover?: Record<string, unknown> }).oauthAccountFailover = { enabled: true, maxFailoverHopsPerRequest };
+  saveConfig(cfg);
+  return cfg;
+}
+async function addFourthAccount(): Promise<void> {
+  await saveCredential(provider, { access: "synthetic-four", refresh: "synthetic-refresh-four",
+    expires: Date.now() + 3_600_000, accountId: "synthetic-four", projectId: "synthetic-project-four" });
+  ids = getAccountSet(provider)!.accounts.map(row => row.id);
+}
+const family = () => classifyModelFamilyForQuota(provider, model);
+
+test("one request moves to at most two sibling accounts by default, whatever the refusal", async () => {
+  await addFourthAccount();
+  onSend = async (_auth, wireModel) => notFound(wireModel);
+  const result = await turn(config(true));
+  expect(result.status).toBe(404);
+  expect(sends).toHaveLength(3);
+  expect(new Set(sends).size).toBe(3);
+});
+
+test("maxFailoverHopsPerRequest is configurable, 0 turns in-request rotation off", async () => {
+  onSend = async (_auth, wireModel) => notFound(wireModel);
+  expect((await turn(withHops(config(true), 1))).status).toBe(404);
+  expect(sends).toHaveLength(2);
+  sends.length = 0;
+  expect((await turn(withHops(config(true), 0))).status).toBe(404);
+  expect(sends).toHaveLength(1);
+});
+
+const errorInfo = (reason: string | undefined, metadata: object = {}) => reason === undefined ? [] : [
+  { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason, domain: "cloudcode-pa.googleapis.com", metadata }];
+const limited = (message: string, details: object[] = []) => Response.json(
+  { error: { code: 429, status: "RESOURCE_EXHAUSTED", message, details } }, { status: 429 });
+const quotaLimited = () => limited("You have exhausted your capacity on this model.",
+  errorInfo("QUOTA_EXHAUSTED", { quotaResetDelay: "7200s" }));
+const capacityLimited = () => limited("No capacity available for model on the server",
+  [...errorInfo("MODEL_CAPACITY_EXHAUSTED"), { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "1s" }]);
+const reasonless = () => limited("Resource has been exhausted (e.g. check quota).",
+  [{ "@type": "type.googleapis.com/google.rpc.RetryInfo" }]);
+const transientRateLimited = () => limited("Resource has been exhausted (e.g. check quota).",
+  errorInfo("RATE_LIMIT_EXCEEDED"));
+const declined = () => limited("Resource has been exhausted (e.g. check quota).");
+
+test("QUOTA_EXHAUSTED moves to a sibling at once and rests the account for the stated reset", async () => {
+  onSend = async auth => auth === bearer(0) ? quotaLimited() : undefined;
+  expect((await turn(config(true))).status).toBe(200);
+  expect(sends).toEqual([bearer(0), bearer(1)]);
+  expect(eligibleFailoverAccounts(provider, Date.now() + 3_600_000, family())).not.toContain(ids[0]!);
+  expect(eligibleFailoverAccounts(provider, Date.now() + 7_300_000, family())).toContain(ids[0]!);
+});
+
+test("quota exhaustion on every account stops at the hop cap and returns the 429", async () => {
+  await addFourthAccount();
+  onSend = async () => quotaLimited();
+  expect((await turn(config(true))).status).toBe(429);
+  expect(sends).toHaveLength(3);
+});
+
+test("MODEL_CAPACITY_EXHAUSTED backs off on the same account and never rotates", async () => {
+  onSend = async () => capacityLimited();
+  expect((await turn(config(true))).status).toBe(429);
+  expect(new Set(sends)).toEqual(new Set([bearer(0)]));
+});
+
+test("a reasonless 429 without retry evidence rotates to at most one sibling without redundant retries", async () => {
+  await addFourthAccount();
+  onSend = async () => reasonless();
+  expect((await turn(config(true))).status).toBe(429);
+  expect(sends).toHaveLength(2);
+  expect(new Set(sends).size).toBe(2);
+});
+
+test("an evidence-bearing rate-limit 429 tries its account and at most one sibling", async () => {
+  await addFourthAccount();
+  onSend = async () => transientRateLimited();
+  expect((await turn(config(true))).status).toBe(429);
+  expect(sends).toHaveLength(6);
+  expect(new Set(sends).size).toBe(2);
+  expect(sends[0]).toBe(sends[1]);
+  expect(sends[3]).toBe(sends[4]);
+});
+
+test("a reasonless 429 rests the account on the short ladder, not for a minute", async () => {
+  onSend = async auth => auth === bearer(0) ? reasonless() : undefined;
+  const started = Date.now();
+  expect((await turn(config(true))).status).toBe(200);
+  expect(eligibleFailoverAccounts(provider, started + 4_000, family())).not.toContain(ids[0]!);
+  expect(eligibleFailoverAccounts(provider, Date.now() + 10_000, family())).toContain(ids[0]!);
+});
+
+test("a 429 without any details is Google declining the content: one send, no cooldown, no breaker", async () => {
+  await addFourthAccount();
+  onSend = async () => declined();
+  const started = Date.now();
+  for (let i = 0; i < 4; i++) expect((await turn(config(true))).status).toBe(429);
+  expect(sends).toHaveLength(4);
+  expect(eligibleFailoverAccounts(provider, started + 1_000, family())).toHaveLength(4);
+  onSend = undefined;
+  sends.length = 0;
+  expect((await turn(config(true))).status).toBe(200);
+  expect(sends).toHaveLength(1);
+});
+
+test("three accounts answering reasonless 429s for one model open the pool breaker", async () => {
+  await addFourthAccount();
+  onSend = async () => reasonless();
+  expect((await turn(config(true))).status).toBe(429);
+  expect((await turn(config(true))).status).toBe(429);
+  sends.length = 0;
+  const refused = await handleResponses(new Request("http://127.0.0.1/v1/responses", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model: `${provider}/${model}`, input: "synthetic input", stream: false }),
+  }), config(true), { model, provider }, {});
+  expect(refused.status).toBe(429);
+  expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(sends).toEqual([]);
+});
+
+const accessDenied = () => Response.json({ error: { code: 403, status: "PERMISSION_DENIED", message: "The caller does not have permission" } }, { status: 403 });
+const validationRequired = () => Response.json({ error: { code: 403, status: "PERMISSION_DENIED", message: "Verify your account to continue.",
+  details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "VALIDATION_REQUIRED" }] } }, { status: 403 });
+
+test("a second refused account in one request stops 403 rotation", async () => {
+  await addFourthAccount();
+  onSend = async () => accessDenied();
+  expect((await turn(config(true))).status).toBe(403);
+  expect(sends).toHaveLength(2);
+});
+
+test("a validation 403 rests the account 10 to 30 minutes, without any stored verdict", async () => {
+  onSend = async auth => auth === bearer(0) ? validationRequired() : undefined;
+  expect((await turn(config(true))).status).toBe(200);
+  expect(sends).toEqual([bearer(0), bearer(1)]);
+  expect(eligibleFailoverAccounts(provider, Date.now() + 9 * 60_000, family())).not.toContain(ids[0]!);
+  expect(eligibleFailoverAccounts(provider, Date.now() + 31 * 60_000, family())).toContain(ids[0]!);
+  expect(getAccountSet(provider)!.accounts.find(row => row.id === ids[0])?.needsReauth).not.toBe(true);
 });
 
 test("an unrelated 404 never rotates or records a model denial", async () => {
