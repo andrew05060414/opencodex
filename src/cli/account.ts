@@ -65,6 +65,7 @@ const ACCOUNT_USAGE = `Usage:
   ocx account routes <anthropic|anthropic2> [--file <json-file>|--clear] [--json]
   ocx account remove <provider> <account-or-key-id|alias|main> --yes [--json]
   ocx account clear-cooldown <provider> <account-id|alias|main> [--json]
+  ocx account probe google-antigravity [<account-id|alias>] [--json]
   ocx account add-key <provider> [--label <label>] [--json]
   ocx account import <provider> --format <format> (--file <path>|--stdin) [--json]
   ocx account export (--file <path>|--stdout --yes) [--format full|cockpit-tools] [--force] [--json]
@@ -502,6 +503,10 @@ export async function cmdAccount(args: string[], deps: AccountDeps = {}): Promis
     if (sub === "routes") return await cmdRoutes(rest, deps);
     if (sub === "remove") return await cmdRemove(rest, deps);
     if (sub === "clear-cooldown") return await cmdClearCooldown(rest, deps);
+    if (sub === "probe") {
+      const { cmdAccountProbe } = await import("./account-probe");
+      return await cmdAccountProbe(rest, deps);
+    }
     if (sub === "add-key") return await cmdAddKey(rest, deps);
     if (sub === "import") return await cmdImport(rest, deps);
     if (sub === "export") {

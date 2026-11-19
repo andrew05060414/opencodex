@@ -335,6 +335,7 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "GET", path: "/api/selected-models", module: "server/management/model-routes", mutates: false },
   { method: "POST", path: "/api/custom-models", module: "server/management/model-routes", mutates: true },
   { method: "POST", path: "/api/model-discovery/acknowledge", module: "server/management/model-routes", mutates: true },
+  { method: "POST", path: "/api/model-discovery/refresh", module: "server/management/model-routes", mutates: true },
   { method: "PUT", path: "/api/default-aliases", module: "server/management/model-routes", mutates: true },
   { method: "PUT", path: "/api/disabled-models", module: "server/management/model-routes", mutates: true },
   { method: "PUT", path: "/api/model-discovery", module: "server/management/model-routes", mutates: true },
@@ -381,6 +382,7 @@ export const MANAGEMENT_ROUTES: readonly ManagementRoute[] = [
   { method: "POST", path: "/api/keys/rotate/commit", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/accounts/clear-cooldown", module: "server/management/oauth-account-routes", mutates: true },
   { method: "POST", path: "/api/oauth/accounts/import", module: "server/management/oauth-account-routes", mutates: true },
+  { method: "POST", path: "/api/oauth/accounts/probe", module: "server/management/oauth-account-routes", mutates: false },
   // Only bearer surface that returns refresh tokens. Requires an operator-mediated session
   // (pairing or trusted Tailscale identity); automatic loopback bootstrap and the admin token are
   // refused. The CLI equivalent is `ocx account export`, which writes the same document locally.
