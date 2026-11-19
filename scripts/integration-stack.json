@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-19",
+  "upstreamRepo": "lidge-jun/opencodex",
+  "forkRepo": "andrew05060414/opencodex",
+  "upstreamBase": "upstream/dev",
+  "upstreamBaseSha": "ae7748e6ce96fbf3eb92b398bf3d90bf7adc2b5c",
+  "integrationBranch": "local/integration-20261119",
+  "upstreamPrs": [
+    {
+      "number": 8740,
+      "branch": "regroup/accounts-quota",
+      "remoteRef": "origin/regroup/accounts-quota",
+      "headSha": "02daad8e4a0692efbeb0cd8833af0084025fdbf4",
+      "status": "open",
+      "draft": true,
+      "title": "feat(accounts): per-account probe and quota table, Antigravity quota-family rotation, verified Vertex ADC",
+      "notes": "Maintainer pushed 02daad8e4 and gave APPROVE + SECURITY PASS on 6b2dd8095; test 4/5 hit 15m timeout on fork runner with 0 assertion failures. Needs maintainer rerun or L3 merge."
+    },
+    {
+      "number": 8748,
+      "branch": "feat/reapply-update-needed-pill",
+      "remoteRef": "origin/feat/reapply-update-needed-pill",
+      "headSha": "502827ce3554575b09a9a00494e9300a32cb1b7b",
+      "status": "open",
+      "draft": false,
+      "title": "feat(gui): re-apply a drifted client from its Update needed pill",
+      "notes": "Merged upstream/dev, 4/4 checklist ticked, PR gates green, converted to ready for review. Waiting maintainer CI workflow approval."
+    },
+    {
+      "number": 8651,
+      "branch": "feat/combo-capability-policy",
+      "remoteRef": "origin/feat/combo-capability-policy",
+      "headSha": "e01f696e1c0aac4ee5d5134afaacfdb834b4af64",
+      "status": "open",
+      "draft": true,
+      "title": "feat(combos): opt-in capabilityPolicy \"union\" advertises member capabilities and filters per request",
+      "notes": "Merged upstream/dev, dsh and capability-policy wording already aligned, error-detail.md reflowed <= 600 lines. Blocked only by upstream/dev providers.md 2001-line ratchet."
+    },
+    {
+      "number": 8741,
+      "branch": "regroup/live-routing",
+      "remoteRef": "origin/regroup/live-routing",
+      "headSha": "902e69bc293a52e8f8646e60fe16ae0926c7e076",
+      "status": "open",
+      "draft": true,
+      "title": "feat(gui): live routing tab with skip reasons, timing and context breakdown, plus GET /v1/usage/live",
+      "notes": "Merged upstream/dev and fixed all 3 maintainer items (Spanish docs, 120s live observation gate for observeContextBreakdown, dropped privacyRedactionMs). 4/4 checklist ticked."
+    },
+    {
+      "number": 8738,
+      "branch": "regroup/model-metadata-usage",
+      "remoteRef": "origin/regroup/model-metadata-usage",
+      "headSha": "430eef14911044da9ee602d4ceb423fbf540455d",
+      "status": "open",
+      "draft": true,
+      "title": "feat(models): labelled capability estimates, automatic prices with their source, and a Usage page that loads",
+      "notes": "Merged upstream/dev and fixed all 4 maintainer items (Spanish docs, cost.ts incomplete, qwen3:8b vendor match, layout.json 1999 lines). Waiting on upstream #8452."
+    },
+    {
+      "number": 8737,
+      "branch": "regroup/client-model-picker",
+      "remoteRef": "origin/regroup/client-model-picker",
+      "headSha": "c6437da59e304f8080a4b264f47d646b9d3b7d31",
+      "status": "on-hold",
+      "draft": true,
+      "title": "feat(models): one Client model picker section with Pinned in picker and grouping by model family",
+      "notes": "Owner placed PR on hold on GitHub (do not rebase/push PR #8737). Carried locally only."
+    }
+  ],
+  "localPatches": [
+    {
+      "id": "vertex-sa-pool",
+      "layer": "layer1-hotfix",
+      "sourceBranch": "deploy/integration-vertex-sa",
+      "sourceTipSha": "0e7160b98",
+      "commits": ["5957ade94", "38fa53398", "0e7160b98"],
+      "carriedCommits": ["754c6ec71", "f830be05f", "c2f9e8713"],
+      "summary": "File-backed Google Vertex service account multi-project pool (gcp-sa:file:)"
+    },
+    {
+      "id": "combo-save-and-zed",
+      "layer": "layer1-hotfix",
+      "sourceBranch": "deploy/integration-vertex-sa",
+      "sourceTipSha": "f520ae886",
+      "commits": ["ee7365803", "d34ba1b88", "253b26991", "b6f2dccd3", "89dfb7a7e", "5ac4cafd1", "f520ae886"],
+      "carriedCommits": ["0664453de", "b3d16b8db", "be7a06edc", "2b7725d08", "b05e08d8c", "1b0040519", "b00a30a47"],
+      "summary": "Accept null combo alias/displayName on PUT, float success banner without layout jump, mark Zed 401 as needsReauth"
+    },
+    {
+      "id": "kiro-rr-concurrency-cap",
+      "layer": "layer1-hotfix",
+      "sourceBranch": "fix/kiro-rr-concurrency-cap",
+      "sourceTipSha": "b29f028bb",
+      "commits": ["b29f028bb"],
+      "carriedCommits": ["f640c5b43"],
+      "summary": "Discount held Kiro lease in preferKiroModelSupport so round-robin keeps rotating under maxConcurrentPerAccount"
+    },
+    {
+      "id": "antigravity-404-and-429-cap",
+      "layer": "layer1-hotfix",
+      "sourceBranch": "local/integration-20261113",
+      "commits": ["772976183", "a68471357"],
+      "carriedCommits": ["7bb33cc6d", "e707f126c"],
+      "summary": "Rotate on bare Google Antigravity model 404 and bound in-request account rotation / 429 reason policy atop #8778-#8897"
+    },
+    {
+      "id": "privacy-redaction",
+      "layer": "layer3-local",
+      "sourceBranch": "feat/privacy-reveal-values",
+      "sourceTipSha": "c9ae60b96",
+      "commits": ["d894eb5bf^..3a05bfeff"],
+      "carriedCommits": ["d894eb5bf..3a05bfeff"],
+      "summary": "Request privacy redaction engine, Privacy dashboard page, two-way restore, reveal mode, maskEmails, and 2026-11-17 regex/identifier leak fixes"
+    },
+    {
+      "id": "ocx-account-export",
+      "layer": "layer3-local",
+      "sourceBranch": "local/integration-20261113",
+      "commits": ["64da4efc3"],
+      "carriedCommits": ["8a96b597d"],
+      "summary": "ocx account export (full and cockpit-tools formats) + GUI export dialog"
+    },
+    {
+      "id": "native-roster-discover",
+      "layer": "layer3-local",
+      "sourceBranch": "feat/native-roster-discover",
+      "sourceTipSha": "5dfc74724",
+      "commits": ["31ba847c4", "09622e0e7", "2f2169677"],
+      "carriedCommits": ["e76761322", "e7d9b1786", "621e2a097"],
+      "summary": "On-demand native GPT model discovery via ocx models discover --native and Models page card"
+    },
+    {
+      "id": "account-quota-polish",
+      "layer": "layer3-local",
+      "sourceBranch": "local/integration-20261113",
+      "commits": ["3a0988561", "57425a0f8", "42d626e01"],
+      "carriedCommits": ["bf22c0572", "d5e1a535b", "c9503a566"],
+      "summary": "Superseded roster load handling, paused named probe, quota burn-rate ETA, unified zh quota copy"
+    },
+    {
+      "id": "usage-source-facets-incremental",
+      "layer": "layer3-local",
+      "sourceBranch": "local/integration-20261113",
+      "commits": ["5f99ad614"],
+      "carriedCommits": ["a34fa31ea"],
+      "summary": "Fold usage source facets incrementally instead of rescanning the ledger"
+    },
+    {
+      "id": "local-deploy-and-status",
+      "layer": "layer3-local",
+      "sourceBranch": "local/integration-20261113",
+      "commits": ["cf2dd1dec", "cee4b1589"],
+      "carriedCommits": ["a3f5f80ac", "a365a8ada"],
+      "summary": "Loopback companion /healthz note and deploy-local.ps1 with branch guardrail"
+    }
+  ],
+  "retired": [
+    {
+      "id": "magpie-agy-acp-bridge",
+      "reason": "Superseded by official upstream #8794 antigravity-acp provider; removed vendored Magpie bridge to avoid credential replay and path collision."
+    },
+    {
+      "id": "upstreamed-prs",
+      "prs": [8644, 8746, 8749, 8649, 8750, 8751, 8742, 8739],
+      "reason": "Merged or carried directly into upstream/dev (#8778, #8870, #8871, #8914, #8751, #8742, #8644)."
+    }
+  ]
+}
