@@ -15,8 +15,8 @@ import { globalPrivacyStats } from "../../src/privacy";
 import type { OcxConfig } from "../../src/types";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
-import { anthropicBodyFixture, chatBodyFixture, responsesBodyFixture, THINKING_BLOCK_SECRET } from "./fixtures/bodies";
-import { fakeOpenAiKey } from "./fixtures/secrets";
+import { anthropicBodyFixture, chatBodyFixture, responsesBodyFixture, THINKING_BLOCK_SECRET } from "../fixtures/privacy/bodies";
+import { fakeOpenAiKey } from "../fixtures/privacy/secrets";
 
 let home: string;
 let previousHome: string | undefined;
