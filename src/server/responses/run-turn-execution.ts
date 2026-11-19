@@ -1,4 +1,5 @@
 import { expandInferenceSearchSendBudget } from "../inference/context";
+import { planAntigravity429Rotation } from "../../oauth/antigravity-rate-limit-policy";
 import { formatClientRetryAfter } from "../../lib/client-retry-after";
 import { mapSpendLedgerStorageError } from "./spend-storage-error";
 import { responsesTimeoutProvider, type ResponsesRequestContext, type ResponsesAdmissionState } from "./core-options";
@@ -648,6 +649,13 @@ export async function executeResponsesRunTurn(
         || transportState.genericFailovers >= transportState.genericFailoverLimit
         || !isGenericOAuthFailoverEnabled(config, route.providerName)
       ) return false;
+      let rotationRetryAfter: string | null = null;
+      if (route.providerName === "google-antigravity") {
+        const plan = planAntigravity429Rotation(transportState, undefined,
+          transportState.genericFailoverAccountId, route.modelId, error.message);
+        if (!plan.rotate) return false;
+        rotationRetryAfter = plan.retryAfter;
+      }
       // Intersection with the request's shared budget: the roster bound above answers "may this
       // credential set rotate again", this answers "may this request send again at all". The
       // replayed turn is dispatched by runTurnAttempt and never reaches `onSendsConsumed`, so
@@ -669,7 +677,7 @@ export async function executeResponsesRunTurn(
         config,
         route.providerName,
         transportState.genericFailoverAccountId,
-        null,
+        rotationRetryAfter,
         Date.now(),
         route.modelId,
       );

@@ -348,7 +348,7 @@ test("web-search preserves structured refusal once the roster's failover limit i
   const sends: string[] = [];
   installAntigravityFetchMock(async ({ auth, sendIndex }) => {
     sends.push(auth);
-    if (sendIndex <= 4) return Response.json({ error: {
+    if (sendIndex <= 2) return Response.json({ error: {
       status: "RESOURCE_EXHAUSTED", message: "Quota exceeded for quota metric",
     } }, { status: 429 });
     // A new eligible sibling exists, but it cannot enlarge the captured failover ceiling.
@@ -362,8 +362,8 @@ test("web-search preserves structured refusal once the roster's failover limit i
   const response = await handleResponses(request(), cfg, route, { sendBudget });
   expect(response.status).toBe(403);
   await response.text();
-  expect(sends).toEqual(accounts.map(row => row.auth));
-  expect(sendBudget.used).toBe(5);
+  expect(sends).toEqual(accounts.slice(0, 3).map(row => row.auth));
+  expect(sendBudget.used).toBe(3);
   expect(durableHealth().every(row => !row.needsReauth)).toBe(true);
 });
 

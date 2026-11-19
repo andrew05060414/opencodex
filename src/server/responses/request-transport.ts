@@ -53,6 +53,8 @@ import {
   publicOAuthAuthenticationErrorMessage,
   UnsupportedOAuthProviderError,
 } from "../../oauth";
+import { antigravityMaxFailoverHops } from "../../oauth/antigravity-failover-cap";
+import { antigravityPoolBreakerSeconds } from "../../oauth/antigravity-rate-limit-policy";
 import {
   GENERIC_OAUTH_MAX_ACCOUNTS_PER_REQUEST,
   GENERIC_OAUTH_MAX_FAILOVERS_PER_REQUEST,
@@ -1415,6 +1417,15 @@ export async function prepareResponsesTransport(
         route.provider = { ...route.provider, apiKey: admitted.accessToken };
         logCtx.provider = formatAnthropicProviderForLog(anthropicInstance!, admitted.accountId, config);
       } else {
+        // Three accounts answered the same reasonless 429 for this model inside a minute: that is
+        // not about any one account, so the pool is left alone until the breaker closes.
+        const breakerSeconds = route.providerName === "google-antigravity" ? antigravityPoolBreakerSeconds(route.modelId) : 0;
+        if (breakerSeconds > 0) {
+          const refused = markProxyError(formatErrorResponse(429, "rate_limit_error",
+            `Google Antigravity refused this model on several accounts in a row; not retrying the account pool for ${breakerSeconds} seconds.`));
+          refused.headers.set("retry-after", String(breakerSeconds));
+          return refused;
+        }
         // Prefer the account with known headroom BEFORE the first attempt. Rotation alone
         // only reacts to a 429, so a turn could open on an account a previous probe already
         // measured as spent. A null answer means "use the active account", so every provider
@@ -1730,8 +1741,10 @@ export async function prepareResponsesTransport(
     fundingAccountId,
     ...eligibleFailoverAccounts(route.providerName, Date.now(), classifyModelFamilyForQuota(route.providerName, route.modelId)),
   ]).size : 0;
-  const fundedAccounts = Math.min(genericRosterSize, GENERIC_OAUTH_MAX_ACCOUNTS_PER_REQUEST);
-  const genericFailoverLimit = Math.max(GENERIC_OAUTH_MAX_FAILOVERS_PER_REQUEST, fundedAccounts - 1);
+  const antigravityHops = route.providerName === "google-antigravity" ? antigravityMaxFailoverHops(route.provider) : undefined;
+  const fundedAccounts = Math.min(genericRosterSize, GENERIC_OAUTH_MAX_ACCOUNTS_PER_REQUEST,
+    antigravityHops === undefined ? Infinity : antigravityHops + 1);
+  const genericFailoverLimit = antigravityHops ?? Math.max(GENERIC_OAUTH_MAX_FAILOVERS_PER_REQUEST, fundedAccounts - 1);
   const anthropicRosterSize = anthropicRouting && anthropicPoolAccountId ? new Set([
     anthropicPoolAccountId,
     ...anthropicRouting.getEligibleAnthropicAccounts(Date.now(), route.modelId),

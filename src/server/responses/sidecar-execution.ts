@@ -31,6 +31,7 @@ import {
 import type { AdapterRequest, ProviderAdapter } from "../../adapters/base";
 import type { OcxParsedRequest, OcxProviderConfig, OcxUsage } from "../../types";
 import { rotateProviderTransportOn429, rateLimitRetryPolicyFor } from "../../providers/key-failover";
+import { antigravity403MayRotate, planAntigravity429Rotation, withDeclinedCause } from "../../oauth/antigravity-rate-limit-policy";
 import {
   isGenericOAuthFailoverEnabled,
   rotateGenericOAuthAccountOn429,
@@ -387,6 +388,7 @@ export async function executeResponsesSidecars(
       const failedAccountId = transportState.genericFailoverAccountId;
       if (!sent || !failedAccountId || sent.accountId !== failedAccountId) return null;
       if (options.abortSignal?.aborted || sidecarHasCommittedOutput()) return null;
+      if (!antigravity403MayRotate(transportState)) return null;
 
       const hop = reserveCredentialHop(
         "auth-recovery",
@@ -448,6 +450,13 @@ export async function executeResponsesSidecars(
       // Intersection with the request's shared budget. The sidecar replay is dispatched by the
       // web-search/image loop. Its guarded executor or adapter settles this reservation
       // when the replacement is admitted to the wire.
+      let rotationRetryAfter = retryAfter;
+      if (route.providerName === "google-antigravity") {
+        const plan = withDeclinedCause(planAntigravity429Rotation(transportState, originalResponse,
+          transportState.genericFailoverAccountId, route.modelId), logCtx);
+        if (!plan.rotate) return null;
+        rotationRetryAfter = plan.retryAfter;
+      }
       const hop = reserveCredentialHop(
         "auth-recovery",
         `${route.providerName}|${route.modelId}|sidecar-oauth-429`,
@@ -455,12 +464,12 @@ export async function executeResponsesSidecars(
       if (!hop.allowed) return null;
       const nextAccountId = route.providerName === "kiro" ? rotateGenericOAuthAccountOnRefusal(
         config, route.providerName, transportState.genericFailoverAccountId,
-        refusal, retryAfter, Date.now(), route.modelId, monthlyCooldownMs,
+        refusal, rotationRetryAfter, Date.now(), route.modelId, monthlyCooldownMs,
       ) : rotateGenericOAuthAccountOn429(
         config,
         route.providerName,
         transportState.genericFailoverAccountId,
-        retryAfter,
+        rotationRetryAfter,
         Date.now(),
         route.modelId,
       );
