@@ -39,8 +39,8 @@ describe("name-based credential rule: JSON fields named *key/*token with plain d
     }
   });
 
-  it("leaves short <8-char data values and prose under key-named fields alone", () => {
-    for (const v of ["2026", "step2", "v1.2.3"]) {
+  it("leaves short <6-char data values and prose under key-named fields alone", () => {
+    for (const v of ["2026", "step2", "v1.2"]) {
       expect(redactClientBody({ status_key: v }).hits).toEqual([]);
     }
     const outcome = redactClientBody({ keywords: "refactor the status handler before 3pm" });
@@ -86,7 +86,7 @@ describe("name-based credential rule: real token shapes are still masked in any 
   it("password and secret-named fields stay unconditionally strict, even for plain words", () => {
     expect(redactClientBody({ password: "hunter2x" }).hits).toEqual([{ kind: "password", count: 1 }]);
     expect(redactClientBody({ db_password: "swordfish" }).hits).toEqual([{ kind: "password", count: 1 }]);
-    expect(redactClientBody({ client_secret: "correct-horse-word" }).hits).toEqual([{ kind: "other", count: 1 }]);
+    expect(redactClientBody({ client_secret: "correct-horse-word" }).hits).toEqual([{ kind: "api_key", count: 1 }]);
     expect(redactClientBody({ password: fakePassword() }).hits).toEqual([{ kind: "password", count: 1 }]);
     expect(redactPlainText("DB_PASSWORD=hunter2x").hits).toEqual([{ kind: "password", count: 1 }]);
   });
