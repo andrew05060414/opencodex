@@ -95,6 +95,7 @@ import { evidenceFromBody } from "../routing/request-evidence";
 import { resolveWireProtocolOverride } from "./adapter-resolve";
 import type { OcxConfig } from "../types";
 import { readJsonRequestBody, resolveInboundBodyLimitBytes } from "./request-decompress";
+import { isLiveRoutingRecentlyObserved, observeContextBreakdown } from "./context-breakdown";
 import { addFinalRequestLog, httpStatusForRequestLogTerminal, recordFirstOutput, type RequestLogContext } from "./request-log";
 import { createFinalRequestLog } from "./inference/final-log";
 import {
@@ -708,6 +709,7 @@ async function handleClaudeMessagesWithBudget(
   const advisorAdmissionPolicy = logIds?.advisorAdmissionPolicy ?? captureAdmissionPolicy(config, logIds?.admission);
   try {
     anthropicBody = await readAnthropicBody(req, translatorBudget, resolveInboundBodyLimitBytes(config.maxInboundBodyBytes));
+    if (isLiveRoutingRecentlyObserved()) observeContextBreakdown(logCtx, anthropicBody, "messages");
     clientModelLabel = clientFacingModelLabel(isRec(anthropicBody) ? anthropicBody.model : undefined);
     // Privacy redaction (privacy_contract.md): mounted on the client's original request
     // body, before ANY of the processing below -- including the native Anthropic Messages
