@@ -4,12 +4,12 @@ import { createAdapterPhysicalSend } from "./physical-send";
 import type { SendClass } from "../lib/request-execution-budget";
 import type { AttemptRecoveryKind } from "../usage/log";
 import { debugProviderDiagnosticLazy } from "../lib/debug";
-import { extractGoogleRetryAfterSeconds, hasGoogle429RetryEvidence, isQuotaExhaustedBody, retryableGoogleStatus, safeGoogleHttpErrorMessage } from "./google-errors";
+import { extractGoogleRetryAfterSeconds, hasGoogle429RetryEvidence, isGoogleQuotaExhaustedText, isQuotaExhaustedBody, parseGoogleRateLimitInfo, retryableGoogleStatus, safeGoogleHttpErrorMessage } from "./google-errors";
 import { repairGoogleInvalidRequestBodyWithReport } from "./google-wire-compiler";
 import type { GoogleToolSchemaPolicy, GoogleToolSchemaProfile } from "./google-tool-schema";
 import { normalizeUpstreamHttpErrorResponse, readDisplaySafeErrorPayloadText } from "./upstream-http-error";
 import { readBoundedResponseBody } from "../lib/bounded-body";
-import { markAntigravityModelNotFound } from "./antigravity-refusal";
+import { classifyAntigravityRateLimit, markAntigravityModelNotFound, markAntigravityRateLimit, type AntigravityRateLimit } from "./antigravity-refusal";
 import {
   abortError,
   cancelResponseBodyBestEffort,
@@ -30,6 +30,42 @@ export interface GoogleRetryOptions {
   repairInvalid400?: boolean;
   toolSchemaProfile?: GoogleToolSchemaProfile;
   toolSchemaPolicy?: GoogleToolSchemaPolicy;
+}
+
+/** What an Antigravity 429 body says about itself; never throws, empty body reads as unreasoned/declined by evidence. */
+function antigravityRateLimitOf(headers: Headers, payloadText: string): AntigravityRateLimit {
+  const info = parseGoogleRateLimitInfo(payloadText);
+  return classifyAntigravityRateLimit(
+    info,
+    isQuotaExhaustedBody(payloadText) || isGoogleQuotaExhaustedText(payloadText),
+    hasGoogle429RetryEvidence(headers, payloadText),
+  );
+}
+
+/** Record the 429's own facts on the normalized response: the marker plus a Retry-After for the stated wait. */
+function annotateAntigravityRateLimit(normalized: Response, limit: AntigravityRateLimit): Response {
+  markAntigravityRateLimit(normalized, limit);
+  const wait = limit.kind === "quota" ? limit.waitSeconds : limit.retryDelaySeconds;
+  if (wait !== undefined && !normalized.headers.has("retry-after")) normalized.headers.set("retry-after", String(wait));
+  return normalized;
+}
+
+/** Normalize or attach Antigravity 429 rate-limit provenance on raw responses before returning. */
+async function finalizeGoogleError(
+  label: string, res: Response, request: AdapterRequest, ctx: AdapterFetchContext,
+  knownLimit?: AntigravityRateLimit,
+): Promise<Response> {
+  if (!ctx.returnRawErrors) return normalizeFinalGoogleError(label, res, request, ctx.abortSignal);
+  if (label === "Antigravity" && res.status === 429) {
+    if (knownLimit) markAntigravityRateLimit(res, knownLimit);
+    else {
+      let peek = "";
+      try { peek = await readDisplaySafeErrorPayloadText(res.clone(), ctx.abortSignal); }
+      catch (error) { if (ctx.abortSignal?.aborted) throw error; }
+      markAntigravityRateLimit(res, antigravityRateLimitOf(res.headers, peek));
+    }
+  }
+  return res;
 }
 
 async function normalizeFinalGoogleError(label: string, res: Response, request: AdapterRequest, signal?: AbortSignal): Promise<Response> {
@@ -53,6 +89,14 @@ async function normalizeFinalGoogleError(label: string, res: Response, request: 
     }));
     if (!signal?.aborted) markAntigravityModelNotFound(normalized, request.body, payloadText);
     return normalized;
+  }
+  if (label === "Antigravity" && res.status === 429) {
+    let captured = "";
+    const normalized = await normalizeUpstreamHttpErrorResponse(res, {
+      signal,
+      formatMessage: payloadText => { captured = payloadText; return safeGoogleHttpErrorMessage(label, res.status, payloadText); },
+    });
+    return annotateAntigravityRateLimit(normalized, antigravityRateLimitOf(res.headers, captured));
   }
   return normalizeUpstreamHttpErrorResponse(res, {
     signal,
@@ -134,20 +178,24 @@ export async function fetchGoogleWithRetry(
         }
       }
       if (!retryableGoogleStatus(res.status) || attempt === TRANSIENT_RETRY_MAX_ATTEMPTS - 1) {
-        return ctx.returnRawErrors ? res : normalizeFinalGoogleError(label, res, activeRequest, ctx.abortSignal);
+        return finalizeGoogleError(label, res, activeRequest, ctx);
       }
       // A 429 may be a transient rate limit (retry), hard quota exhaustion (do NOT retry — it
       // won't recover for hours and burns retries), or a refusal no replay can change. The
       // status alone cannot tell them apart, so peek the body once and decide from evidence.
+      let retryHeaders = res.headers;
+      let antigravityLimit: AntigravityRateLimit | undefined;
       if (res.status === 429) {
         const peekTarget = res.clone();
         const peek = await readDisplaySafeErrorPayloadText(peekTarget, ctx.abortSignal);
-        if (isQuotaExhaustedBody(peek)) {
-          if (ctx.returnRawErrors) return res;
+        antigravityLimit = label === "Antigravity" ? antigravityRateLimitOf(res.headers, peek) : undefined;
+        if (antigravityLimit ? antigravityLimit.kind === "quota" : isQuotaExhaustedBody(peek)) {
+          if (ctx.returnRawErrors) return finalizeGoogleError(label, res, activeRequest, ctx, antigravityLimit);
           const normalized = await normalizeUpstreamHttpErrorResponse(res, {
             signal: ctx.abortSignal,
             formatMessage: payloadText => safeGoogleHttpErrorMessage(label, res.status, payloadText || peek),
           });
+          if (antigravityLimit) return annotateAntigravityRateLimit(normalized, antigravityLimit);
           if (!normalized.headers.has("retry-after")) {
             const retryAfter = extractGoogleRetryAfterSeconds(peek);
             if (retryAfter) normalized.headers.set("retry-after", retryAfter);
@@ -160,7 +208,12 @@ export async function fetchGoogleWithRetry(
         // RESOURCE_EXHAUSTED, and the proxy turned each one into three identical sends per
         // turn before surfacing the same refusal.
         if (!hasGoogle429RetryEvidence(res.headers, peek)) {
-          return ctx.returnRawErrors ? res : normalizeFinalGoogleError(label, res, activeRequest, ctx.abortSignal);
+          return finalizeGoogleError(label, res, activeRequest, ctx, antigravityLimit);
+        }
+        // The stated RetryInfo delay paces the same-account retry even when no header carried it.
+        if (antigravityLimit?.retryDelaySeconds !== undefined && !res.headers.has("retry-after")) {
+          retryHeaders = new Headers(res.headers);
+          retryHeaders.set("retry-after", String(antigravityLimit.retryDelaySeconds));
         }
       }
       // Retry-After names the earliest send Google will serve (#7802). The local maximum bounds
@@ -170,11 +223,11 @@ export async function fetchGoogleWithRetry(
       const delayMs = retryBackoffDelayMs(attempt, {
         baseDelayMs: GOOGLE_RETRY_BASE_MS,
         maxDelayMs: GOOGLE_RETRY_MAX_MS,
-        headers: res.headers,
+        headers: retryHeaders,
         retryAfterIsLowerBound: true,
       });
       if (delayMs > RETRY_AFTER_CEILING_MS) {
-        return ctx.returnRawErrors ? res : normalizeFinalGoogleError(label, res, activeRequest, ctx.abortSignal);
+        return finalizeGoogleError(label, res, activeRequest, ctx, antigravityLimit);
       }
       pendingResponse = res;
       recovery = res.status === 429 ? "rate-limit-429" : "transient-5xx";
@@ -188,7 +241,7 @@ export async function fetchGoogleWithRetry(
           // upstream answer — but it used to leave the log indistinguishable from a request
           // where no retry was ever eligible (#5044).
           ctx.onRecoveryWithheld?.({ reason: "retry-send-budget" });
-          return ctx.returnRawErrors ? pendingResponse : normalizeFinalGoogleError(label, pendingResponse, activeRequest, ctx.abortSignal);
+          return finalizeGoogleError(label, pendingResponse, activeRequest, ctx);
         }
         throw err;
       }

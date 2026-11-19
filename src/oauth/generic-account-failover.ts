@@ -459,13 +459,14 @@ export function rotateAntigravityAccountOnAuthRefusal(
   sentGeneration: string,
   requestedModelId: string | null | undefined,
   now = Date.now(),
+  cooldownMs = DEFAULT_COOLDOWN_MS,
 ): string | null {
   if (!poolActivated) return null;
   const set = getAccountSet("google-antigravity");
   if (!set || set.accounts.length < 2) return null;
   const family = classifyModelFamilyForQuota("google-antigravity", requestedModelId);
   coolAntigravityAccount(set, failedAccountId, sentGeneration, family, now, {
-    cooldownUntil: now + DEFAULT_COOLDOWN_MS, cooldownSource: "auth", identity: sentGeneration,
+    cooldownUntil: now + cooldownMs, cooldownSource: "auth", identity: sentGeneration,
   });
   return nextAntigravitySibling(set, failedAccountId, requestedModelId, family, now);
 }
