@@ -1,16 +1,18 @@
-# deploy-local.ps1: deploy the local OpenCodex build into the global npm install and verify the proxy came back healthy.
+﻿# deploy-local.ps1: deploy the local OpenCodex build into the global npm install and verify the proxy came back healthy.
 # Flow: pack the repo (or use -Tarball) -> back up the installed package to D:/Backups/<yyyyMMdd>-ocx-deploy-<n>/ -> npm i -g <tgz>
 #   -> poll the Health URL from `ocx status` until status ok, a new pid and a fresh uptime -> at ~30s Start-ScheduledTask opencodex-proxy
 #   (Stop first if Running) -> at ~60s `ocx service restart` -> GET 127.0.0.1:<port>/v1/models must be 200.
 # Exit 0 = healthy, 1 = failed (prints the rollback command). 503 package_tree_changed on /healthz = "still restarting", not failure.
 # -DryRun resolves the Health URL and probes the live service once; it packs, backs up, installs, stops and restarts nothing.
+# -ForceBranch bypasses the guardrail that requires deploying from a local/integration-* branch.
 # Logs: D:/Logs/deploy-local/ (30-day retention). Scratch tarballs: D:/Temp/scratch/deploy-local/ (14-day retention).
 param(
     [string]$Tarball,
     [ValidateRange(10, 900)]
-    [int]$HealthTimeoutSec = 90,
+    [int]$HealthTimeoutSec = 150,
     [string]$BackupRoot = 'D:/Backups',
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$ForceBranch
 )
 
 Set-StrictMode -Version Latest
@@ -329,7 +331,20 @@ function Remove-Expired {
 function Invoke-Deploy {
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $script:LogFile = Join-Path $LogRoot ('deploy-local-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
-    Write-Log 'INFO' "deploy-local start: DryRun=$([bool]$DryRun) HealthTimeoutSec=$HealthTimeoutSec BackupRoot=$BackupRoot"
+    Write-Log 'INFO' "deploy-local start: DryRun=$([bool]$DryRun) HealthTimeoutSec=$HealthTimeoutSec BackupRoot=$BackupRoot ForceBranch=$([bool]$ForceBranch)"
+
+    if (-not $Tarball -and -not $DryRun) {
+        $branch = (& git -C $RepoRoot rev-parse --abbrev-ref HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $branch) {
+            $branch = $branch.Trim()
+            if ($branch -notmatch '^local/integration-' -and -not $ForceBranch) {
+                Exit-Deploy "refusing to deploy from side branch '$branch' (must match ^local/integration-*, or pass -ForceBranch)"
+            }
+            Write-Log 'INFO' "git branch guardrail ok: $branch"
+        } elseif (-not $ForceBranch) {
+            Exit-Deploy "could not verify git branch in $RepoRoot (pass -ForceBranch to override)"
+        }
+    }
 
     if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) { Exit-Deploy 'npm.cmd not found on PATH' }
     if (-not (Test-Path -LiteralPath $PkgDir -PathType Container)) { Exit-Deploy "installed package not found: $PkgDir" }
@@ -393,7 +408,12 @@ function Invoke-Deploy {
     if ($null -eq $healthy) { Exit-Deploy "not healthy after ${HealthTimeoutSec}s" }
 
     $port = ([uri]$healthy.Url).Port
-    $models = Get-HttpCode "http://127.0.0.1:$port/v1/models"
+    $models = 0
+    for ($try = 1; $try -le 5; $try++) {
+        $models = Get-HttpCode "http://127.0.0.1:$port/v1/models"
+        if ($models -eq 200) { break }
+        Start-Sleep -Seconds 2
+    }
     if ($models -ne 200) { Exit-Deploy "GET http://127.0.0.1:$port/v1/models returned $models, expected 200" }
     Write-Log 'OK' "GET http://127.0.0.1:$port/v1/models -> 200"
     if ($healthy.Version -and $newVersion -and [string]$healthy.Version -ne [string]$newVersion) {
