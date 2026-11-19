@@ -7,7 +7,8 @@ import { clientIconClass } from "../client-icon";
 const CLIENT_ICONS: Record<UsageClient, string | null> = {
   codex_cli: "openai.svg", codex_desktop: "openai.svg", codex_ide: "openai.svg",
   claude_code: "claude-color.svg", claude_desktop: "claude-color.svg",
-  grok: "grok.svg", opencode: "opencode.svg", aside: "aside.svg", other: null, unknown: null,
+  grok: "grok.svg", opencode: "opencode.svg", aside: "aside.svg",
+  antigravity: "antigravity-color.svg", agy: "antigravity-color.svg", other: null, unknown: null,
 };
 
 /** Render only classified enum values, including when reading older or malformed cached rows. */

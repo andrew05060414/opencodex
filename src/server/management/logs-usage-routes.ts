@@ -24,6 +24,7 @@ import {
 import { removeCredential } from "../../oauth/store";
 import { getFailureProjection } from "../../usage/failure-projection-cache";
 import { MAX_USAGE_CONFIGURED_KEYS, parseUsageSource, snapshotConfiguredKeyIds } from "../../usage/source-filter";
+import { presentUnfilteredUsageSummary, selectsEverySource } from "./usage-source-presentation";
 import { providerDestinationResolvedError } from "../../lib/destination-policy";
 import { enrichProviderFromCatalog, listKeyLoginProviders } from "../../oauth/key-providers";
 import { deriveProviderPresets } from "../../providers/derive";
@@ -73,6 +74,7 @@ import { getRequestLogEntries, queryRequestLogs, type RequestLogEntry } from "..
 import { decodeRequestLogCursor, selectRequestLogPoll } from "../request-log-cursor";
 import { estimateComboCost, estimateRequestCost, normalizeCostTokens, tokensPerSecond } from "../../usage/cost";
 import { userCostOverlayVersion } from "../../usage/user-cost-overlays";
+import { triggerPriceCatalogRefresh } from "../../usage/price-catalog";
 import type { PersistedUsageAttempt } from "../../usage/log";
 import { isAllowedRequestOrigin, jsonResponse, providerManagementConfigError, publicProviderBaseUrl, safeConfigDTO } from "../auth-cors";
 import { applySystemEnvToggle } from "../system-env";
@@ -247,6 +249,7 @@ export async function handleLogsUsageRoutes(ctx: ManagementContext): Promise<Res
   }
 
   if (url.pathname === "/api/usage" && req.method === "GET") {
+    triggerPriceCatalogRefresh();
     const source = parseUsageSource(url.searchParams);
     if (source.kind === "invalid") return jsonResponse({ error: "invalid usage source filter" }, 400);
     const unconfigured = source.kind === "filtered" && source.filter.device.kind === "unconfigured";
@@ -321,7 +324,8 @@ export async function handleLogsUsageRoutes(ctx: ManagementContext): Promise<Res
       ...(source.kind === "filtered" ? { sourceFilter: source.filter } : {}),
       ...(configuredIds ? { configuredApiKeyIds: configuredIds } : {}),
     };
-    const filterRequested = source.kind === "filtered" || window !== undefined || [filter.provider, filter.model, filter.apiKeyId]
+    const everySource = selectsEverySource(source);
+    const filterRequested = (source.kind === "filtered" && !everySource) || window !== undefined || [filter.provider, filter.model, filter.apiKeyId]
       .some(value => typeof value === "string" && value.trim() !== "");
     const now = Date.now();
     try {
@@ -343,7 +347,7 @@ export async function handleLogsUsageRoutes(ctx: ManagementContext): Promise<Res
         && now < cached.freshUntil
         && now < cached.expiresAt
         && observedSize >= cached.lastSeenSize) {
-        return jsonResponse(refreshedUsageSummary(cached.summary, range, now));
+        return jsonResponse(presentUnfilteredUsageSummary(refreshedUsageSummary(cached.summary, range, now), everySource));
       }
       if (cached && !filterRequested) discardUsageSummaryCacheEntry(cacheKey);
       if (filterRequested) {
@@ -402,7 +406,7 @@ export async function handleLogsUsageRoutes(ctx: ManagementContext): Promise<Res
         || currentTimeZone !== aggregate.timeZone) {
         // The aggregate is internally consistent, but an input changed after
         // its scan. Serve it uncached and let the next request rebuild.
-        return jsonResponse(requestedSummary);
+        return jsonResponse(presentUnfilteredUsageSummary(requestedSummary, everySource));
       }
       // Derived from the canonical constants rather than re-listed: a subset
       // literal type-checks perfectly happily, so a range added to the union
@@ -432,7 +436,7 @@ export async function handleLogsUsageRoutes(ctx: ManagementContext): Promise<Res
           });
         }
       }
-      return jsonResponse(requestedSummary);
+      return jsonResponse(presentUnfilteredUsageSummary(requestedSummary, everySource));
     } catch {
       if (sessionGuard && sessionGuard(ctx, "dashboard")) return expiredUsageSession();
       // A missing ledger is handled as an empty installation by the reader. Reaching this catch

@@ -6,7 +6,7 @@
  * `?key=` query parameter, so the request is cloned with that credential moved onto
  * `x-opencodex-api-key` and the query key dropped; the key is never logged or forwarded.
  */
-import { classifyUsageClient } from "../../usage/client";
+import { usageClientLogContext } from "../../usage/client";
 import { admissionFields, isAllowedRequestOrigin, resolveApiAuth, resolveResponsesApiAuth, withCors, type RequestPolicyView } from "../auth-cors";
 import { withCallerSessionIdentity } from "../caller-session-identity";
 import { captureAdmissionPolicy } from "../capture-admission-policy";
@@ -66,7 +66,7 @@ export async function dispatchGeminiRoute(original: Request, url: URL, deps: Gem
     model: "unknown",
     provider: "unknown",
     ...deps.requestMetricsLogContext,
-    client: classifyUsageClient(req.headers),
+    ...usageClientLogContext(req.headers),
     ...admissionFields(admission),
   };
   const sessionReq = withCallerSessionIdentity(req, admission);
