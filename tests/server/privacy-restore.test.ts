@@ -21,7 +21,7 @@ import {
 import type { OcxConfig } from "../../src/types";
 import { acquireOwnedSpendHome } from "../helpers/owned-spend-home";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
-import { fakeOpenAiKey } from "./fixtures/secrets";
+import { fakeOpenAiKey } from "../fixtures/privacy/secrets";
 
 const SECRET = fakeOpenAiKey("restore");
 const PH = generatePlaceholder(SECRET);

@@ -48,6 +48,17 @@
   ],
   "docs": [
     {
+      "path": "privacy-redaction.md",
+      "tier": 3,
+      "title": "Client-Request Privacy Redaction",
+      "scope": "Request-body redaction on every client entry point, allow-list, two-way restore, reveal mode and stats.",
+      "documents": [
+        "src/privacy/",
+        "src/server/management/privacy-routes.ts",
+        "src/types/privacy-redaction-config.ts"
+      ]
+    },
+    {
       "path": "transports/timeouts.md",
       "tier": 3,
       "title": "Upstream Timeouts",

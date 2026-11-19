@@ -501,6 +501,9 @@ class RedactionSession {
     if (value.length < MIN_NAMED_SECRET_LEN || isAlreadyPlaceholder(value) || this.allow.has(value)) {
       return value;
     }
+    if (kind !== "password" && !isPasswordLikeName(fieldName) && (/\s/.test(value) || !looksLikeSecretValue(value, "", fieldName))) {
+      return this.redactString(value);
+    }
     const placeholder = generatePlaceholder(value);
     this.recordHit(
       kind,

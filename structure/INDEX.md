@@ -46,6 +46,7 @@ The wire surfaces a client actually talks to.
 
 | Doc | Scope |
 | --- | --- |
+| [`privacy-redaction.md`](privacy-redaction.md) | Request-body redaction on every client entry point, allow-list, two-way restore, reveal mode and stats. |
 | [`transports/timeouts.md`](transports/timeouts.md) | Local header and JSON body deadlines, cancellation and optional OpenCode timeout export. |
 | [`remote-messaging.md`](remote-messaging.md) | Explicit peer enrollment, connection-bound capabilities, bounded foreground SSH ownership and queued remote replies. |
 | [`local-messaging.md`](local-messaging.md) | Loaded-session Unix messaging and opt-in stored-queue MCP tools, explicit final-turn reads, receipts and owned helper bounds. |
@@ -426,6 +427,7 @@ A source area can be described by more than one doc, because these docs are orga
 | `src/oauth/meta-muse.ts` | [`providers/meta-muse.md`](providers/meta-muse.md) |
 | `src/oauth/workbuddy.ts` | [`providers/workbuddy.md`](providers/workbuddy.md) |
 | `src/plugins/` | [`ops/plugins.md`](ops/plugins.md) |
+| `src/privacy/` | [`privacy-redaction.md`](privacy-redaction.md) |
 | `src/protocols/` | [`data-planes/protocol-paths.md`](data-planes/protocol-paths.md) |
 | `src/protocols/codecs/gemini.ts` | [`data-planes/gemini-inbound.md`](data-planes/gemini-inbound.md) |
 | `src/protocols/codecs/ollama.ts` | [`data-planes/ollama-inbound.md`](data-planes/ollama-inbound.md) |
@@ -520,6 +522,7 @@ A source area can be described by more than one doc, because these docs are orga
 | `src/server/management/link-routes.ts` | [`remote-link.md`](remote-link.md) |
 | `src/server/management/logs-usage-routes.ts` | [`usage-client-attribution.md`](usage-client-attribution.md) |
 | `src/server/management/model-routes.ts` | [`pricing.md`](pricing.md) |
+| `src/server/management/privacy-routes.ts` | [`privacy-redaction.md`](privacy-redaction.md) |
 | `src/server/management/provider-credential-release.ts` | [`providers/oauth-credential-siblings.md`](providers/oauth-credential-siblings.md) |
 | `src/server/management/provider-overwrite-carry.ts` | [`providers/hosted-tool-denials.md`](providers/hosted-tool-denials.md) |
 | `src/server/management/quota-pool-routes.ts` | [`quota-pool.md`](quota-pool.md) |
@@ -609,6 +612,7 @@ A source area can be described by more than one doc, because these docs are orga
 | `src/types/admission-policy.ts` | [`advisor.md`](advisor.md) |
 | `src/types/claude-tool-loading.ts` | [`data-planes/claude-tool-loading.md`](data-planes/claude-tool-loading.md) |
 | `src/types/config.ts` | [`transports/timeouts.md`](transports/timeouts.md)<br>[`config.md`](config.md)<br>[`transports/max-output-completion.md`](transports/max-output-completion.md)<br>[`clients/omo-export-dialect.md`](clients/omo-export-dialect.md) |
+| `src/types/privacy-redaction-config.ts` | [`privacy-redaction.md`](privacy-redaction.md) |
 | `src/types/provider.ts` | [`pricing.md`](pricing.md) |
 | `src/types/routed-catalog-defaults.ts` | [`catalog-routed-defaults.md`](catalog-routed-defaults.md) |
 | `src/types/telemetry.ts` | [`telemetry.md`](telemetry.md) |
