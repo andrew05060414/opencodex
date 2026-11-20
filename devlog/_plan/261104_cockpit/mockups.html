@@ -1,0 +1,148 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>OpenCodex 驾驶舱样稿</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--sub:#6e6e73;--line:#e5e3de;--acc:#2f6fed;--ok:#1f9d55;--warn:#c47a00;--bad:#d64545;--note:#ff7a1a}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 "PingFang SC","Microsoft YaHei UI",system-ui,sans-serif;background:#e9e7e2;color:var(--ink)}
+.board{width:1560px;margin:24px auto;background:var(--bg);border-radius:14px;padding:0 280px 0 0;display:grid;grid-template-columns:200px 1fr;overflow:hidden;position:relative;box-shadow:0 2px 12px #0001;background-image:linear-gradient(90deg,transparent calc(100% - 280px),#fff7ef calc(100% - 280px))}
+.lead-line{position:absolute;height:2px;background:var(--note);transform-origin:0 50%;z-index:4}
+.ttl{grid-column:1/-1;background:#1d1d1f;color:#fff;padding:10px 20px;font-size:13px;display:flex;gap:12px}.ttl b{color:var(--note)}
+nav{background:#efede8;padding:18px 12px;border-right:1px solid var(--line)}nav .g{font-size:11px;color:var(--sub);margin:14px 8px 4px;letter-spacing:.05em}
+nav a{display:block;padding:6px 10px;border-radius:7px;color:var(--ink);text-decoration:none}nav a.on{background:#fff;font-weight:600;box-shadow:0 1px 2px #0001}
+main{padding:22px 28px 28px}h2{margin:0 0 2px;font-size:20px}.lead{color:var(--sub);margin:0 0 16px}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:10px}.grow{flex:1}.btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 11px;font-size:13px}
+.btn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.list{background:var(--card);border:1px solid var(--line);border-radius:12px}
+.row{display:grid;grid-template-columns:40px 1fr auto auto auto;gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}.row:first-child{border-top:0}
+.ics{display:flex}.ics i{width:22px;height:22px;border-radius:6px;border:2px solid #fff;margin-left:-8px;display:grid;place-items:center;font-style:normal;font-size:10px;color:#fff;font-weight:700}.ics i:first-child{margin-left:0}
+.nm b{font-size:15px}.nm code{font:12px ui-monospace,Consolas,monospace;color:var(--sub);margin-left:8px;background:#f1f0ec;padding:1px 6px;border-radius:5px}
+.mem{color:var(--sub);font-size:12.5px;margin-top:2px}.mem .q{color:var(--ink)}.mem .lo{color:var(--warn)}.mem .out{color:var(--bad)}
+.ctx{font-size:12px;color:var(--sub);background:#f1f0ec;border-radius:6px;padding:2px 8px;white-space:nowrap}
+.sel{border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:13px;background:#fff;white-space:nowrap}
+.sw{width:34px;height:20px;border-radius:10px;background:var(--ok);position:relative}.sw:after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}.sw.off{background:#c8c6c0}.sw.off:after{right:auto;left:2px}
+.open{background:#fbfaf7}.chan{grid-column:1/-1;display:grid;gap:6px;margin-top:4px}
+.ch{display:grid;grid-template-columns:22px 26px 1.2fr 1.4fr 150px 70px 44px;gap:10px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:13px}
+.n{color:var(--sub);text-align:center}.bar{height:6px;border-radius:3px;background:#ebe9e4;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}.bar.w i{background:var(--warn)}.bar.b i{background:var(--bad)}
+.tag{font-size:11.5px;border-radius:5px;padding:1px 6px;background:#eef3ff;color:var(--acc);white-space:nowrap}.tag.g{background:#e8f6ee;color:var(--ok)}.tag.y{background:#fff4e0;color:var(--warn)}.tag.r{background:#fdecec;color:var(--bad)}
+.hint{font-size:12.5px;color:var(--sub);margin:8px 0 0 2px}
+.req{display:grid;grid-template-columns:64px 1.3fr 1.5fr 92px 70px 70px 80px;gap:10px;align-items:center;padding:8px 14px;border-top:1px solid var(--line);font-size:13px}.req.h{font-size:11.5px;color:var(--sub);border-top:0}
+.story{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:14px}
+.step{display:flex;gap:10px;align-items:baseline;margin:5px 0}.step .d{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none;transform:translateY(-1px)}.step .d.r{background:var(--bad)}.step .d.s{background:#c8c6c0}
+.grid{display:grid;grid-template-columns:repeat(100,1fr);gap:2px;margin:8px 0}.grid i{aspect-ratio:1;border-radius:2px;background:#ebe9e4}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}.kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px}.kpi .k{font-size:12px;color:var(--sub)}.kpi .v{font-size:22px;font-weight:650}.kpi .s{font-size:12px;color:var(--sub)}
+.stack{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:6px 0}.stack i{display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:8px 12px;border-top:1px solid var(--line);text-align:left}th{font-weight:500;color:var(--sub);font-size:12px;border-top:0}td.r,th.r{text-align:right}
+.set{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:14px}.set .sh{padding:10px 16px;font-size:12px;color:var(--sub);border-bottom:1px solid var(--line);letter-spacing:.04em}
+.pref{display:grid;grid-template-columns:1fr auto;gap:16px;padding:12px 16px;border-top:1px solid var(--line);align-items:center}.pref:first-of-type{border-top:0}.pref .nm2{font-weight:600}.pref .sub{color:var(--sub);font-size:12.5px}
+.ph{font:12px ui-monospace,Consolas,monospace;background:#fff4e0;color:#8a5300;border-radius:4px;padding:0 4px}
+.call{position:absolute;background:var(--note);color:#fff;font-size:13px;font-weight:600;padding:5px 10px;border-radius:8px;max-width:270px;line-height:1.4;box-shadow:0 2px 6px #0002;z-index:5}
+.call b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#fff;color:var(--note);font-size:11px;margin-right:6px}
+.ring{position:absolute;border:2.5px solid var(--note);border-radius:10px;z-index:4}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--sub);flex-wrap:wrap}.legend span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c)}
+</style></head><body>
+
+<!-- D1 路由页 -->
+<section class="board" id="d1">
+<div class="ttl"><b>D1</b> 路由页 · 一行一个模型（样稿，数据取自本机 config 的真实 combo，额度数字为示意）</div>
+<nav><div class="g">工作</div><a>总览</a><a>日志</a><div class="g">模型</div><a>供应商</a><a class="on">路由</a><a>模型目录</a><div class="g">洞察</div><a>用量</a><a>隐私</a><div class="g">设置</div><a>设置</a></nav>
+<main>
+<div class="head"><div><h2>路由</h2><p class="lead">每个模型名背后挂哪些通道、按什么顺序用，都在这一页。</p></div><span class="grow"></span><button class="btn">筛选模型…</button><button class="btn pri">＋ 新建模型路由</button></div>
+<div class="list">
+ <div class="row"><div class="ics"><i style="background:#d97757">A</i><i style="background:#4285f4">G</i><i style="background:#555">Z</i></div>
+  <div data-n="1" data-t="一行一个模型：名字、调用 ID、通道顺序；第二行直接写各通道还剩多少额度" data-p="r" class="nm"><b>Claude Opus 5.5</b><code>claude-opus-5-5</code>
+   <div class="mem">Antigravity → Anthropic 订阅 → Anthropic API → 杂鱼 Claude</div>
+   <div class="mem">Antigravity <span class="q">周 62% 剩</span> · Anthropic 订阅 2 个账号 <span class="lo">5 小时 18% 剩</span> · API key 按量</div></div>
+  <span data-n="2" data-t="上下文窗口、策略下拉、总开关都在行尾，不用点进去就能改" data-p="b" data-w="3" class="ctx">上下文 200K</span><span class="sel">按顺序 ▾</span><span class="sw"></span></div>
+ <div class="row open"><div class="ics"><i style="background:#10a37f">O</i><i style="background:#555">Z</i></div>
+  <div class="nm"><b>GPT-6.1 Sol</b><code>gpt-6.1-sol</code>
+   <div class="mem">OpenAI 订阅 → Zed → 杂鱼 Codex</div></div>
+  <span class="ctx">上下文 400K</span><span class="sel">按顺序 ▾</span><span class="sw"></span>
+  <div data-n="3" data-t="点开一行就是通道编辑：每条通道的额度条、直通还是协议转换、缓存命中，各自一个开关" data-p="b" class="chan">
+   <div class="ch"><span class="n">1</span><i style="width:20px;height:20px;border-radius:5px;background:#10a37f"></i><span><b>OpenAI 订阅</b> · 3 个账号</span><span><div class="bar"><i style="width:71%"></i></div><small class="mem">周 71% 剩 · 周四 09:00 重置</small></span><span class="tag g">原生直通</span><span class="mem">缓存 84%</span><span class="sw"></span></div>
+   <div class="ch"><span class="n">2</span><i style="width:20px;height:20px;border-radius:5px;background:#555"></i><span><b>Zed</b> · gpt-6.1-sol</span><span><div class="bar w"><i style="width:22%"></i></div><small class="mem">月 22% 剩</small></span><span class="tag y">Responses→Chat 转换</span><span class="mem">缓存 —</span><span class="sw"></span></div>
+   <div class="ch"><span class="n">3</span><i style="width:20px;height:20px;border-radius:5px;background:#888"></i><span><b>杂鱼 Codex</b> · gpt-6.1-sol</span><span><div class="bar b"><i style="width:0"></i></div><small class="mem out">冷却中，还剩 4 分钟</small></span><span class="tag g">原生直通</span><span class="mem">缓存 61%</span><span class="sw off"></span></div>
+   <div class="hint">按顺序：第一条能用就一直用它；额度用完、被限流或报错时换下一条，只在回复开始之前换。　<a style="color:var(--acc)">＋ 加通道</a>　<a style="color:var(--acc)">更多设置（粘住会话、等待冷却…）</a></div>
+  </div></div>
+ <div class="row"><div class="ics"><i style="background:#4285f4">G</i><i style="background:#555">Z</i><i style="background:#1a73e8">V</i></div>
+  <div class="nm"><b>Gemini 4 Argon</b><code>Gemini-4-Argon</code><div class="mem">Antigravity → Zed → Vertex（gcloud）</div><div class="mem">Antigravity <span class="q">周 88% 剩</span> · Vertex 按量</div></div>
+  <span class="ctx">上下文 1M</span><span class="sel">按顺序 ▾</span><span class="sw"></span></div>
+ <div class="row"><div class="ics"><i style="background:#4d6bfe">D</i><i style="background:#555">Z</i><i style="background:#0a7">B</i></div>
+  <div class="nm"><b>DeepSeek V4.1 Flash</b><code>deepseek-v4.1-flash</code><div class="mem">WorkBuddy → 杂鱼 DeepSeek → Bitdeer</div></div>
+  <span class="ctx">上下文 128K</span><span class="sel">最少使用 ▾</span><span class="sw"></span></div>
+ <div class="row"><div class="ics"><i style="background:#000">x</i><i style="background:#333">C</i></div>
+  <div class="nm"><b>Grok 4.7</b><code>grok-4.7</code><div class="mem">xAI → Cursor</div></div>
+  <span class="ctx">上下文 256K</span><span class="sel">按顺序 ▾</span><span class="sw off"></span></div>
+</div>
+</main>
+</section>
+
+<!-- D2 请求记录 -->
+<section class="board" id="d2">
+<div class="ttl"><b>D2</b> 路由页下半 · 请求记录：每个请求走了哪条通道（样稿，示意数据）</div>
+<nav><div class="g">模型</div><a>供应商</a><a class="on">路由</a></nav>
+<main>
+<div class="head"><h2 style="font-size:16px">最近请求</h2><span class="tag g">● 实时</span><span class="grow"></span><span class="mem">今天 412 次 · 换过通道 9 次 · 客户端看到的报错 1 次</span></div>
+<div class="list">
+ <div data-n="2" data-t="直通还是协议转换、首字多久、缓存命中多少，每行都有" data-p="t" class="req h"><span>时间</span><span>请求的模型 · 客户端</span><span>实际回答</span><span>协议</span><span>首字</span><span>缓存</span><span>token</span></div>
+ <div class="req"><span>14:02:11</span><span><b>claude-opus-5-5</b> · Claude Code</span><span>Antigravity · claude-opus-5-5</span><span class="tag y">转换</span><span>1.8s</span><span>92%</span><span>48.2K</span></div>
+ <div data-n="1" data-t="一眼看出：第一条被限流，换到了 Zed" data-p="b" class="req" style="background:#fff8f0"><span>14:01:47</span><span><b>gpt-6.1-sol</b> · Codex</span><span><s class="mem">OpenAI 订阅 429</s> → Zed</span><span class="tag y">转换</span><span>3.1s</span><span>—</span><span>31.0K</span></div>
+ <div class="req"><span>14:01:02</span><span><b>gpt-6.1-sol</b> · Codex</span><span>OpenAI 订阅 · 账号 2</span><span class="tag g">直通</span><span>0.9s</span><span>84%</span><span>29.4K</span></div>
+ <div class="req"><span>13:59:40</span><span><b>deepseek-v4.1-flash</b> · Reviewer</span><span>WorkBuddy</span><span class="tag y">转换</span><span>0.6s</span><span>40%</span><span>6.1K</span></div>
+</div>
+<div data-n="3" data-t="点一行：用白话讲这次怎么路由，下面是上下文窗口被什么占满" data-p="t" class="story">
+ <div class="head" style="margin:0 0 6px"><b>14:01:47 这次请求是怎么走的</b><span class="grow"></span><button class="btn">请求和响应</button><button class="btn">看用量</button></div>
+ <div class="step"><span class="d s"></span><span>Codex 用 Responses 协议请求 <b>gpt-6.1-sol</b>，按顺序路由，候选 3 条。</span></div>
+ <div class="step"><span class="d r"></span><span><b>OpenAI 订阅</b> 回 429（限流），这条通道休息 60 秒。回复还没开始，所以换下一条。</span></div>
+ <div class="step"><span class="d"></span><span><b>Zed</b> 回答：Responses 转成 Chat 发出、再转回来；首字 3.1 秒，Zed 不报缓存。</span></div>
+ <div style="margin-top:10px"><b style="font-size:13px">上下文窗口</b> <span class="mem">31.0K / 400K（8%）</span>
+ <div class="grid" id="g"></div>
+ <div class="legend"><span style="--c:#7c8cf5">系统提示</span><span style="--c:#56b4e9">工具定义</span><span style="--c:#f0a35e">工具结果</span><span style="--c:#6cc287">对话</span><span style="--c:#ebe9e4">空着</span></div></div>
+</div>
+</main>
+</section>
+
+<!-- D3 用量 -->
+<section class="board" id="d3">
+<div class="ttl"><b>D3</b> 用量页 · 按调用方的今日 / 30 天（样稿，示意数据）</div>
+<nav><div class="g">洞察</div><a class="on">用量</a><a>隐私</a></nav>
+<main>
+<div class="head"><h2>用量</h2><span class="grow"></span><span class="sel">今天</span><span class="sel" style="background:#1d1d1f;color:#fff">30 天</span><span class="sel">全部</span></div>
+<div class="kpis">
+ <div class="kpi"><div class="k">请求</div><div class="v">9,842</div><div class="s">今天 412</div></div>
+ <div data-n="1" data-t="token 拆成缓存读 / 未缓存 / 输出 / 推理，命中率单独一格" data-p="b" data-w="2" class="kpi"><div class="k">token</div><div class="v">612M</div><div class="stack"><i style="flex:62;background:#7c8cf5"></i><i style="flex:30;background:#6cc287"></i><i style="flex:5;background:#f0a35e"></i><i style="flex:3;background:#c58af0"></i></div><div class="s">缓存读 62% · 未缓存输入 30% · 输出 5% · 推理 3%</div></div>
+ <div class="kpi"><div class="k">缓存命中率</div><div class="v">67%</div><div class="s">缓存读 ÷ 全部输入</div></div>
+ <div class="kpi"><div class="k">估算费用</div><div class="v">$184</div><div class="s">订阅内的按牌价折算，仅供参考</div></div>
+</div>
+<div data-n="2" data-t="按 API key 分行：今天和 30 天并排，谁在烧钱、谁缓存差一眼看出" data-p="b" class="list"><table>
+<tr><th>调用方（API key）</th><th class="r">今天</th><th class="r">30 天</th><th>token 构成</th><th class="r">缓存命中</th><th class="r">费用</th></tr>
+<tr><td><b>Codex（本机）</b> <span class="mem">loopback</span></td><td class="r">212</td><td class="r">5,120</td><td><div class="stack" style="width:160px"><i style="flex:70;background:#7c8cf5"></i><i style="flex:24;background:#6cc287"></i><i style="flex:6;background:#f0a35e"></i></div></td><td class="r">74%</td><td class="r">$96</td></tr>
+<tr><td><b>Claude Code</b> <span class="mem">key·cc-main</span></td><td class="r">150</td><td class="r">3,402</td><td><div class="stack" style="width:160px"><i style="flex:66;background:#7c8cf5"></i><i style="flex:28;background:#6cc287"></i><i style="flex:6;background:#f0a35e"></i></div></td><td class="r">69%</td><td class="r">$71</td></tr>
+<tr><td><b>Multica Reviewer</b> <span class="mem">key·reviewer</span></td><td class="r">50</td><td class="r">1,320</td><td><div class="stack" style="width:160px"><i style="flex:20;background:#7c8cf5"></i><i style="flex:70;background:#6cc287"></i><i style="flex:10;background:#f0a35e"></i></div></td><td class="r">21%</td><td class="r">$17</td></tr>
+</table></div>
+</main>
+</section>
+
+<!-- D4 隐私 -->
+<section class="board" id="d4">
+<div class="ttl"><b>D4</b> 隐私页 · 脱敏开关、作用说明、替换记录（样稿，示意数据）</div>
+<nav><div class="g">洞察</div><a>用量</a><a class="on">隐私</a></nav>
+<main>
+<div data-n="1" data-t="标题下一句话讲清它做什么、原文存在哪；开关在右边" data-p="b" class="head"><div><h2>隐私</h2><p class="lead">发给模型之前，把密钥这类内容换成占位符，模型看不到原文。打开「双向还原」后，回复里的占位符会换回原文。</p></div><span class="grow"></span><span class="sw"></span><b>开</b></div>
+<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+ <div class="kpi"><div class="k">近 7 天替换</div><div class="v">1,284 处</div><div class="s">涉及 214 次请求</div></div>
+ <div class="kpi"><div class="k">不同的值</div><div class="v">37 个</div><div class="s">同一个值每次换成同一个占位符</div></div>
+ <div class="kpi"><div class="k">去向最多</div><div class="v" style="font-size:16px">Codex → OpenAI 订阅</div><div class="s">812 处</div></div>
+</div>
+<div data-n="2" data-t="每类规则配一个「之前 → 之后」的例子，不用猜" data-p="r" class="set"><div class="sh">替换什么</div>
+ <div class="pref"><div><div class="nm2">API 密钥和令牌</div><div class="sub">sk-…、ghp_…、Bearer 令牌。例：<span class="ph">sk-proj-a1…</span> → <span class="ph">{{SECRET_1}}</span></div></div><span class="sw"></span></div>
+ <div class="pref"><div><div class="nm2">邮箱和手机号</div><div class="sub">例：andrew@… → <span class="ph">{{EMAIL_1}}</span></div></div><span class="sw"></span></div>
+ <div class="pref"><div><div class="nm2">放行名单</div><div class="sub">这些值照原样发出，比如公开的仓库地址。3 条</div></div><button class="btn">编辑</button></div>
+</div>
+<div class="list"><table>
+<tr><th>时间</th><th>客户端 → 供应商</th><th>模型</th><th>替换了什么</th></tr>
+<tr><td>14:02</td><td>Claude Code → Antigravity</td><td>claude-opus-5-5</td><td><span class="tag">密钥 ×2</span> <span class="tag">邮箱 ×1</span></td></tr>
+<tr><td>13:58</td><td>Codex → OpenAI 订阅</td><td>gpt-6.1-sol</td><td><span class="tag">密钥 ×5</span></td></tr>
+</table></div>
+<div class="story"><b>试一下</b> <span class="mem">粘一段文字，看发出去会变成什么（不发给任何人）</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px"><div class="ch" style="display:block">token=ghp_x9Lk… 发给 a@b.com</div><div class="ch" style="display:block">token=<span class="ph">{{SECRET_1}}</span> 发给 <span class="ph">{{EMAIL_1}}</span></div></div></div>
+</main>
+</section>
+<script>const g=document.getElementById('g');const seq=[['#7c8cf5',12],['#56b4e9',10],['#f0a35e',4],['#6cc287',6]];for(const[c,n]of seq)for(let i=0;i<n;i++){const e=document.createElement('i');e.style.background=c;g.append(e)}for(let i=32;i<400;i++)g.append(document.createElement('i'));</script>
+<script src="notes.js"></script></body></html>
