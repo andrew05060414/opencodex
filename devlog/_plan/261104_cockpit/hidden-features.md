@@ -1,12 +1,12 @@
 # 后端有、仪表盘藏着的功能：盘点与上游 issue 草稿
 
-> 创建日期：2026-11-21 ｜ 最后更新：2026-11-21 ｜ 版本：1.0 ｜ 票：PX-1450（母票 PX-1446）
+> 创建日期：2026-11-21 ｜ 最后更新：2026-11-22 ｜ 版本：1.1 ｜ 票：PX-1450（母票 PX-1446）
 
 ## 结论（先看这里）
 
-- 配置类型里一共 330 个字段（`OcxConfig` + `OcxProviderConfig`），以上游 `upstream/dev`（`572e65cd7`，2026-11-21）为准，**224 个在 `gui/src` 里一次都没出现过**。这只是按名字搜的上限：有的字段经管理接口改了名字后有入口（下文「已有入口」一节列了 9 个这样的例子），所以真正藏着的少于 224 个。下文主表里的每一条都按功能另外核实过。
-- 票面里四个例子，三个已经过时：Vertex 免 key 上游已修好（#8311），协议直通/转换已经能看到（日志徽章 + 方案面板），`visionSidecar` 和 Lab 矩阵都已有入口。**真正还藏着的高价值项是：供应商改名、超时与重试、账号池缓存亲和与切换阈值。**
-- fork `dev-2.93` 落后上游 692 个提交。Vertex 修复、`transientRetryOn5xx` 的界面、按供应商设超时都只在上游有。**fork 同步一次上游，就能直接拿到其中几项，不用自己写。**
+- 两个方向都扫了：配置字段（`OcxConfig` + `OcxProviderConfig` 共 330 个）和管理接口（`url.pathname === "/api/…"` 共 238 条路径），基准都是上游 `upstream/dev`（`572e65cd7`，2026-11-21）。**224 个配置字段、57 条接口路径在 `gui/src` 里按字面搜不到**。两个数字都只是上限：改名的字段/路径可能经别的入口可达，本文主表里的每一条都按功能另外核实过。
+- 票面里四个例子，三个已经过时：Vertex 免 key 上游已修好（#8311），协议直通/转换在上游已经能看到，`visionSidecar` 和 Lab 矩阵都已有入口。**真正还藏着的高价值项是：供应商改名、超时与重试、账号池缓存亲和与切换阈值。**
+- fork `dev-2.93` 落后上游 692 个提交。Vertex 修复、供应商页的原生直通开关、按供应商设超时、内置 `openai` 的 5xx 重试控件都只在上游有。**fork 同步一次上游，就能直接拿到其中几项，不用自己写。**
 - 上游 issue 草稿 4 份，见文末，**还没提交，等 Andrew 同意**。其中第 4 份是更深一层的做法：不再一个开关一个开关地补，而是按配置类型的注释自动生成一个「高级设置」页，把长尾一次性收进去。
 
 ## 方法与局限
@@ -14,10 +14,10 @@
 1. 从 `src/types/config.ts` 的 `OcxConfig`、`src/types/provider.ts` 的 `OcxProviderConfig` 取出所有顶层字段（脚本按花括号深度解析）。
 2. 对每个字段，在 `gui/src` 里按整词 `git grep`（排除 `i18n/` 和测试），`origin/dev-2.93` 和 `upstream/dev` 各跑一遍。
 3. 对候选项再按功能搜：管理接口路径（如 `/api/codex-auth/failover`）、DTO 改过的名字、相关组件，确认界面确实没有入口。
-4. 局限：
-   - 名字级扫描会有假阳性（字段经接口改名后其实有入口），所以附录里的全量清单**没有逐条核实**，只有主表核实过。
-   - 解析器会漏掉少数跨行声明的字段。
-   - 不包括 CLI 独有的能力，也不包括没有落到配置字段的运行时开关。
+4. 管理接口同样扫一遍：`src` 里所有 `url.pathname === "/api/…"` 字面量（238 条），逐条在 `gui/src` 按字面搜；搜不到的再人工分流成「经别的路径已有入口 / 内部或 CLI 专用 / 真的隐藏」。覆盖证据见第三节。
+5. 局限：
+   - 字面扫描会有假阳性（字段经接口改名、路径经模板拼出后其实有入口），所以附录里的全量清单**没有逐条核实**，只有主表核实过。
+   - 配置解析器会漏掉少数跨行声明的字段；接口扫的是 `url.pathname === "…"` 字面量，`startsWith` 匹配的路由不在覆盖内（238 是下界）。
    - 「有没有入口」只看源码，没有打开实际页面点过。
 5. 「JSON 编辑器」是兜底：仪表盘有整份配置的 JSON 编辑（`gui/src/hooks/useJsonConfigEditor.ts`），所以下文的「没有入口」指的是**没有专门的控件**，改 JSON 仍然可以开。
 
@@ -26,8 +26,8 @@
 | 例子 | 现状 | 证据 | 要做什么 |
 |---|---|---|---|
 | Vertex 用 gcloud 凭据免 key | **上游已修**：#8156 于 2026-11-08 关单，修复在 #8311（`5279c91bf0`）。fork `dev-2.93` **没有**这个提交 | `git merge-base --is-ancestor 5279c91bf0 origin/dev-2.93` → 不是祖先；后端 `src/adapters/google-vertex-endpoint.ts:32-37` | fork 同步上游，不再提 issue |
-| 供应商不能改名 | **仍然没有入口**。后端批量接口已支持改名 | 见主表 H1 | 草稿 1 |
-| 协议直通还是转换看不到 | **大部分已能看到**：日志行有协议徽章，API Keys 页和组合详情有协议方案面板，供应商页有原生直通开关 | `gui/src/pages/Logs.tsx:16`（ProtocolBadge）、`gui/src/components/apikeys-workspace/ApiKeysWorkspace.tsx:574`（ProtocolPlanPanel）、`gui/src/components/combo-workspace-detail-panel.tsx:424`、`gui/src/components/provider-workspace/NativePassthroughSetting.tsx` | 剩下的是 `protocols.rollout` 几个灰度开关，见主表 M1 |
+| 供应商不能改名 | **仍然没有入口**。后端批量接口已支持改名，但有依赖组合时会拒绝（见主表 H1） | 见主表 H1 | 草稿 1 |
+| 协议直通还是转换看不到 | **上游：大部分已能看到且可改**——日志行有协议徽章，API Keys 页和组合详情有方案面板，供应商页有原生直通开关。**fork：只能看不能改**——展示面板都在，但供应商页的 `NativePassthroughSetting` 开关只存在于上游，fork 的 `gui/src` 里搜不到 `NativePassthroughSetting`/`geminiNativeAntigravity` | 展示：`gui/src/pages/Logs.tsx:16`、`gui/src/components/apikeys-workspace/ApiKeysWorkspace.tsx:574`、`gui/src/components/combo-workspace-detail-panel.tsx:424`（fork 与上游均有）；开关：`gui/src/components/provider-workspace/NativePassthroughSetting.tsx:74`（仅上游） | 上游剩 `protocols.rollout` 灰度开关（M1）；fork 连直通开关本身都没有 |
 | `visionSidecar` 没入口 | **已有入口**：Claude Code 页的视觉旁路设置，组合里可以指定旁路目标 | `gui/src/pages/claude-code-sections.tsx`、`gui/src/combo-workspace-data.ts:522-546` | 无 |
 | 缓存亲和没入口 | **仍然没有入口** | 见主表 H3 | 草稿 3 |
 | Lab 没入口 | **兼容性矩阵已有入口**；Lab 自动化（定时跑测试）没有 | `gui/src/pages/compatibility-matrix-api.ts:79` 调用 `/api/lab/*`；`src/server/management/lab-automation-routes.ts:81,85,119,163` 的 `/api/lab/automation*` 在 `gui/src` 里搜不到 | 主表 M8 |
@@ -38,12 +38,12 @@
 
 | # | 字段或能力 | 作用（白话） | 后端位置 | 前端现状 | 价值 | fork |
 |---|---|---|---|---|---|---|
-| H1 | 供应商改名 | 把供应商 `foo` 改叫 `bar`，模型、组合引用跟着走 | `PUT /api/providers`（baseline/next 批量编辑，`src/server/management/provider-routes.ts:1025`）；CLI `ocx provider batch apply` 明确支持改名（`src/cli/provider-batch.ts:56`） | `gui/src` 里没有任何地方调用 `PUT /api/providers`；只有组合能改名（`combo-workspace-data.ts:522` 的 `renameFrom`） | 高 | 同 |
-| H2 | 上游超时：`stallTimeoutSec`、`connectTimeoutMs`（全局 + 按供应商） | 多久没数据算卡死、多久连不上算失败；Antigravity 这类慢的线路最需要调 | `src/types/config.ts:1083,1092`；按供应商覆盖 `src/types/provider.ts:363,370`；实现 `src/stall-timeout.ts`、`src/lib/pinned-http.ts:151` | 只在日志的失败原因里显示「连接超时 / 卡住超时」（`gui/src/pages/logs-failure-summary.ts:133,142`），没有地方能改 | 高 | 按供应商覆盖只在上游有 |
-| H3 | 重试策略：`retryOn429`、`retryOnReset` | 被限流（429）时同一个 key 等一下再发；连接被重置时自动重发 | `src/types/provider.ts:1189,1201`；实现 `src/providers/key-failover.ts:292-308`、`src/lib/upstream-retry.ts` | 搜不到。同一组里的 `transientRetryOn5xx` 上游已经有界面（`gui/src/provider-workspace/target-drafts.ts:153`），这两个没跟上 | 高 | fork 连 5xx 那个界面也没有 |
+| H1 | 供应商改名 | 把供应商 `foo` 改叫 `bar`。**注意现有能力的边界**：批量接口把「改名」视为「删旧键 + 加新键」，有依赖它的组合时直接拒绝（`409 provider_has_dependent_combos`）；引用跟着迁是**待新增的能力**，不是现状 | `PUT /api/providers`（baseline/next 批量编辑，`src/server/management/provider-routes.ts:1025`；409 逻辑在 `src/server/management/provider-routes.ts:241-250`）；CLI `ocx provider batch apply` 支持改名（`src/cli/provider-batch.ts:56`） | `gui/src` 没有任何地方调用 `PUT /api/providers`；只有组合能改名（`combo-workspace-data.ts:522` 的 `renameFrom`）。另外模型页已有**显示别名**入口：`PUT /api/providers/<名>/alias`（`gui/src/pages/models-alias-editing.ts`）——别名只影响显示，不改真实键名 | 高 | 同 |
+| H2 | 上游超时：`stallTimeoutSec`、`connectTimeoutMs`（全局 + 按供应商） | 多久没数据算卡死、多久连不上算失败；Antigravity 这类慢的线路最需要调 | `src/types/config.ts:1083,1092`；按供应商覆盖 `src/types/provider.ts:363,370`（仅上游）；实现 `src/stall-timeout.ts`、`src/lib/pinned-http.ts:151` | 只在日志的失败原因里显示「连接超时 / 卡住超时」（`gui/src/pages/logs-failure-summary.ts:133,142`），没有地方能改；**上游按供应商设超时目前也只能走 JSON 编辑器** | 高 | fork 只有全局字段 |
+| H3 | 重试策略：`retryOn429`、`retryOnReset`，以及 `transientRetryOn5xx` 的供应商覆盖缺口 | 被限流（429）时同一个 key 等一下再发；连接被重置时自动重发 | `src/types/provider.ts:1189,1195,1201`；实现 `src/providers/key-failover.ts:292-308`、`src/lib/upstream-retry.ts` | `retryOn429`/`retryOnReset` 完全搜不到。`transientRetryOn5xx` 上游有控件，但**只对内置 `openai` 显示**（`ProviderSettings.tsx:580-588` 的 `isCanonicalOpenAi` 门），保存也只在 `saved.name === "openai"` 时写（`target-drafts.ts:366-367`，界面字段名 `subscriptionRetries`）；类型定义允许所有 key-auth OpenAI 适配器供应商，这批供应商界面上仍缺入口 | 高 | fork 连 openai 的 5xx 控件也没有 |
 | H4 | 账号池 `pool.cacheAffinity` / `pool.kernel` / `pool.credentialGroups` | 缓存优先还是额度优先选账号（影响 prompt cache 命中和 token 花费）；通用 OAuth 账号池内核；凭据分组 | `src/types/config.ts:1278,1301,1324`；`src/codex/routing/selection.ts:370`、`src/codex/routing/cache-affinity.ts` | 三个名字在 `gui/src` 里都是 0 次 | 高（上游 #4546 就是缓存被打爆、token 烧 10~50 倍） | 同 |
 | H5 | `upstreamFailoverThreshold` | 上游连续失败几次后，新会话改走别的账号（默认 3，0 = 关） | 字段 `src/types/config.ts:1346`；**管理接口已经写好**：`PUT /api/codex-auth/failover`（`src/codex/auth-api/routes.ts:409-416`） | 仪表盘从没调用过这个接口（`codex-auth/failover` 在 `gui/src` 里 0 次）——接口写了，但没接到界面上 | 高（成本最低） | 同 |
-| M1 | `protocols.rollout.*`（`directEncoders`、`antigravityDirect`、`nativeChatCombos`、`shadowPlan`）和 `protocols.unrepresentable` | 各条原生直通路径的灰度开关；遇到没法转换的字段是报错还是退回旧路径 | `src/types/config.ts:700`；`src/protocols/settings.ts:87-114` | 只有 Gemini/Antigravity 原生直通一个开关（`NativePassthroughSetting.tsx:74`），其余灰度开关都没有 | 中 | 同 |
+| M1 | `protocols.rollout.*`（`directEncoders`、`antigravityDirect`、`nativeChatCombos`、`shadowPlan`）和 `protocols.unrepresentable` | 各条原生直通路径的灰度开关；遇到没法转换的字段是报错还是退回旧路径 | `src/types/config.ts:700`；`src/protocols/settings.ts:87-114` | 上游只有一个 Gemini/Antigravity 原生直通开关（`NativePassthroughSetting.tsx:74`，写入 `geminiNativeAntigravity`），其余灰度开关都没有；fork 连这个开关都没有 | 中 | fork 缺原生直通开关 |
 | M2 | `blockedModelRedirects` | 把被封或下线的模型 id 自动改发到替代模型 | `src/types/config.ts:965`；`src/server/responses/core-combo.ts:171,865` | 0 次 | 中 | 同 |
 | M3 | `modelAdapters`（按模型换协议） | 同一个网关下，个别模型走 Responses、其余走 Chat | `src/types/provider.ts:385`；`src/providers/fastwire.ts:176` | 0 次 | 中 | 同 |
 | M4 | 按模型的兼容开关：`reasoningEffortMap`、`thinkingToggleModels`、`thinkingBudgetModels`、`noTemperatureModels`、`noStopModels`、`noStructuredOutputModels` 等十几个 | 第三方网关不认某个参数就 400，这些开关负责去掉或改写 | `src/types/provider.ts:1011-1236` | 0 次（`thinkingBudget` 只在调试面板里显示数值） | 中 | 同 |
@@ -53,8 +53,8 @@
 | M8 | Lab 自动化 `/api/lab/automation*` | 定时自动跑兼容性测试、看历史结果 | `src/server/management/lab-automation-routes.ts:81-163` | 矩阵页只读结果，没有自动化的设置和触发入口 | 中 | 同 |
 | M9 | `quotaResetNotify`、`resetCreditAutoRedeem` | 额度重置时提醒；Codex 重置券快过期时自动兑换 | `src/types/config.ts:1003,1268`；`src/quota/reset-notify-config.ts`、`src/server/index.ts:871` | 0 次 | 中 | 同 |
 | M10 | `tokenGuardian` + 按供应商 `refreshPolicy` | 后台提前刷新 OAuth token，避免请求时才发现过期 | `src/types/config.ts:1444`；`src/oauth/token-guardian.ts:136` | 0 次 | 中 | 同 |
-| M11 | 模型别名：`modelAliases`、`aliasTemplate` | 给长模型 id 起短名，或按模板 `{providerAlias}-{modelBasename}` 批量生成 | `src/types/provider.ts:336,342` | 0 次（显示名已有 `ModelDisplayNameDialog.tsx`，但它只改显示名，不改请求时用的别名） | 中 | `aliasTemplate` 只在上游有 |
-| M12 | `newModelPolicy`、`retainModels` | 新发现的模型默认开还是关；上游 `/models` 列表漏掉的模型也保留 | `src/types/provider.ts:699,704` | 0 次 | 中 | 同 |
+| M11 | `aliasTemplate` | 按模板 `{providerAlias}-{modelBasename}` 批量生成请求别名 | `src/types/provider.ts:342`（仅上游） | 0 次。逐个别名其实已有入口：`PUT /api/providers/<名>/model-aliases`（`models-alias-editing.ts`），缺的只是「按模板批量生成」 | 低 | 仅上游 |
+| M12 | `retainModels` | 上游 `/models` 列表漏掉的模型也保留在目录里 | `src/types/provider.ts:699` | 0 次（同组的新模型策略 `newModelPolicy` 已有入口：`PUT /api/model-discovery`，`Models.tsx:1156`） | 低 | 同 |
 | M13 | `streamMode` | Windows/macOS 上 SSE 流的转发方式（#314 的缓解措施） | `src/types/config.ts:829` | 0 次 | 中（Andrew 在 Windows 上跑） | 同 |
 | L1 | `codexFailureWindow`、`codexPinnedTransientPolicy`、`codexWsReuseAcrossTurns` | 失败率窗口；手动固定的账号变差时是继续用还是让新会话绕开；WebSocket 跨轮复用 | `src/types/config.ts:1351,1356,1358` | 0 次 | 低~中 | 同 |
 | L2 | `catalogAutoRefresh` | 模型目录定时刷新（默认每小时） | `src/types/config.ts:1014`；`src/codex/catalog-auto-refresh.ts:241` | 0 次（搜到的只是日志页自己的自动刷新） | 低 | 同 |
@@ -64,7 +64,27 @@
 | L6 | `usageLedgerMaxBytes`、`codexProviderDisplayName`、`corsAllowOrigins` | 用量账本文件大小上限；Codex 里显示的供应商名；允许的跨域来源 | `src/types/config.ts:1115,1152,1446` | 0 次 | 低 | 同 |
 | L7 | `upstreamHistorySlim` | 把历史里的旧图片和工具输出压短（有损） | `src/types/config.ts:1385`；系统接口只读地报告当前值（`src/server/management/system-routes.ts:153`） | 0 次 | 低 | 只在上游有 |
 
-## 三、名字没搜到、但其实有入口（避免误报）
+## 三、管理接口盘点（本轮新增，对应审查 F4）
+
+方法：`src` 里所有 `url.pathname === "/api/…"` 字面量共 **238 条**（`startsWith` 匹配的路不在此列，所以是下界）。其中 **181 条** 在 `gui/src`（不含 i18n）里能搜到字面路径；剩下 **57 条** 逐条人工分流，结果：
+
+**A. 经别的路径已有入口（不是缺口）**：`/api/codex-auth/pool-strategy`（界面走 `/api/pool/settings`，`gui/src/pool-settings.ts:165`）；`/api/native-integrations/{claude,codex,grok}` PUT（模板拼接，`native-api.ts:155`）；`/api/storage/codex-logs/{protect,unprotect,repair,compact}`（动态 action 拼路径，`StorageWorkspace.tsx:91-94`）；`/api/codex-auth/accounts/refresh`（模板拼接，`useCodexAccountPool.ts:430`）；`/api/disabled-models`（界面走 `/api/model-visibility`）；`/api/lab/public/community`（矩阵页在用）；`/api/client-integrations/commandcode/restore*`（界面走通用 `restore/preview`）；`/api/oauth/accounts/pool`（同 `/api/pool/settings` 族）。
+
+**B. 内部 / 外部消费者专用，本来就不该有界面**：`/readyz`；`/api/metrics`（给 Prometheus 类抓取）；`/api/quota-pool`（GOAT 外部消费，`quota-pool-routes.ts:1` 注释写明）；`/api/update/desktop-snapshot`（桌面端上报）；`/api/native-main-profiles/*`（Codex 原生注入的暂存协议，调用方是 codex 侧不是仪表盘）；`/api/system/windows-replace-retries`；`/api/storage/*/test-stream`；`/api/link/*`（Hub/Remote Link 组网运维，`route-to` 系列同属此列——只在 hub 角色下有意义）；`/api/codex-auth/quota`、`/quota/history`（CLI `account-history` 在用）；`/api/key-providers`（界面供应商选择器用另一条数据源）；`/api/catalog`、`/api/request-history`（原始数据读取面，CLI/调试向）。
+
+**C. 真有界面缺口（新发现，主表之外）**：
+
+| # | 接口 | 作用 | 后端位置 | 价值 |
+|---|---|---|---|---|
+| R1 | `POST /api/workflow-budget/clear` | 把某个任务根的预算计数清零 | `src/server/management/workflow-budget-routes.ts:177-187`；用户文档有列（`docs-site/.../server.md`）；界面只调 `/api/workflow-budget/settings` | 中 |
+| R2 | `POST /api/codex-auth/accounts/clear-cooldown` 和 `POST /api/oauth/accounts/clear-cooldown` | 账号进冷却后手动解除，不用干等 | `src/codex/auth-api/routes.ts:282`、`src/server/management/oauth-account-routes.ts:1092`；CLI 有入口（`src/cli/account-extended.ts:699`）；界面只显示冷却提示（`ProviderAuthPanel.tsx:769`） | 中 |
+| R3 | `GET/PUT /api/providers/keychain` | 把 API key 挪进操作系统钥匙串（config 里只留引用）或挪回来 | `src/server/management/oauth-account-routes.ts:1302-1314`（#1221） | 中（安全向） |
+| R4 | `GET/PUT /api/codex-auth/preserve-signed-in`、`/api/codex-auth/accounts/use-remaining` | 「保留当前登录的账号当兜底」和「这些账号把套餐内额度跑到 100%」两个池策略 | `src/codex/auth-api/routes.ts:40,43` | 低~中 |
+| R5 | `POST /api/model-discovery/acknowledge` | 把「最近新发现的模型」清单逐条确认消掉 | `src/server/management/model-routes.ts:290`；界面有发现页（`Models.tsx:1151`）但没有逐条确认 | 低 |
+| R6 | `/api/lab/public/{export,preview,verify,community/import}` | 把本地兼容性观测导出成社区包 / 预览 / 校验 / 导入他人包 | `src/server/management/lab-routes.ts:296-336`；界面只调 `/api/lab/public/community` 列表 | 低 |
+| R7 | `/api/route-to` + `/api/route-to/sync` | Home 角色下把请求路由到指定链接设备 | `src/server/management/route-to-routes.ts:127-134` | 低（只在 hub 拓扑有意义） |
+
+## 四、名字没搜到、但其实有入口（避免误报）
 
 这些字段按名字搜不到，但核实下来有入口，**不要提 issue**：
 
@@ -73,14 +93,18 @@
 | `subagentModelFallback` / `ByModel` / `PollMs` | 子代理页，走 `/api/subagent-model-fallback`（`gui/src/pages/Subagents.tsx:206,342`） |
 | `routingProfiles` | 路由策略页（`gui/src/pages/RoutingProfiles.tsx`） |
 | `modelDisplayNames` | 模型显示名对话框（`gui/src/components/ModelDisplayNameDialog.tsx`） |
+| `modelAliases` | 模型页按模型编辑请求别名（`PUT /api/providers/<名>/model-aliases`，`models-alias-editing.ts`） |
+| `alias`（供应商显示名） | 模型页按供应商编辑别名（`PUT /api/providers/<名>/alias`，`models-alias-editing.ts`） |
+| `newModelPolicy` | 模型页的新模型策略开关（`PUT /api/model-discovery`，`Models.tsx:1156`） |
 | `creditCodexAccountIds` | 账号池里「额度用完后继续花 credits」开关，DTO 字段名是 `creditsAfterLimit`（`gui/src/codex-credit-spend.ts:10`） |
 | `codexAccountPriorities` | 账号顺序预设（`gui/src/account-priority.ts`） |
 | `codexAccountAutoSwitchThresholds` | 按账号设自动切换阈值（`gui/src/components/AccountAutoSwitchControl.tsx`） |
 | `storageCleanupPolicy` | 存储页（`gui/src/pages/Storage.tsx:674`，`/api/storage/cleanup-policy`） |
 | `apiKeyPool` | key 池管理走 `/api/providers/keys`（`gui/src/hooks/useProviderAccountPools.ts:800`） |
 | `accountAutoPause` | 暂停原因和证据展示（`gui/src/account-pause-display.ts`）；策略本身仍然没有编辑入口 |
+| `codex-auth` 账号刷新 / 池策略 / 5xx（内置 openai） | 见第三节 A 组 |
 
-## 四、需要 Andrew 定的事
+## 五、需要 Andrew 定的事
 
 只有一件：**下面 4 份草稿要不要以他的名义提到上游 lidge-jun/opencodex**（这是以他名义对外，按规矩必须他点头）。推荐做法：
 
@@ -100,13 +124,15 @@
 - **What are you trying to accomplish?**
   I add providers quickly (often from a preset) and later want to give them a clearer name, e.g. `custom-1` → `ark-kimi`. I want to do that from the dashboard without hand-editing `config.json`.
 - **What prevents this today?**
-  The backend already supports it: `PUT /api/providers` takes a `baseline`/`next` provider snapshot and accepts renames (`src/server/management/provider-routes.ts`), and the CLI exposes this as `ocx provider batch apply --yes` (`src/cli/provider-batch.ts`: "Provider removals or renames require --yes"). The dashboard never calls `PUT /api/providers`, and the provider workspace has no rename action. Combos can already be renamed (`renameFrom`), so providers are the odd one out.
+  Two things:
+  1. The dashboard has no rename action at all — it never calls `PUT /api/providers`, so even the existing batch capability is unreachable.
+  2. The backend itself only offers "delete + re-add": `PUT /api/providers` treats a rename as the old key disappearing, and rejects with `409 provider_has_dependent_combos` when a combo still references it (`src/server/management/provider-routes.ts`). So a true rename — carrying references over — is a *proposed new capability*, not something that exists today. Related but different: the Models page already has an alias editor (`PUT /api/providers/<name>/alias`), which only changes the display label, not the provider key.
 - **What should OpenCodex do?**
-  The provider detail header gets a "Rename" action. After confirmation, the provider key changes, and references that are keyed by the provider name (combo targets, routing profiles, default provider, model selections) are either carried over or listed as "will break" before saving. OAuth accounts stored under the old name are either migrated or the dialog warns that they are not (the batch path documents that it does not do OAuth account cleanup).
+  Add a "Rename" action on the provider detail header that calls `PUT /api/providers` with a baseline/next snapshot. In the same dialog, list what references the old key (combos, routing profiles, default provider, selected models) and either update them in the same write or block with the same 409 the backend already returns. OAuth accounts stored under the old name are either migrated or the dialog warns that they are not (the batch path documents that it does not do OAuth account cleanup).
 - **Example usage or interface**
   Providers → `custom-1` → ⋯ → Rename → `ark-kimi` → the dialog lists "2 combos and 1 routing profile reference this provider; they will be updated" → Save.
 - **Alternatives or workarounds**
-  Edit `providers` in the raw JSON editor, or run `ocx provider batch apply`. Both silently leave dangling references.
+  Edit `providers` in the raw JSON editor, or run `ocx provider batch apply --yes`. Both leave combo references to the old key dangling (or are refused with 409), and neither touches OAuth accounts.
 - **Additional context**
   Found while auditing which config fields have no dashboard entry point.
 
@@ -117,9 +143,10 @@
   Some upstreams I use are slow or flaky (long first-token latency, occasional 429s, connection resets). I want to tune how long OpenCodex waits and whether it retries, per provider, from the dashboard.
 - **What prevents this today?**
   All of this exists in config but has no control:
-  `stallTimeoutSec` / `connectTimeoutMs` (global, `src/types/config.ts`, and per-provider overrides in `src/types/provider.ts`), `retryOn429` and `retryOnReset` (`src/types/provider.ts`). The Logs page already tells me a request failed with "connect timeout" or "stall timeout" (`gui/src/pages/logs-failure-summary.ts`), but offers no way to act on it. `transientRetryOn5xx` from the same family already has a provider control (`gui/src/provider-workspace/target-drafts.ts`), so the other two policies are just missing next to it.
+  `stallTimeoutSec` / `connectTimeoutMs` (global, `src/types/config.ts`, and per-provider overrides in `src/types/provider.ts`), `retryOn429` and `retryOnReset` (`src/types/provider.ts`). The Logs page already tells me a request failed with "connect timeout" or "stall timeout" (`gui/src/pages/logs-failure-summary.ts`), but offers no way to act on it.
+  `transientRetryOn5xx` from the same family does have a control, but only for the built-in `openai` provider: the settings field is gated on `isCanonicalOpenAi` (`ProviderSettings.tsx`, the `subscriptionRetries` select) and the save path only writes it when `saved.name === "openai"` (`target-drafts.ts`). The type accepts the policy on any key-auth OpenAI-adapter provider, so that whole group has backend support with no entry point.
 - **What should OpenCodex do?**
-  Provider settings get a "Network & retries" section with: connect timeout, stall timeout (inherit global / custom / off), 429 retry (off / on with max wait), reset replay (off / on), next to the existing 5xx retry control. The global defaults are editable in Settings. A failure row in Logs that says "stall timeout" links to that provider's section.
+  Provider settings get a "Network & retries" section with: connect timeout, stall timeout (inherit global / custom / off), 429 retry (off / on with max wait), reset replay (off / on), and the existing 5xx retry control — extended from `openai` only to every provider whose adapter accepts `transientRetryOn5xx`. The global defaults are editable in Settings. A failure row in Logs that says "stall timeout" links to that provider's section.
 - **Example usage or interface**
   ```json
   "providers": { "antigravity": { "stallTimeoutSec": 600, "connectTimeoutMs": 45000, "retryOn429": {}, "retryOnReset": {} } }
@@ -148,9 +175,9 @@
 - **What are you trying to accomplish?**
   Find and change an existing config option without reading the source, and see which non-default options are currently active.
 - **What prevents this today?**
-  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and today the only path is the raw JSON editor, which gives no hints about what exists.
+  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`/api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `/api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and today the only path is the raw JSON editor, which gives no hints about what exists.
 - **What should OpenCodex do?**
-  An "Advanced" page (global, plus a tab on each provider) is generated from the existing zod schema and the JSDoc on the config types. It lists every documented field with its description and type. It highlights the fields currently set to a non-default value, and edits them through the same `validateConfigCandidate` write boundary the JSON editor uses. Fields marked internal (migration markers, revisions, runtime-only like `_apiKeyAttempt`) are excluded by an explicit allow/deny list, not by guessing.
+  An "Advanced" page (global, plus a tab on each provider) is generated from the existing zod schema and the JSDoc on the config types. It lists every documented field with its description and type. It highlights the fields currently set to a non-default value, and edits them through the same `validateConfigCandidate` write boundary the JSON editor uses. Fields marked internal (migration markers, revisions, runtime-only like `_apiKeyAttempt`) are excluded by an explicit allow/deny list, not by guessing. A later iteration can surface uncalled management actions the same way (an action registry listing `POST /api/workflow-budget/clear` next to the budget settings).
 - **Example usage or interface**
   Settings → Advanced → search "temperature" → `providers.<name>.noTemperatureModels` — "Model ids that reject caller-specified temperature." → add `grok-4.6` → Save (validated server-side).
 - **Alternatives or workarounds**
