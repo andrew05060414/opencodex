@@ -403,7 +403,7 @@ after a compaction model switch or combo failover.
 `GET /api/effort-caps` includes the map. `PUT /api/effort-caps` accepts `modelPinnedEfforts`
 alongside the existing caps: omitted fields stay unchanged, `null` clears the map, and a map
 entry set to `null` or `""` deletes only that key. Invalid combined updates leave both caps
-and pins unchanged. Saving a pin does not alter the featured subagent roster.
+and pins unchanged. Saving a pin does not alter the pinned subagent roster.
 
 ## CLI updates during v1 synchronization
 
