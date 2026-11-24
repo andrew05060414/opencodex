@@ -44,11 +44,11 @@ if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
 $Manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
 
 function Invoke-GitChecked {
-    param([string]$Dir, [string[]]$Args)
-    $out = & git -C $Dir @Args 2>&1
+    param([string]$Dir, [string[]]$GitArgs)
+    $out = & git -C $Dir @GitArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         $text = ($out | Out-String).Trim()
-        throw "git $($Args -join ' ') failed (exit $LASTEXITCODE): $text"
+        throw "git $($GitArgs -join ' ') failed (exit $LASTEXITCODE): $text"
     }
     return $out
 }
@@ -78,8 +78,8 @@ function Get-PrStatus {
 
 if (-not $NoFetch) {
     Write-Host "[sync] Fetching upstream and origin..." -ForegroundColor Cyan
-    Invoke-GitChecked -Dir $RepoRoot -Args @('fetch', 'upstream') | Out-Null
-    Invoke-GitChecked -Dir $RepoRoot -Args @('fetch', 'origin') | Out-Null
+    Invoke-GitChecked -Dir $RepoRoot -GitArgs @('fetch', 'upstream') | Out-Null
+    Invoke-GitChecked -Dir $RepoRoot -GitArgs @('fetch', 'origin') | Out-Null
 }
 
 $upstreamRef = [string]$Manifest.upstreamBase
@@ -196,7 +196,7 @@ if (Test-Path -LiteralPath $newWorktree) {
 }
 
 Write-Host "[rebuild] Creating worktree $newWorktree on branch $BranchName from $upstreamRef ($($upstreamSha.Substring(0,9)))..." -ForegroundColor Cyan
-Invoke-GitChecked -Dir $MainRepoRoot -Args @('worktree', 'add', '-b', $BranchName, $newWorktree, $upstreamRef) | Out-Null
+Invoke-GitChecked -Dir $MainRepoRoot -GitArgs @('worktree', 'add', '-b', $BranchName, $newWorktree, $upstreamRef) | Out-Null
 
 # 1. Replay active Layer 1 + Layer 3 commits
 foreach ($patch in $Manifest.localPatches) {
