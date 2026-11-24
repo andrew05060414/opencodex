@@ -18,6 +18,7 @@ import {
   retryOnResetPolicyConfigError,
   sanitizeModelCostsForDisplay,
 } from "../config";
+import { priceMultiplierConfigError } from "../config/schema/leaf-validators";
 import {
   apiKeyTransportConfigError,
   projectContextConfigError,
@@ -936,6 +937,7 @@ export function providerManagementConfigError(
     // modelCosts is a user-owned display overlay, not part of the canonical
     // forward seed; it is validated separately below (providerModelCostsConfigError).
     delete canonicalCandidate.modelCosts;
+    delete canonicalCandidate.priceMultiplier;
     // requestPacing is a user-owned transport overlay, not part of the canonical seed.
     delete canonicalCandidate.requestPacing;
     // retryOnReset is the same kind of overlay: it tunes how this provider's own Responses
@@ -1045,6 +1047,8 @@ export function providerManagementConfigError(
     // it before it reaches the management API response (same rule as retryOn429 above).
     return `provider ${JSON.stringify(redactSecretString(name))} ${modelCostsError}`;
   }
+  const priceMultiplierError = priceMultiplierConfigError(raw.priceMultiplier);
+  if (priceMultiplierError) return `provider ${JSON.stringify(redactSecretString(name))} ${priceMultiplierError}`;
   const apiKeyTransportError = apiKeyTransportConfigError(typed);
   if (apiKeyTransportError) return `provider ${name} ${apiKeyTransportError}`;
   const projectContextError = projectContextConfigError(typed);
@@ -1270,12 +1274,14 @@ const PROVIDER_CONFIG_FIELD_POLICY = {
   modelInputModalities: "editor",
   inputModalities: "editor",
   modelCapabilities: "editor",
+  modelCapabilityProbes: "editor",
   modelMaxInputTokens: "runtime",
   modelAutoCompactTokenLimits: "editor",
   defaultMaxOutputTokens: "editor",
   minMaxOutputTokens: "editor",
   modelMaxOutputTokens: "editor",
   modelCosts: "editor",
+  priceMultiplier: "editor",
   creditPriceUsd: "editor",
   headers: "redacted",
   forwardClientHeaders: "editor",
