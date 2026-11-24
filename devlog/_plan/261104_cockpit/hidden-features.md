@@ -1,10 +1,10 @@
 # 后端有、仪表盘藏着的功能：盘点与上游 issue 草稿
 
-> 创建日期：2026-11-21 ｜ 最后更新：2026-11-22 ｜ 版本：1.1 ｜ 票：PX-1450（母票 PX-1446）
+> 创建日期：2026-11-21 ｜ 最后更新：2026-11-24 ｜ 版本：1.2 ｜ 票：PX-1450（母票 PX-1446）
 
 ## 结论（先看这里）
 
-- 两个方向都扫了：配置字段（`OcxConfig` + `OcxProviderConfig` 共 330 个）和管理接口（`url.pathname === "/api/…"` 共 238 条路径），基准都是上游 `upstream/dev`（`572e65cd7`，2026-11-21）。**224 个配置字段、57 条接口路径在 `gui/src` 里按字面搜不到**。两个数字都只是上限：改名的字段/路径可能经别的入口可达，本文主表里的每一条都按功能另外核实过。
+- 两个方向都扫了：配置字段（`OcxConfig` + `OcxProviderConfig` 共 330 个）和管理接口（`src/server/management/route-registry.ts` 的 `MANAGEMENT_ROUTES` 全量 **366** 条 `(method, path)`、覆盖 285 个唯一路径、含 36 条参数化路由），基准都是上游 `572e65cd7`（`upstream/dev`，2026-11-21）。**224 个配置字段按整词搜不到；98 条 `(method, path)` 管理接口按路径边界与模板插值规则在 `gui/src` 搜不到**（逐条分流后为：40 条经动态拼接或替代路径已有入口、31 条为内部/测试/CLI 运维专用、8 条已归入主表 H5/M8/M9/M11、**19 条构成主表外 8 项界面缺口 R1–R8**）。
 - 票面里四个例子，三个已经过时：Vertex 免 key 上游已修好（#8311），协议直通/转换在上游已经能看到，`visionSidecar` 和 Lab 矩阵都已有入口。**真正还藏着的高价值项是：供应商改名、超时与重试、账号池缓存亲和与切换阈值。**
 - fork `dev-2.93` 落后上游 692 个提交。Vertex 修复、供应商页的原生直通开关、按供应商设超时、内置 `openai` 的 5xx 重试控件都只在上游有。**fork 同步一次上游，就能直接拿到其中几项，不用自己写。**
 - 上游 issue 草稿 4 份，见文末，**还没提交，等 Andrew 同意**。其中第 4 份是更深一层的做法：不再一个开关一个开关地补，而是按配置类型的注释自动生成一个「高级设置」页，把长尾一次性收进去。
@@ -12,14 +12,14 @@
 ## 方法与局限
 
 1. 从 `src/types/config.ts` 的 `OcxConfig`、`src/types/provider.ts` 的 `OcxProviderConfig` 取出所有顶层字段（脚本按花括号深度解析）。
-2. 对每个字段，在 `gui/src` 里按整词 `git grep`（排除 `i18n/` 和测试），`origin/dev-2.93` 和 `upstream/dev` 各跑一遍。
+2. 对每个字段，在 `gui/src` 里按整词 `git grep`（排除 `i18n/` 和测试），`origin/dev-2.93` 和 `572e65cd7` 各跑一遍。
 3. 对候选项再按功能搜：管理接口路径（如 `/api/codex-auth/failover`）、DTO 改过的名字、相关组件，确认界面确实没有入口。
-4. 管理接口同样扫一遍：`src` 里所有 `url.pathname === "/api/…"` 字面量（238 条），逐条在 `gui/src` 按字面搜；搜不到的再人工分流成「经别的路径已有入口 / 内部或 CLI 专用 / 真的隐藏」。覆盖证据见第三节。
+4. 管理接口以 `572e65cd7:src/server/management/route-registry.ts` 的 `MANAGEMENT_ROUTES`（366 条 `(method, path)`，由 `tests/server/management-route-registry.test.ts` 三向对账保证覆盖字面量、正则、前缀解码、切片、`endsWith`、路径常量与否定守卫路由）为全量清单：把 `{param}` 映射为 `\$\{[^}]+\}` 并在路径末尾强制加路径边界 `(?![/a-zA-Z0-9_-])`（避免把 `/api/workflow-budget/settings` 误计成命中 `GET /api/workflow-budget`），在 `gui/src`（排除 `gui/src/i18n/` 和 `*.test.*`/`*.spec.*`）扫描；对同路径挂多个 HTTP 方法的命中项再逐条核对前端调用的方法；0 命中的 98 条逐条人工分流。可复跑规则与覆盖证据见第三节。
 5. 局限：
-   - 字面扫描会有假阳性（字段经接口改名、路径经模板拼出后其实有入口），所以附录里的全量清单**没有逐条核实**，只有主表核实过。
-   - 配置解析器会漏掉少数跨行声明的字段；接口扫的是 `url.pathname === "…"` 字面量，`startsWith` 匹配的路由不在覆盖内（238 是下界）。
+   - 配置字段的字面扫描会有假阳性（字段经接口改名后其实有入口），所以附录里的 224 字段全量清单**没有逐条核实**，只有主表和第三节的 366 条管理路由逐条核实过。
+   - 配置解析器会漏掉少数跨行声明的字段；管理路由注册表覆盖所有 `/api/*` 管理端点，不包含根级健康探针（如 `/healthz`、`/readyz`）。
    - 「有没有入口」只看源码，没有打开实际页面点过。
-5. 「JSON 编辑器」是兜底：仪表盘有整份配置的 JSON 编辑（`gui/src/hooks/useJsonConfigEditor.ts`），所以下文的「没有入口」指的是**没有专门的控件**，改 JSON 仍然可以开。
+6. 「JSON 编辑器」是兜底：仪表盘有整份配置的 JSON 编辑（`gui/src/hooks/useJsonConfigEditor.ts`），所以下文的「没有入口」指的是**没有专门的控件**，改 JSON 仍然可以开。
 
 ## 一、票面例子的现状（纠正之前猜的那张表）
 
@@ -29,7 +29,7 @@
 | 供应商不能改名 | **仍然没有入口**。后端批量接口已支持改名，但有依赖组合时会拒绝（见主表 H1） | 见主表 H1 | 草稿 1 |
 | 协议直通还是转换看不到 | **上游：大部分已能看到且可改**——日志行有协议徽章，API Keys 页和组合详情有方案面板，供应商页有原生直通开关。**fork：只能看不能改**——展示面板都在，但供应商页的 `NativePassthroughSetting` 开关只存在于上游，fork 的 `gui/src` 里搜不到 `NativePassthroughSetting`/`geminiNativeAntigravity` | 展示：`gui/src/pages/Logs.tsx:16`、`gui/src/components/apikeys-workspace/ApiKeysWorkspace.tsx:574`、`gui/src/components/combo-workspace-detail-panel.tsx:424`（fork 与上游均有）；开关：`gui/src/components/provider-workspace/NativePassthroughSetting.tsx:74`（仅上游） | 上游剩 `protocols.rollout` 灰度开关（M1）；fork 连直通开关本身都没有 |
 | `visionSidecar` 没入口 | **已有入口**：Claude Code 页的视觉旁路设置，组合里可以指定旁路目标 | `gui/src/pages/claude-code-sections.tsx`、`gui/src/combo-workspace-data.ts:522-546` | 无 |
-| 缓存亲和没入口 | **仍然没有入口** | 见主表 H3 | 草稿 3 |
+| 缓存亲和没入口 | **仍然没有入口** | 见主表 H4 | 草稿 3 |
 | Lab 没入口 | **兼容性矩阵已有入口**；Lab 自动化（定时跑测试）没有 | `gui/src/pages/compatibility-matrix-api.ts:79` 调用 `/api/lab/*`；`src/server/management/lab-automation-routes.ts:81,85,119,163` 的 `/api/lab/automation*` 在 `gui/src` 里搜不到 | 主表 M8 |
 
 ## 二、主表：核实过的隐藏功能（以上游 `upstream/dev` 为准）
@@ -38,7 +38,7 @@
 
 | # | 字段或能力 | 作用（白话） | 后端位置 | 前端现状 | 价值 | fork |
 |---|---|---|---|---|---|---|
-| H1 | 供应商改名 | 把供应商 `foo` 改叫 `bar`。**注意现有能力的边界**：批量接口把「改名」视为「删旧键 + 加新键」，有依赖它的组合时直接拒绝（`409 provider_has_dependent_combos`）；引用跟着迁是**待新增的能力**，不是现状 | `PUT /api/providers`（baseline/next 批量编辑，`src/server/management/provider-routes.ts:1025`；409 逻辑在 `src/server/management/provider-routes.ts:241-250`）；CLI `ocx provider batch apply` 支持改名（`src/cli/provider-batch.ts:56`） | `gui/src` 没有任何地方调用 `PUT /api/providers`；只有组合能改名（`combo-workspace-data.ts:522` 的 `renameFrom`）。另外模型页已有**显示别名**入口：`PUT /api/providers/<名>/alias`（`gui/src/pages/models-alias-editing.ts`）——别名只影响显示，不改真实键名 | 高 | 同 |
+| H1 | 供应商改名 | 把供应商配置键 `providers.foo` 改成 `providers.bar`。**注意现有能力的边界**：批量接口把「改名」视为「删旧键 + 加新键」，有依赖它的组合时直接拒绝（`409 provider_has_dependent_combos`）；引用跟着迁是**待新增的能力**，不是现状 | `PUT /api/providers`（baseline/next 批量编辑，`src/server/management/provider-routes.ts:1025`；409 逻辑在 `src/server/management/provider-routes.ts:241-250`）；CLI `ocx provider batch apply` 支持改名（`src/cli/provider-batch.ts:56`） | 供应商页 CRUD（`gui/src/pages/use-providers-crud.ts`）没有专门的改名入口（`PUT /api/providers` 仅由原始 JSON 编辑器 `gui/src/hooks/useJsonConfigEditor.ts:133` 调用）；只有组合有专门改名（`combo-workspace-data.ts:522` 的 `renameFrom`）。模型页已有**供应商别名**入口：`PUT /api/providers/{provider}/alias`（`gui/src/pages/models-alias-editing.ts:22-35`），但**别名不只是显示名**——写入 `providers.<name>.alias` 后会同时作为请求路由前缀 `<alias>/<model>`（大小写不敏感，`src/router.ts:547-554`），并覆盖/停用原来的内置简称（`tests/providers/provider-model-aliases.test.ts:99-120`、`docs-site/src/content/docs/reference/configuration/providers.md:333`）；**与配置键改名的区别**：规范配置键 `providers.<name>` 原样保留（`<name>/<model>`、combos / routingProfiles / defaultProvider / OAuth 存储仍绑定旧键名） | 高 | 同 |
 | H2 | 上游超时：`stallTimeoutSec`、`connectTimeoutMs`（全局 + 按供应商） | 多久没数据算卡死、多久连不上算失败；Antigravity 这类慢的线路最需要调 | `src/types/config.ts:1083,1092`；按供应商覆盖 `src/types/provider.ts:363,370`（仅上游）；实现 `src/stall-timeout.ts`、`src/lib/pinned-http.ts:151` | 只在日志的失败原因里显示「连接超时 / 卡住超时」（`gui/src/pages/logs-failure-summary.ts:133,142`），没有地方能改；**上游按供应商设超时目前也只能走 JSON 编辑器** | 高 | fork 只有全局字段 |
 | H3 | 重试策略：`retryOn429`、`retryOnReset`，以及 `transientRetryOn5xx` 的供应商覆盖缺口 | 被限流（429）时同一个 key 等一下再发；连接被重置时自动重发 | `src/types/provider.ts:1189,1195,1201`；实现 `src/providers/key-failover.ts:292-308`、`src/lib/upstream-retry.ts` | `retryOn429`/`retryOnReset` 完全搜不到。`transientRetryOn5xx` 上游有控件，但**只对内置 `openai` 显示**（`ProviderSettings.tsx:580-588` 的 `isCanonicalOpenAi` 门），保存也只在 `saved.name === "openai"` 时写（`target-drafts.ts:366-367`，界面字段名 `subscriptionRetries`）；类型定义允许所有 key-auth OpenAI 适配器供应商，这批供应商界面上仍缺入口 | 高 | fork 连 openai 的 5xx 控件也没有 |
 | H4 | 账号池 `pool.cacheAffinity` / `pool.kernel` / `pool.credentialGroups` | 缓存优先还是额度优先选账号（影响 prompt cache 命中和 token 花费）；通用 OAuth 账号池内核；凭据分组 | `src/types/config.ts:1278,1301,1324`；`src/codex/routing/selection.ts:370`、`src/codex/routing/cache-affinity.ts` | 三个名字在 `gui/src` 里都是 0 次 | 高（上游 #4546 就是缓存被打爆、token 烧 10~50 倍） | 同 |
@@ -50,10 +50,10 @@
 | M5 | 模型上限：`modelMaxOutputTokens`、`defaultMaxOutputTokens`、`modelMaxInputTokens`、`modelAutoCompactTokenLimits`、`modelCapabilities` | 按模型设输出/输入上限、自动压缩阈值、能力声明（图片、推理） | `src/types/provider.ts:749-765` | 0 次 | 中 | 同 |
 | M6 | 固定推理档：全局 `modelPinnedEfforts`，按供应商 `pinnedReasoningEffort` / `modelPinnedReasoningEfforts` | 不管客户端选什么，都强制用某个推理档 | `src/types/config.ts:864`；`src/types/provider.ts:885,887` | 只有推理档上限（`/api/effort-caps`，`dashboard-overview-sections.tsx:80`），没有「固定」 | 中 | 同 |
 | M7 | `cacheRetention` | Anthropic prompt cache 存 5 分钟还是 1 小时，或者关掉 | `src/types/config.ts:1169`；`src/adapters/anthropic/cache-retention.ts` | 0 次 | 中 | 同 |
-| M8 | Lab 自动化 `/api/lab/automation*` | 定时自动跑兼容性测试、看历史结果 | `src/server/management/lab-automation-routes.ts:81-163` | 矩阵页只读结果，没有自动化的设置和触发入口 | 中 | 同 |
-| M9 | `quotaResetNotify`、`resetCreditAutoRedeem` | 额度重置时提醒；Codex 重置券快过期时自动兑换 | `src/types/config.ts:1003,1268`；`src/quota/reset-notify-config.ts`、`src/server/index.ts:871` | 0 次 | 中 | 同 |
+| M8 | Lab 自动化 `/api/lab/automation*` | 定时自动跑兼容性测试、看历史结果、取消运行中的单次任务 | `src/server/management/lab-automation-routes.ts:81-163`（含参数化取消路由 `POST /api/lab/automation/runs/{id}/cancel` 在 `:107`，注册表 `route-registry.ts:269-272,515`） | 矩阵页只读结果，5 条自动化接口在 `gui/src` 均 0 命中，没有配置、触发和取消入口 | 中 | 同 |
+| M9 | `quotaResetNotify`、`resetCreditAutoRedeem` | 额度重置时提醒并查询近期重置记录；Codex 重置券快过期时自动兑换 | `src/types/config.ts:1003,1268`；`src/quota/reset-notify-config.ts`、`src/server/management/quota-reset-routes.ts:22`（`GET /api/quota-resets`，`route-registry.ts:412`）、`src/server/index.ts:871` | 0 次（配置字段与 `/api/quota-resets` 均 0 命中） | 中 | 同 |
 | M10 | `tokenGuardian` + 按供应商 `refreshPolicy` | 后台提前刷新 OAuth token，避免请求时才发现过期 | `src/types/config.ts:1444`；`src/oauth/token-guardian.ts:136` | 0 次 | 中 | 同 |
-| M11 | `aliasTemplate` | 按模板 `{providerAlias}-{modelBasename}` 批量生成请求别名 | `src/types/provider.ts:342`（仅上游） | 0 次。逐个别名其实已有入口：`PUT /api/providers/<名>/model-aliases`（`models-alias-editing.ts`），缺的只是「按模板批量生成」 | 低 | 仅上游 |
+| M11 | `aliasTemplate` | 按模板 `{providerAlias}-{modelBasename}` 批量生成请求别名 | `src/types/provider.ts:342`（仅上游）；管理接口 `PUT /api/providers/{provider}/alias-template`（`src/server/management/model-routes.ts:386`、`route-registry.ts:506`） | 0 次（字段名与参数化路由 `alias-template` 均 0 命中）。逐个别名已有入口：`PUT /api/providers/{provider}/model-aliases`（`models-alias-editing.ts:48`），缺的只是「按模板批量生成」 | 低 | 仅上游 |
 | M12 | `retainModels` | 上游 `/models` 列表漏掉的模型也保留在目录里 | `src/types/provider.ts:699` | 0 次（同组的新模型策略 `newModelPolicy` 已有入口：`PUT /api/model-discovery`，`Models.tsx:1156`） | 低 | 同 |
 | M13 | `streamMode` | Windows/macOS 上 SSE 流的转发方式（#314 的缓解措施） | `src/types/config.ts:829` | 0 次 | 中（Andrew 在 Windows 上跑） | 同 |
 | L1 | `codexFailureWindow`、`codexPinnedTransientPolicy`、`codexWsReuseAcrossTurns` | 失败率窗口；手动固定的账号变差时是继续用还是让新会话绕开；WebSocket 跨轮复用 | `src/types/config.ts:1351,1356,1358` | 0 次 | 低~中 | 同 |
@@ -64,25 +64,84 @@
 | L6 | `usageLedgerMaxBytes`、`codexProviderDisplayName`、`corsAllowOrigins` | 用量账本文件大小上限；Codex 里显示的供应商名；允许的跨域来源 | `src/types/config.ts:1115,1152,1446` | 0 次 | 低 | 同 |
 | L7 | `upstreamHistorySlim` | 把历史里的旧图片和工具输出压短（有损） | `src/types/config.ts:1385`；系统接口只读地报告当前值（`src/server/management/system-routes.ts:153`） | 0 次 | 低 | 只在上游有 |
 
-## 三、管理接口盘点（本轮新增，对应审查 F4）
+## 三、管理接口盘点（按 `route-registry.ts` 全量逐条核对）
 
-方法：`src` 里所有 `url.pathname === "/api/…"` 字面量共 **238 条**（`startsWith` 匹配的路不在此列，所以是下界）。其中 **181 条** 在 `gui/src`（不含 i18n）里能搜到字面路径；剩下 **57 条** 逐条人工分流，结果：
+**清单基准**：`572e65cd7:src/server/management/route-registry.ts` 的 `MANAGEMENT_ROUTES`，共 **366** 条 `(method, path)`（285 个唯一路径，其中 36 条参数化路由、59 条非字面量匹配路由），由 `tests/server/management-route-registry.test.ts` 做「源码 → 注册表 / 注册表 → 源码 / 按模块计数」三向对账，不依赖易漏参数路由和否定守卫的等式 grep。
 
-**A. 经别的路径已有入口（不是缺口）**：`/api/codex-auth/pool-strategy`（界面走 `/api/pool/settings`，`gui/src/pool-settings.ts:165`）；`/api/native-integrations/{claude,codex,grok}` PUT（模板拼接，`native-api.ts:155`）；`/api/storage/codex-logs/{protect,unprotect,repair,compact}`（动态 action 拼路径，`StorageWorkspace.tsx:91-94`）；`/api/codex-auth/accounts/refresh`（模板拼接，`useCodexAccountPool.ts:430`）；`/api/disabled-models`（界面走 `/api/model-visibility`）；`/api/lab/public/community`（矩阵页在用）；`/api/client-integrations/commandcode/restore*`（界面走通用 `restore/preview`）；`/api/oauth/accounts/pool`（同 `/api/pool/settings` 族）。
+**可复跑的筛选规则与覆盖证据**：
+1. 路径边界 + 参数模板扫描：从 `MANAGEMENT_ROUTES` 提取全部 366 条 `(method, path)`，将 `{param}` 替换为 `\$\{[^}]+\}` 并在末尾强制加路径边界 `(?![/a-zA-Z0-9_-])`，在 `gui/src`（排除 `gui/src/i18n/` 与 `*.test.*` / `*.spec.*`）逐条匹配 → **268 条直接命中**（且 0 条仅命中注释），**98 条 0 命中**（若把 `{param}` 放宽为非 `/` 段通配，命中集与 0 命中集完全一致，无差集）。
+   - 为什么必须加路径边界：无边界前缀搜索会把 `WorkflowBudgetPanel.tsx:78,114` 的 `/api/workflow-budget/settings` 误判成 `GET /api/workflow-budget` 的命中；按路径边界执行 `git grep -nE '/api/workflow-budget([^/a-zA-Z0-9_-]|$)' 572e65cd7 -- gui/src :!gui/src/i18n` 退出码为 `1`（0 命中）。
+2. 多 HTTP 方法复核（针对 268 条路径命中项中同路径挂多方法的路由）：确认 `PUT /api/config` 为 405 禁用（`exempt: disabled`）、`POST /api/codex-auth/accounts` 已禁用（`manualImportDisabledResponse()`，`src/codex/auth-api/routes.ts:60-61`）、`PATCH /api/pool/settings` 为兼容别名（`exempt: compatibility-alias`，界面走 `PUT`）、`PUT /api/selected-models` 界面改走 `PUT /api/model-visibility`（`gui/src/model-visibility.ts:87`）和 `PUT /api/model-presets`、`GET /api/stop` 仅给 `ocx stop` 探测能力（`src/server/management-api.ts:432`）、`GET /api/claude-desktop/picker` 界面从 `GET /api/native-integrations` 读快照、`GET /api/remote-workspace/sessions` 界面从聚合 `GET /api/remote-workspace` 读（`gui/src/pages/RemoteWorkspace.tsx:45,79`）；`PUT /api/providers` 仅由原始 JSON 编辑器调用（`gui/src/hooks/useJsonConfigEditor.ts:133`），无专门改名控件（见主表 H1）。
 
-**B. 内部 / 外部消费者专用，本来就不该有界面**：`/readyz`；`/api/metrics`（给 Prometheus 类抓取）；`/api/quota-pool`（GOAT 外部消费，`quota-pool-routes.ts:1` 注释写明）；`/api/update/desktop-snapshot`（桌面端上报）；`/api/native-main-profiles/*`（Codex 原生注入的暂存协议，调用方是 codex 侧不是仪表盘）；`/api/system/windows-replace-retries`；`/api/storage/*/test-stream`；`/api/link/*`（Hub/Remote Link 组网运维，`route-to` 系列同属此列——只在 hub 角色下有意义）；`/api/codex-auth/quota`、`/quota/history`（CLI `account-history` 在用）；`/api/key-providers`（界面供应商选择器用另一条数据源）；`/api/catalog`、`/api/request-history`（原始数据读取面，CLI/调试向）。
+<details><summary>可复跑核对命令（在仓库根目录运行，基准提交 572e65cd7）</summary>
 
-**C. 真有界面缺口（新发现，主表之外）**：
+```bash
+python -c '
+import io, re, subprocess, tarfile
+REF = "572e65cd7"
+reg = subprocess.check_output(["git", "show", f"{REF}:src/server/management/route-registry.ts"], text=True, encoding="utf-8")
+body = re.search(r"export const MANAGEMENT_ROUTES\b[^=]*=\s*\[(.*)\];", reg, re.S).group(1)
+pairs = re.findall(r"method:\s*\"([A-Z]+)\",\s*path:\s*\"([^\"]+)\"", body)
+raw = subprocess.check_output(["git", "archive", "--format=tar", REF, "gui/src"])
+gui = {}
+with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as tf:
+    for m in tf.getmembers():
+        if m.isfile() and not m.name.startswith("gui/src/i18n/") and not re.search(r"\.(test|spec)\.[tj]sx?$", m.name) and re.search(r"\.[tj]sx?$", m.name):
+            gui[m.name] = tf.extractfile(m).read().decode("utf-8", "replace")
+zero = []
+for method, path in pairs:
+    parts = re.split(r"(\{[^}]+\})", path)
+    rx = re.compile("".join(r"\$\{[^}]+\}" if p.startswith("{") else re.escape(p) for p in parts if p) + r"(?![/a-zA-Z0-9_-])")
+    if not any(rx.search(c) for c in gui.values()):
+        zero.append((method, path))
+print(f"total={len(pairs)} matched={len(pairs)-len(zero)} zero={len(zero)}")
+for m, p in zero: print(f"{m:6s} {p}")
+'
+```
 
-| # | 接口 | 作用 | 后端位置 | 价值 |
-|---|---|---|---|---|
-| R1 | `POST /api/workflow-budget/clear` | 把某个任务根的预算计数清零 | `src/server/management/workflow-budget-routes.ts:177-187`；用户文档有列（`docs-site/.../server.md`）；界面只调 `/api/workflow-budget/settings` | 中 |
-| R2 | `POST /api/codex-auth/accounts/clear-cooldown` 和 `POST /api/oauth/accounts/clear-cooldown` | 账号进冷却后手动解除，不用干等 | `src/codex/auth-api/routes.ts:282`、`src/server/management/oauth-account-routes.ts:1092`；CLI 有入口（`src/cli/account-extended.ts:699`）；界面只显示冷却提示（`ProviderAuthPanel.tsx:769`） | 中 |
-| R3 | `GET/PUT /api/providers/keychain` | 把 API key 挪进操作系统钥匙串（config 里只留引用）或挪回来 | `src/server/management/oauth-account-routes.ts:1302-1314`（#1221） | 中（安全向） |
-| R4 | `GET/PUT /api/codex-auth/preserve-signed-in`、`/api/codex-auth/accounts/use-remaining` | 「保留当前登录的账号当兜底」和「这些账号把套餐内额度跑到 100%」两个池策略 | `src/codex/auth-api/routes.ts:40,43` | 低~中 |
-| R5 | `POST /api/model-discovery/acknowledge` | 把「最近新发现的模型」清单逐条确认消掉 | `src/server/management/model-routes.ts:290`；界面有发现页（`Models.tsx:1151`）但没有逐条确认 | 低 |
-| R6 | `/api/lab/public/{export,preview,verify,community/import}` | 把本地兼容性观测导出成社区包 / 预览 / 校验 / 导入他人包 | `src/server/management/lab-routes.ts:296-336`；界面只调 `/api/lab/public/community` 列表 | 低 |
-| R7 | `/api/route-to` + `/api/route-to/sync` | Home 角色下把请求路由到指定链接设备 | `src/server/management/route-to-routes.ts:127-134` | 低（只在 hub 拓扑有意义） |
+预期汇总：`total=366 matched=268 zero=98`（其中 36 条参数化路由：22 条直接命中、14 条进入下列 98 条分流）。
+
+</details>
+
+**98 条路径边界 0 命中的逐条分流（40 + 31 + 8 + 19 = 98，与 268 条直接命中相加 = 366）**：
+
+**A. 动态模板 / 常量前缀 / 替代路径已有入口（40 条，非缺口）**：
+- `POST /api/codex-auth/accounts/refresh`（1 条：`gui/src/hooks/useCodexAccountPool.ts:430-431` 模板动态拼 `"/refresh"`）
+- `PATCH/PUT /api/codex-auth/pool-strategy`、`GET/PUT/PATCH /api/oauth/accounts/pool`（5 条：界面统一走 `/api/pool/settings`，`gui/src/pool-settings.ts:7,104,135`）
+- `GET /api/native-main-profiles/doctor`、`POST /api/native-main-profiles/{recover,register,switch}`（4 条：经 `request(apiBase, suffix)` 前缀拼接，`gui/src/native-main-profiles.ts:104,124,166,176`）
+- `GET/POST /api/codex/desktop-compatibility/{authorization,certificate,runtime,settings}`（8 条：经 `ROOT = "/api/codex/desktop-compatibility/"` 拼接，`gui/src/desktop-compatibility-api.ts:22,44,47,102,105,133,142,149`）
+- `GET/PUT /api/client-integrations/aside`（2 条，`compatibility-alias`）+ `GET/DELETE /api/client-integrations/aside/profiles/journal`、`GET/DELETE /api/client-integrations/aside/profiles/{profileId}/journal`、`POST /api/client-integrations/aside/profiles/{profileId}/{preview,restore}`（6 条，共 8 条：界面走多配置前缀辅助函数 `gui/src/pages/integrations/integration-api.ts:467,475,530,551,574,622,658`、`aside-profile-api.ts:25`；`DELETE /aside/profiles/journal` 后端重映射到 `/api/client-integrations/journal`，`aside-profile-routes.ts:215`）
+- `POST /api/client-integrations/commandcode/restore{,/preview}`（2 条：与通用路径共享同一分支 `src/server/management/integration-routes.ts:966`，界面走 `/api/client-integrations/restore{,/preview}`，`integration-api.ts:573,622`）
+- `PUT /api/disabled-models`（1 条：界面改走原子接口 `PUT /api/model-visibility`，`gui/src/model-visibility.ts:87`）
+- `PUT /api/native-integrations/{claude,claude-desktop,codex,grok}`（4 条：动态模板 `${apiBase}/api/native-integrations/${encodeURIComponent(client)}`，`gui/src/pages/integrations/native-api.ts:155`）
+- `POST /api/gateway-clients/{id}/{connect,disconnect}`（2 条：动态模板 `${apiBase}/api/gateway-clients/${id}/${action}`，`gui/src/pages/integrations/gateway-clients-api.ts:75`）
+- `POST /api/storage/codex-logs/{compact,protect,repair,unprotect}`（4 条：动态模板 `${apiBase}/api/storage/codex-logs/${suffix}`，`gui/src/components/storage-workspace/StorageWorkspace.tsx:463`）
+- `GET /api/remote-workspace/runtimes`（1 条：界面通过聚合快照 `GET /api/remote-workspace` 读取 `state.runtimes`，`gui/src/pages/RemoteWorkspace.tsx:45,75`）
+
+**B. 内部协议 / 测试钩子 / 外部消费者 / CLI 运维向（31 条，非仪表盘控件缺口）**：
+- 测试钩子与内部设施（5 条）：`GET /api/storage/{cleanup-policy,trash/restore}/test-stream`（`exempt: test-seam`，2 条）；`GET /api/metrics`（`exempt: scrape-target`）；`POST /api/update/desktop-snapshot`（`exempt: desktop-internal`）；`POST /api/providers/reload`（`exempt: capability-principal`，`provider-routes.ts:942-944`）
+- 原生主配置启动闸门探针与多步暂存租约协议（5 条）：`GET /api/native-main-profiles/admission`（`ocx doctor` 专用只读探针，`native-profile-api.ts:151-153`）、`POST /api/native-main-profiles/stage{,/cancel,/finish,/heartbeat}`（CLI 暂存租约协议，`native-profile-api.ts:187-198`）
+- 外部消费者与 CLI 调试/同步数据面（13 条）：`GET /api/quota-pool`（GOAT 外部消费，`quota-pool-routes.ts:1`）；`GET /api/system/windows-replace-retries`（Windows 替换重试计数）；`GET /api/codex-auth/quota`、`/quota/history`（CLI `account-history`）；`GET /api/key-providers`（界面用 `/api/providers` 与 `/api/providers/keys`）；`GET /api/catalog`（原始目录只读面，界面走 `/api/models` + `/api/selected-models`）；`GET /api/request-history`、`/api/request-history/{id}`、`/api/request-history/{id}/route-decision`（原始请求历史调试面，界面日志页走 `/api/logs` + `/api/routing-analytics`）；`POST /api/client-integrations/pi/sync`（`ocx pi sync` CLI 刷新，`integration-routes.ts:570-574`）；`GET /api/combos/decision-discovery`（`ocx combo` CLI 发现候选，`decision-routes.ts:50-52`）；`GET /api/lab/artifacts`、`GET /api/lab/events`（列表读取面，矩阵页已按详情调 `GET /api/lab/artifacts/{digest}` 与 `GET /api/lab/events/{id}`，`compatibility-matrix-api.ts:186,197`）
+- Hub / Remote Link 组网故障恢复与链路运维（8 条，CLI 运维向）：`GET/POST /api/link/{id}/routes`（管理链接路由列表，`link-route-edit.ts:1-6`）；`GET /api/link/operations`、`GET /api/link/operations/{id}`、`POST /api/link/operations/{id}/resolve`（操作日志与人工消解，`link-operation.ts:574`）；`GET/POST /api/link/recover`（强制吊销墓碑恢复，`link-recover-route.ts:18-34`）；`POST /api/link/children/activity/clear`（清理子机 WebSocket 活动保持，`link-child-ops-routes.ts:204-206`）
+
+**C1. 主表已覆盖的未调用管理接口（8 条，不再在 R 表重复记）**：
+- `PUT /api/codex-auth/failover`（`route-registry.ts:135`）→ 对应主表 **H5**
+- `GET/PUT /api/lab/automation`、`GET /api/lab/automation/runs`、`POST /api/lab/automation/run`、`POST /api/lab/automation/runs/{id}/cancel`（`route-registry.ts:269-272,515`，含参数化取消路由）→ 对应主表 **M8**
+- `GET /api/quota-resets`（`route-registry.ts:412`，`negated-guard`）→ 对应主表 **M9**
+- `PUT /api/providers/{provider}/alias-template`（`route-registry.ts:506`，参数化路由）→ 对应主表 **M11**
+
+**C2. 主表之外的新发现界面缺口（19 条路由，合并为 8 项）**：
+
+| # | 接口（HTTP 方法与路径） | 作用 | 后端位置 | 前端证据 | 价值 |
+|---|---|---|---|---|---|
+| R1 | `GET /api/workflow-budget`、`POST /api/workflow-budget/clear` | 查询当前被追踪任务（或按 `?root=<id>&limit=<n>` 查单任务）的预算用量与事件；清零指定任务根的窗口预算计数 | `src/server/management/workflow-budget-routes.ts:130-175`（`GET`）、`:177-196`（`POST /clear`）；注册表 `route-registry.ts:417-418`；用户文档有列（`docs-site/src/content/docs/reference/configuration/server.md`） | `gui/src/components/WorkflowBudgetPanel.tsx:78,114` 只调用 `/api/workflow-budget/settings`；按路径边界搜 `/api/workflow-budget([^/a-zA-Z0-9_-]|$)` 和 `/api/workflow-budget/clear` 在 `gui/src` 均 0 命中（退出 1） | 中 |
+| R2 | `POST /api/codex-auth/accounts/clear-cooldown`、`POST /api/oauth/accounts/clear-cooldown` | 账号进冷却后手动解除，不用干等 | `src/codex/auth-api/routes.ts:282`、`src/server/management/oauth-account-routes.ts:1092`；注册表 `route-registry.ts:117,375`；CLI 有入口（`src/cli/account-extended.ts:699`） | `gui/src` 搜 `clear-cooldown` 0 命中；`gui/src/components/provider-workspace/ProviderAuthPanel.tsx:769` 只显示冷却提示，无解除动作 | 中 |
+| R3 | `GET/POST /api/providers/keychain` | `GET` 查询当前存储方式与系统钥匙串可用性；`POST`（`action: "store" \| "restore"`）把 API key 迁进操作系统钥匙串或还原明文 | `src/server/management/oauth-account-routes.ts:1302`（`GET`）、`:1314`（`POST`）；注册表 `route-registry.ts:367-368`（#1221） | `gui/src` 搜 `/api/providers/keychain` 0 命中 | 中（安全向） |
+| R4 | `GET/PUT /api/codex-auth/preserve-signed-in`、`GET/PUT /api/codex-auth/accounts/use-remaining` | 「保留当前登录账号作兜底」与「指定账号把套餐内额度用到 100%」两个池策略 | `src/codex/auth-api/routes.ts:40,43`；注册表 `route-registry.ts:103-104,107-108` | `gui/src` 搜 `preserve-signed-in`、`use-remaining` 均 0 命中 | 低~中 |
+| R5 | `POST /api/model-discovery/acknowledge` | 把「最近新发现的模型」清单逐条确认消掉 | `src/server/management/model-routes.ts:290`；注册表 `route-registry.ts:329` | `gui/src` 搜 `model-discovery/acknowledge` 0 命中；`gui/src/pages/Models.tsx:1151` 有发现面板但无逐条确认 | 低 |
+| R6 | `POST /api/lab/public/{preview,export,verify,community/import}` | 把本地兼容性观测导出成社区包 / 预览 / 校验 / 导入他人包 | `src/server/management/lab-routes.ts:296-336`；注册表 `route-registry.ts:283-286` | `gui/src` 搜这 4 条路径均 0 命中；矩阵页只调 `GET /api/lab/public/community`（`gui/src/pages/compatibility-matrix-api.ts:312`） | 低 |
+| R7 | `GET/PUT /api/route-to`、`POST /api/route-to/sync` | Home 角色下把请求路由到指定链接设备并触发同步 | `src/server/management/route-to-routes.ts:127-135`；注册表 `route-registry.ts:399-401` | `gui/src` 搜 `/api/route-to` 0 命中（CLI 有 `src/cli/route-to.ts`） | 低（仅 hub 拓扑有意义） |
+| R8 | `GET /api/codex-auth/low-quota-events` | 查询近期触发的低额度事件记录 | `src/server/management/low-quota-routes.ts:7`；注册表 `route-registry.ts:113`；用户文档有列（`docs-site/src/content/docs/reference/management-api.md`） | `gui/src` 搜 `low-quota-events` 0 命中 | 低 |
 
 ## 四、名字没搜到、但其实有入口（避免误报）
 
@@ -93,8 +152,8 @@
 | `subagentModelFallback` / `ByModel` / `PollMs` | 子代理页，走 `/api/subagent-model-fallback`（`gui/src/pages/Subagents.tsx:206,342`） |
 | `routingProfiles` | 路由策略页（`gui/src/pages/RoutingProfiles.tsx`） |
 | `modelDisplayNames` | 模型显示名对话框（`gui/src/components/ModelDisplayNameDialog.tsx`） |
-| `modelAliases` | 模型页按模型编辑请求别名（`PUT /api/providers/<名>/model-aliases`，`models-alias-editing.ts`） |
-| `alias`（供应商显示名） | 模型页按供应商编辑别名（`PUT /api/providers/<名>/alias`，`models-alias-editing.ts`） |
+| `modelAliases` | 模型页按模型编辑请求别名（`PUT /api/providers/{provider}/model-aliases`，`models-alias-editing.ts:48`） |
+| `alias`（供应商路由前缀与目录简称） | 模型页按供应商编辑别名（`PUT /api/providers/{provider}/alias`，`models-alias-editing.ts:22-35`）——同时作用于目录展示与 `<alias>/<model>` 请求路由（并覆盖内置简称，`src/router.ts:547-554`、`tests/providers/provider-model-aliases.test.ts:99-120`），但保留原配置键名（见 H1） |
 | `newModelPolicy` | 模型页的新模型策略开关（`PUT /api/model-discovery`，`Models.tsx:1156`） |
 | `creditCodexAccountIds` | 账号池里「额度用完后继续花 credits」开关，DTO 字段名是 `creditsAfterLimit`（`gui/src/codex-credit-spend.ts:10`） |
 | `codexAccountPriorities` | 账号顺序预设（`gui/src/account-priority.ts`） |
@@ -102,7 +161,7 @@
 | `storageCleanupPolicy` | 存储页（`gui/src/pages/Storage.tsx:674`，`/api/storage/cleanup-policy`） |
 | `apiKeyPool` | key 池管理走 `/api/providers/keys`（`gui/src/hooks/useProviderAccountPools.ts:800`） |
 | `accountAutoPause` | 暂停原因和证据展示（`gui/src/account-pause-display.ts`）；策略本身仍然没有编辑入口 |
-| `codex-auth` 账号刷新 / 池策略 / 5xx（内置 openai） | 见第三节 A 组 |
+| `codex-auth` 账号刷新 / 池策略 / 5xx（内置 openai） | 账号刷新与池策略见第三节 A 组；内置 `openai` 5xx 控件见主表 H3 |
 
 ## 五、需要 Andrew 定的事
 
@@ -124,9 +183,10 @@
 - **What are you trying to accomplish?**
   I add providers quickly (often from a preset) and later want to give them a clearer name, e.g. `custom-1` → `ark-kimi`. I want to do that from the dashboard without hand-editing `config.json`.
 - **What prevents this today?**
-  Two things:
-  1. The dashboard has no rename action at all — it never calls `PUT /api/providers`, so even the existing batch capability is unreachable.
-  2. The backend itself only offers "delete + re-add": `PUT /api/providers` treats a rename as the old key disappearing, and rejects with `409 provider_has_dependent_combos` when a combo still references it (`src/server/management/provider-routes.ts`). So a true rename — carrying references over — is a *proposed new capability*, not something that exists today. Related but different: the Models page already has an alias editor (`PUT /api/providers/<name>/alias`), which only changes the display label, not the provider key.
+  Three things:
+  1. The Providers page has no dedicated rename action (`gui/src/pages/use-providers-crud.ts` only uses `PATCH`/`DELETE`; `PUT /api/providers` is currently only wired to the raw JSON editor in `gui/src/hooks/useJsonConfigEditor.ts:133`).
+  2. The backend itself only offers "delete + re-add": `PUT /api/providers` treats a rename as the old key disappearing, and rejects with `409 provider_has_dependent_combos` when a combo still references it (`src/server/management/provider-routes.ts:241-250`). So a true rename — carrying references over — is a *proposed new capability*, not something that exists today.
+  3. Related but different: the Models page already has a provider alias editor (`PUT /api/providers/{provider}/alias`, `gui/src/pages/models-alias-editing.ts`). Setting `providers.<name>.alias` changes both the catalog shorthand and the request-routing prefix (`<alias>/<model>`, overriding any built-in registry alias — see `src/router.ts:547-573`, `tests/providers/provider-model-aliases.test.ts:99-120`, and `docs-site/src/content/docs/reference/configuration/providers.md:333`), **but it leaves the canonical provider config key `providers.<name>` unchanged** (so `<name>/<model>`, combos, routing profiles, `defaultProvider`, and stored OAuth accounts remain keyed under the old provider key). Renaming the config key itself is what this request asks for.
 - **What should OpenCodex do?**
   Add a "Rename" action on the provider detail header that calls `PUT /api/providers` with a baseline/next snapshot. In the same dialog, list what references the old key (combos, routing profiles, default provider, selected models) and either update them in the same write or block with the same 409 the backend already returns. OAuth accounts stored under the old name are either migrated or the dialog warns that they are not (the batch path documents that it does not do OAuth account cleanup).
 - **Example usage or interface**
@@ -175,7 +235,7 @@
 - **What are you trying to accomplish?**
   Find and change an existing config option without reading the source, and see which non-default options are currently active.
 - **What prevents this today?**
-  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`/api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `/api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and today the only path is the raw JSON editor, which gives no hints about what exists.
+  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`GET /api/workflow-budget`, `POST /api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `GET/POST /api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and today the only path is the raw JSON editor, which gives no hints about what exists.
 - **What should OpenCodex do?**
   An "Advanced" page (global, plus a tab on each provider) is generated from the existing zod schema and the JSDoc on the config types. It lists every documented field with its description and type. It highlights the fields currently set to a non-default value, and edits them through the same `validateConfigCandidate` write boundary the JSON editor uses. Fields marked internal (migration markers, revisions, runtime-only like `_apiKeyAttempt`) are excluded by an explicit allow/deny list, not by guessing. A later iteration can surface uncalled management actions the same way (an action registry listing `POST /api/workflow-budget/clear` next to the budget settings).
 - **Example usage or interface**
