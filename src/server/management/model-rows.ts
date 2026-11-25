@@ -557,7 +557,8 @@ export async function listManagementModelRows(
  */
 export function toExportModel(row: ManagementModelRow): ExportModel {
   const effective = row.exportMetadata;
-  const contextWindow = effective?.contextWindow ?? row.contextWindow;
+  // A defaulted window is a catalog placeholder, not a limit to hand another client.
+  const contextWindow = effective?.contextWindow ?? (row.contextWindowDefaulted ? undefined : row.contextWindow);
   const maxTokens = effective?.maxTokens ?? row.maxOutputTokens;
   const maxInputTokens = effective?.maxInputTokens ?? row.maxInputTokens;
   const inputModalities = effective?.inputModalities ?? row.inputModalities;

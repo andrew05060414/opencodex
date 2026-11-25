@@ -7,7 +7,7 @@ const ENUMS: Readonly<Record<string, readonly (string | null)[]>> = {
   strategy: ["failover", "round-robin", "random", "least-used", "reset-window", "jev"],
   defaultEffort: [null, "low", "medium", "high", "xhigh", "max", "ultra"],
   defaultEffortMode: ["fallback", "force"], reasoningEffortMode: ["strict", "adaptive"],
-  imageInput: ["auto", "disabled"], cooldownWaitPolicy: ["before-last-resort"],
+  imageInput: ["auto", "disabled"], cooldownWaitPolicy: ["before-last-resort"], jevEffortMode: ["decide", "client"],
 };
 const STRINGS = new Set(["alias", "displayName", "description", "decisionProvider", "decisionModel"]);
 const RANGES: Readonly<Record<string, readonly [number, number]>> = {

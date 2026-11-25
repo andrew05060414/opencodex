@@ -35,6 +35,7 @@ Persisted config, the Codex home it writes into, and the model catalog it publis
 | [`catalog-routed-ownership.md`](catalog-routed-ownership.md) | Generated routed-row ownership signals and combo catalog description overrides. |
 | [`subagents.md`](subagents.md) | Multi-agent surface mode and subagent roster ordering. |
 | [`subagent-capacity.md`](subagent-capacity.md) | Surface mode, hybrid global flag, concurrent child limits and canonical Codex setting ownership. |
+| [`privacy.md`](privacy.md) | Opt-in secret redaction of client request bodies, opt-in reply restoration, in-memory statistics, and the privacy management routes. |
 | [`advisor.md`](advisor.md) | The optional expert consultation sidecar: manual/preflight/adaptive policies, evidence, durable task allowance, metadata activity, and loopback routing. |
 | [`config-proxy.md`](config-proxy.md) | Global proxy activation, start flags, and credential-safe CLI output. |
 | [`account-auto-pause.md`](account-auto-pause.md) | Opt-in permanent account refusal classification, credential fences, durable pause metadata, bounded recovery and resume. |
@@ -334,6 +335,7 @@ A source area can be described by more than one doc, because these docs are orga
 | `src/oauth/meta-muse.ts` | [`providers/meta-muse.md`](providers/meta-muse.md) |
 | `src/oauth/workbuddy.ts` | [`providers/workbuddy.md`](providers/workbuddy.md) |
 | `src/plugins/` | [`ops/plugins.md`](ops/plugins.md) |
+| `src/privacy/` | [`privacy.md`](privacy.md) |
 | `src/protocols/` | [`data-planes/protocol-paths.md`](data-planes/protocol-paths.md) |
 | `src/providers/` | [`runtime.md`](runtime.md)<br>[`subagents.md`](subagents.md)<br>[`transports/inventory.md`](transports/inventory.md)<br>[`providers-and-adapters.md`](providers-and-adapters.md)<br>[`providers/anthropic-account-pool.md`](providers/anthropic-account-pool.md)<br>[`providers/xai-grok.md`](providers/xai-grok.md)<br>[`providers/lm-studio-chat.md`](providers/lm-studio-chat.md) |
 | `src/providers/account-quota-disk.ts` | [`quota-snapshots.md`](quota-snapshots.md) |
@@ -382,6 +384,7 @@ A source area can be described by more than one doc, because these docs are orga
 | `src/server/management/companion-routes.ts` | [`desktop-shell.md`](desktop-shell.md) |
 | `src/server/management/link-routes.ts` | [`remote-link.md`](remote-link.md) |
 | `src/server/management/model-routes.ts` | [`pricing.md`](pricing.md) |
+| `src/server/management/privacy-routes.ts` | [`privacy.md`](privacy.md) |
 | `src/server/management/quota-pool-routes.ts` | [`quota-pool.md`](quota-pool.md) |
 | `src/server/responses/` | [`data-planes/claude-tool-loading.md`](data-planes/claude-tool-loading.md) |
 | `src/server/responses/account-auto-pause-recovery.ts` | [`account-auto-pause.md`](account-auto-pause.md) |

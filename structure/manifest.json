@@ -293,6 +293,16 @@
       ]
     },
     {
+      "path": "privacy.md",
+      "tier": 2,
+      "title": "Client-Request Privacy Redaction",
+      "scope": "Opt-in secret redaction of client request bodies, opt-in reply restoration, in-memory statistics, and the privacy management routes.",
+      "documents": [
+        "src/privacy/",
+        "src/server/management/privacy-routes.ts"
+      ]
+    },
+    {
       "path": "advisor.md",
       "tier": 2,
       "title": "Advisor Sidecar",

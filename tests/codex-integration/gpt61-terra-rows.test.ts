@@ -84,7 +84,7 @@ describe("GPT-6.1 Terra native catalog", () => {
 
   test.each([872_000, 1_050_000])("long-window override %s clamps at the native ceiling", window => {
     expect(builtTerra({ [TERRA]: window })).toMatchObject({
-      context_window: 872_000, max_context_window: 872_000, auto_compact_token_limit: 784_800,
+      context_window: 872_000, max_context_window: 872_000, auto_compact_token_limit: 600_000,
     });
   });
 

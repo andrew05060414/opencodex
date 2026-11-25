@@ -118,7 +118,7 @@ describe("GPT-6.1 Sol native Codex row", () => {
 
   test("a 1M context override clamps to the unchanged 872k ceiling", () => {
     expect(builtSol({ modelWindows: { [NATIVE_GPT61_SOL_MODEL]: 1_000_000 } }))
-      .toMatchObject({ context_window: 872_000, max_context_window: 872_000, auto_compact_token_limit: 784_800 });
+      .toMatchObject({ context_window: 872_000, max_context_window: 872_000, auto_compact_token_limit: 600_000 });
   });
 
   test("a configured compaction limit lowers the 500k row's soft budget", () => {
@@ -129,7 +129,7 @@ describe("GPT-6.1 Sol native Codex row", () => {
   test("long-window opt-in reaches 872k without changing the default tier", () => {
     const limits = { modelWindows: { [NATIVE_GPT61_SOL_MODEL]: 872_000 } };
     expect(builtSol(limits))
-      .toMatchObject({ context_window: 872_000, max_context_window: 872_000, auto_compact_token_limit: 784_800 });
+      .toMatchObject({ context_window: 872_000, max_context_window: 872_000, auto_compact_token_limit: 600_000 });
     expect(nativeOpenAiContextTier(NATIVE_GPT61_SOL_MODEL, limits))
       .toEqual({ defaultWindow: 500_000, longWindow: 872_000 });
   });
