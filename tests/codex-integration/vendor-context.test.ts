@@ -19,13 +19,13 @@ const hint = (model = row(), config = provider, cap?: number) => applyProviderCo
 const catalog = (model: CatalogModel) => buildCatalogEntries(null, [], [model])[0]!;
 
 describe("vendor context fallback", () => {
-  test("inference is opt-in; an unset or false flag keeps the #1073 cap/128k fallback", async () => {
+  test("inference is opt-in; an unset or false flag keeps the #1073 cap/default-window fallback", async () => {
     for (const config of [optedOut, { ...optedOut, inferContextWindow: false }]) {
       expect(canInferVendorContext("custom-relay", config)).toBe(false);
       const model = hint(row(), config);
       expect(model.contextWindow).toBeUndefined();
       expect(model.contextWindowInference).toBeUndefined();
-      expect(catalog(model).context_window).toBe(128_000);
+      expect(catalog(model).context_window).toBe(200_000);
       const capped = hint(row(), config, 350_000);
       expect(capped.contextWindow).toBe(350_000);
       expect(capped.contextWindowInference).toBeUndefined();
@@ -43,12 +43,12 @@ describe("vendor context fallback", () => {
       expect(hint(row({ id: model })).contextWindow).toBe(expected);
     });
   }
-  test("caps only lower inferred windows; an unknown id retains cap/128k fallback", () => {
+  test("caps only lower inferred windows; an unknown id retains cap/default-window fallback", () => {
     for (const cap of [1, 128_000, 350_000, 999_999, 1_000_000, 2_000_000]) {
       expect(hint(row(), provider, cap).contextWindow).toBe(Math.min(cap, 1_000_000));
     }
     expect(hint(row({ id: "e-ge-3.1-p-p" })).contextWindow).toBeUndefined();
-    expect(catalog(hint(row({ id: "e-ge-3.1-p-p" }))).context_window).toBe(128_000);
+    expect(catalog(hint(row({ id: "e-ge-3.1-p-p" }))).context_window).toBe(200_000);
     expect(hint(row({ id: "e-ge-3.1-p-p" }), provider, 350_000).contextWindow).toBe(350_000);
   });
   test("explicit configuration and discovery win, including values above the estimate", () => {

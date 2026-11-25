@@ -111,6 +111,8 @@ export interface OpencodeProxyModelRow {
   displayName?: string;
   displayNameSource?: "operator" | "provider" | "fallback";
   contextWindow?: number;
+  /** The window is the catalog default, not a discovered or configured limit. */
+  contextWindowDefaulted?: boolean;
   /** Authoritative output limit (CatalogModel.maxOutputTokens); optional. */
   maxOutputTokens?: number;
   /** Authoritative input ceiling (CatalogModel.maxInputTokens); optional. */
@@ -396,7 +398,7 @@ export function opencodeCatalogFromProxyRows(
       native: row.native === true,
       provider: row.provider,
       id: row.id,
-      contextWindow: effective?.contextWindow ?? row.contextWindow,
+      contextWindow: effective?.contextWindow ?? (row.contextWindowDefaulted ? undefined : row.contextWindow),
       ...(typeof maxTokens === "number" ? { maxTokens } : {}),
       ...(typeof maxInputTokens === "number" ? { maxInputTokens } : {}),
       displayName: row.displayNameSource === "fallback" ? undefined : row.displayName,

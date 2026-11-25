@@ -460,6 +460,14 @@ describe("export row filtering", () => {
     expect(model?.reasoningEfforts).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(model?.defaultReasoningEffort).toBe("high");
   });
+
+  test("a defaulted catalog window is not exported as a limit, a discovered one is", () => {
+    const models = exportModelsFromProxyRows([
+      { provider: "a", id: "sparse", namespaced: "a/sparse", contextWindow: 200_000, contextWindowDefaulted: true },
+      { provider: "a", id: "known", namespaced: "a/known", contextWindow: 64_000 },
+    ], config());
+    expect(models.map(model => [model.namespaced, model.contextWindow])).toEqual([["a/sparse", undefined], ["a/known", 64_000]]);
+  });
 });
 
 describe("export allowlist parity", () => {

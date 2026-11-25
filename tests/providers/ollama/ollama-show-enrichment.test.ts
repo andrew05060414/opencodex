@@ -183,7 +183,8 @@ describe("ollama /api/show — failure behavior", () => {
       const models = await gatherRoutedModels(withStubbedProviderFetch(config()));
       const found = row(models, "odd-model");
       expect(found).toBeDefined(); // the ID roster survives
-      expect(found?.contextWindow).toBeUndefined(); // no fabricated context
+      // No fabricated discovery: only the flagged catalog default.
+      expect(found).toMatchObject({ contextWindow: 200_000, contextWindowDefaulted: true });
     } finally {
       stub.uninstall();
     }
@@ -196,8 +197,9 @@ describe("ollama /api/show — failure behavior", () => {
         : ollamaShow(id, 131_072, ["completion"]));
     try {
       const models = await gatherRoutedModels(withStubbedProviderFetch(config()));
-      expect(row(models, "bad-model")?.contextWindow).toBeUndefined();
+      expect(row(models, "bad-model")).toMatchObject({ contextWindow: 200_000, contextWindowDefaulted: true });
       expect(row(models, "good-model")?.contextWindow).toBe(131_072);
+      expect(row(models, "good-model")).not.toHaveProperty("contextWindowDefaulted");
       expect(row(models, "bad-model")).toBeDefined();
     } finally {
       stub.uninstall();
@@ -224,8 +226,8 @@ describe("ollama /api/show — failure behavior", () => {
       const models = await gatherRoutedModels(withStubbedProviderFetch(config()));
       const found = row(models, "big-model");
       expect(found).toBeDefined();
-      // Bounded reader discarded the oversized payload: no fabricated context window.
-      expect(found?.contextWindow).toBeUndefined();
+      // Bounded reader discarded the oversized payload: only the flagged default, not 1M.
+      expect(found).toMatchObject({ contextWindow: 200_000, contextWindowDefaulted: true });
     } finally {
       stub.uninstall();
     }

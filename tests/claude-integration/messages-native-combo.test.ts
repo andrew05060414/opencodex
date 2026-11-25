@@ -190,7 +190,7 @@ describe("Native Anthropic Messages support for Combos", () => {
     // Candidate 1 (OAuth) was dispatched natively
     expect(sentOAuth).toHaveLength(1);
     expect(sentOAuth[0]!.url).toBe("https://api.anthropic.com/v1/messages");
-    expect(sentOAuth[0]!.headers.get("authorization")).toBe("Bearer synthetic-anthropic-access-0");
+    expect(sentOAuth[0]!.headers.get("authorization")).toBe(`Bearer ${credential(0).access}`);
     expect(sentOAuth[0]!.headers.get("x-api-key")).toBeNull();
     expect(sentOAuth[0]!.body.model).toBe("claude-sonnet-4-5");
     expect(sentOAuth[0]!.body.messages).toEqual([{ role: "user", content: "hello combo" }]);
@@ -249,7 +249,7 @@ describe("Native Anthropic Messages support for Combos", () => {
     // Candidate 1 was called first and returned 429
     expect(sentOAuth).toHaveLength(1);
     expect(sentOAuth[0]!.url).toBe("https://api.anthropic.com/v1/messages");
-    expect(sentOAuth[0]!.headers.get("authorization")).toBe("Bearer synthetic-anthropic-access-0");
+    expect(sentOAuth[0]!.headers.get("authorization")).toBe(`Bearer ${credential(0).access}`);
     expect(sentOAuth[0]!.body.messages).toEqual([{ role: "user", content: "hello failover" }]);
 
     // Candidate 2 (API key) was called after failover and succeeded from a fresh body copy

@@ -1636,6 +1636,7 @@ describe("combo validation and normalization", () => {
       defaultEffortMode: "fallback",
       reasoningEffortMode: "strict",
       imageInput: "auto",
+      jevEffortMode: "decide",
       alias: null,
       nativeAlias: false,
       displayName: null,
