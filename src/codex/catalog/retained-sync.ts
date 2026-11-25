@@ -83,7 +83,6 @@ import {
   buildCatalogEntriesFromObservedState,
   mergeCatalogEntriesFromObservedState,
   mergeCatalogModelsWithNativeRecovery,
-  orderForSubagents,
 } from "./build-entries";
 import { finishUpstreamNativeEntry } from "./derive-entry";
 import { finalizeAutoReviewModelOverride } from "./auto-review";
@@ -321,15 +320,12 @@ function writeRetainedCatalogSync({
     }
   } catch { /* backup best-effort */ }
 
-  // Hide disabled models from Codex, then feature the chosen subagent models (native OR routed)
-  // by giving them the lowest priority — see buildCatalogEntries for why priority, not array order.
-  // Decouple subagentModels from global catalog priorities (#PX-1276).
+  // Hide disabled models from Codex. subagentModels no longer pin catalog priority
+  // (#PX-1276): the spawn_agent tool description is rewritten on the wire instead.
   const enabledGo = filterCatalogVisibleModels(goModels, config);
-  const featured: string[] = [];
-  const orderedGoModels = enabledGo;
   const suppressedSyntheticMaxSlugs = suppressedSyntheticMaxCatalogSlugs(
     config,
-    orderedGoModels,
+    enabledGo,
     catalogModelsForMerge,
   );
   const modelPickerOrder = config.modelPickerOrder ?? [];
@@ -446,8 +442,7 @@ function writeRetainedCatalogSync({
   const goEntries = buildCatalogEntriesFromObservedState({
     template: template ? JSON.parse(JSON.stringify(template)) : null,
     gptSlugs: [],
-    goModels: orderedGoModels,
-    featured,
+    goModels: enabledGo,
     modelPickerOrder,
     wsEnabled,
     multiAgentMode,
@@ -494,7 +489,6 @@ function writeRetainedCatalogSync({
       template: template ? JSON.parse(JSON.stringify(template)) : null,
       gptSlugs: availableAccountNativeSlugs,
       goModels: [],
-      featured,
       wsEnabled,
       multiAgentMode,
       exactComboSlugs,
@@ -511,14 +505,13 @@ function writeRetainedCatalogSync({
     : [];
   catalog.models = mergeCatalogEntriesFromObservedState({
     ultraFastTier: ultraFastTierEnabled(config),
-    configuredUltraFastSlugs: configuredUltraFastSlugs(orderedGoModels),
+    configuredUltraFastSlugs: configuredUltraFastSlugs(enabledGo),
     modelPickerOrder,
     accountSelectors,
     catalogModels: catalogModelsForMerge,
     baselineCatalogModels: baselineCatalog?.models ?? [],
     routedEntries: goEntries,
     baseline,
-    featured,
     wsEnabled,
     template,
     disabledModels: new Set(config.disabledModels ?? []),

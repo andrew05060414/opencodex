@@ -33,7 +33,12 @@ import {
   tierValueAfterDecision,
   canonicalFastTierMarker,
 } from "../../providers/fastwire";
-import { multiAgentGuidanceText, injectDeveloperMessage, collabSurface } from "./collaboration";
+import {
+  multiAgentGuidanceText, injectDeveloperMessage, collabSurface,
+  rewriteSpawnAgentToolModelOverrides, createRequestScopedSubagentRosterResolver,
+  defaultCollectCatalogState,
+} from "./collaboration";
+import type { MultiAgentGuidanceDeps } from "./collaboration";
 import { multiAgentGuidanceEnabled } from "../../config";
 import { isInjectionDebugEnabled } from "../../lib/debug-settings";
 import { injectionDebugLog } from "../../lib/injection-debug-log";
@@ -294,6 +299,24 @@ export async function applyFinalRouteRequestNormalization(args: {
   }
 
   {
+    // Lazily shared so the tool-description rewrite and the guidance text read ONE
+    // catalog snapshot and ONE app-server state observation per request.
+    const sharedDeps: MultiAgentGuidanceDeps | undefined = collabSurface(parsed) === null ? undefined : (() => {
+      let roster: Promise<Awaited<ReturnType<typeof createRequestScopedSubagentRosterResolver>>> | undefined;
+      let state: Promise<{ state: "fresh" | "stale" | "not_running" | "unknown" }> | undefined;
+      return {
+        resolveEffectiveSubagentRoster: (models: readonly string[], surface: "v1" | "v2") =>
+          (roster ??= createRequestScopedSubagentRosterResolver()).then(resolve => resolve(models, surface)),
+        collectCatalogState: () => state ??= defaultCollectCatalogState(),
+      };
+    })();
+    const rewrittenTools = await rewriteSpawnAgentToolModelOverrides(parsed, {
+      multiAgentGuidanceEnabled: config.multiAgentGuidanceEnabled,
+      subagentModels: config.subagentModels,
+    }, sharedDeps);
+    if (rewrittenTools > 0 && isInjectionDebugEnabled()) {
+      injectionDebugLog(`[opencodex] ${route.modelId}: spawn_agent tool description rewritten to configured subagent models (${rewrittenTools})`);
+    }
     const guidance = await multiAgentGuidanceText(parsed, {
       multiAgentGuidanceEnabled: config.multiAgentGuidanceEnabled,
       codexAccountNamespace: route.codexAccountNamespace,
@@ -302,7 +325,7 @@ export async function applyFinalRouteRequestNormalization(args: {
       subagentModels: config.subagentModels,
       subagentModelFallback: config.subagentModelFallback,
       injectionPrompt: config.injectionPrompt,
-    });
+    }, sharedDeps);
     if (guidance) {
       injectDeveloperMessage(parsed, guidance);
       if (isInjectionDebugEnabled()) {

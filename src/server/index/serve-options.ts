@@ -1089,7 +1089,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         if (url.searchParams.has("client_version")) {
           // Codex client → Codex catalog shape: native gpt + namespaced routed models,
           // cloned from a native template so required fields (base_instructions, etc.) are present.
-          // Pass the subagent picks so featured models lead by priority (matches the on-disk file).
+          // Subagent picks no longer lead by priority (#PX-1276); the wire rewrite handles them.
           // Disabled natives stay in the catalog shape with visibility "hide" (mirrors the
           // on-disk sync; codex-rs keeps them out of the picker itself).
           const maMode = config.multiAgentMode === "v1" || config.multiAgentMode === "v2" ? config.multiAgentMode : "default";

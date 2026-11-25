@@ -77,11 +77,14 @@ describe("pure picker projections", () => {
     expect(cli.modelPickerOrder("most-used", models, [{ provider: "p", model: "org-a", requests: 10 }], ids)).toEqual(["p/encoded", "p/org-a"]);
     expect(cli.pickerIdentityCoverage(models, ids)).toBe(true);
   });
-  test("featured prefix uses last occurrence and exact canonical rank", () => {
+  test("featured picks no longer pin a fixed prefix", () => {
     const ids = [{ provider: "p", id: "raw/a", namespaced: "p/a" }, { provider: "p", id: "raw/b", namespaced: "p/b" }];
     const settings = { pickerAvailable: ["p/a", "p/b"], pickerOrder: [], pickerOrderMode: null,
       chosen: ["p/a", "p/b", "p/a", "p/raw/b"] };
-    expect(cli.customPickerRows(settings, ids)?.fixed).toEqual(["p/b", "p/a"]);
+    // PX-1276: chosen is informational only; the saved order alone decides rows.
+    expect(cli.customPickerRows(settings, ids)).toEqual({ fixed: [], order: ["p/a", "p/b"] });
+    const { chosen: _, ...unchosen } = settings;
+    expect(cli.customPickerRows(unchosen, ids)).toEqual({ fixed: [], order: ["p/a", "p/b"] });
   });
   test("GUI conformance: modes, manual normalization, fixed prefix and identity ambiguity", () => {
     const variants: cli.PickerModelIdentity[][] = [identities,
@@ -200,14 +203,18 @@ describe("models order commands", () => {
       expect(f.writes()).toEqual([]);
     });
   }
-  test("refuses changed featured prefix", async () => {
+  test("accepts a permutation that does not lead with featured picks", async () => {
+    // PX-1276: featured picks are ordinary rows; any full permutation saves.
     const f = fixture({ settings: { ...initial, chosen: ["beta/z"] } });
-    expect(await handleModelsOrderCommand(["set", "--models=alpha/a,alpha/b,beta/z"], f.deps)).toBe(2);
-    expect(f.writes()).toEqual([]);
+    expect(await handleModelsOrderCommand(["set", "--models=alpha/a,alpha/b,beta/z"], f.deps)).toBe(0);
+    expect(f.writes()).toHaveLength(1);
   });
-  test("refuses unknown chosen and identity ambiguity", async () => {
+  test("unknown chosen still saves; identity ambiguity still refuses", async () => {
     const { chosen: _, ...settings } = initial;
-    for (const options of [{ settings }, { models: identities.slice(1) },
+    const unchosen = fixture({ settings });
+    expect(await handleModelsOrderCommand(["set", "--models=alpha/a,alpha/b,beta/z"], unchosen.deps)).toBe(0);
+    expect(unchosen.writes()).toHaveLength(1);
+    for (const options of [{ models: identities.slice(1) },
       { models: [...identities, { provider: "alpha", id: "collision", namespaced: "alpha/a" }] }]) {
       const f = fixture(options);
       expect(await handleModelsOrderCommand(["set", "--models=alpha/a,alpha/b,beta/z"], f.deps)).toBe(2);

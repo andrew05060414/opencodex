@@ -1,3 +1,4 @@
+// Holds INV-AGENT-01 from structure/overview.md; keep the id here if this file is split or renamed.
 import { describe, expect, test } from "bun:test";
 import {
   buildCatalogEntriesFromObservedState,
@@ -6,7 +7,11 @@ import {
   applyFullModelPickerOrder,
   SPAWN_PRIORITY_FIELD,
 } from "../../src/codex/catalog/sync";
-import { multiAgentGuidanceText } from "../../src/server/responses/collaboration";
+import { multiAgentGuidanceText, rewriteSpawnAgentToolModelOverrides } from "../../src/server/responses/collaboration";
+import {
+  rewriteSpawnAgentToolDescriptions,
+  spawnAgentModelOverridesBlock,
+} from "../../src/server/responses/spawn-agent-model-overrides";
 import type { RawEntry } from "../../src/codex/catalog/parsing";
 import type { CatalogModel } from "../../src/types";
 
@@ -259,3 +264,190 @@ describe("PX-1276 Acceptance 3: modelPickerOrder accommodates native and routed 
   });
 });
 
+
+// INV-AGENT-01: the outbound spawn_agent tool description advertises the configured
+// subagentModels on both surfaces, regardless of catalog display priority.
+describe("PX-1276 rework: spawn_agent tool description follows subagentModels on the wire", () => {
+  const OVERRIDES_HEADER =
+    "Available model overrides (optional; inherited parent model is preferred):";
+  const catalog: RawEntry[] = [
+    {
+      slug: "google/gemini-2.5-flash",
+      description: "Routed via opencodex → google gemini-2.5-flash",
+      priority: 50,
+      visibility: "list",
+      multi_agent_version: "v2",
+      supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }],
+      default_reasoning_level: "high",
+    },
+    {
+      slug: "tyler/deepseek-v4",
+      description: "Routed via opencodex → tyler deepseek-v4",
+      priority: 51,
+      visibility: "list",
+      multi_agent_version: "v2",
+      supported_reasoning_levels: [{ effort: "medium" }],
+      service_tiers: [{ id: "ultrafast", description: "fast" }],
+    },
+    {
+      slug: "gpt-a", priority: 0, visibility: "list", multi_agent_version: "v2",
+      description: "native a", supported_reasoning_levels: [{ effort: "low" }],
+    },
+    {
+      slug: "gpt-b", priority: 1, visibility: "list", multi_agent_version: "v2",
+      description: "native b", supported_reasoning_levels: [{ effort: "low" }],
+    },
+  ];
+  const subagents = ["google/gemini-2.5-flash", "tyler/deepseek-v4"];
+  const upstreamBlock = `${OVERRIDES_HEADER}\n- \`gpt-a\`: native a Reasoning efforts: low.\n- \`gpt-b\`: native b Reasoning efforts: low.`;
+
+  const parsedFor = (tools: unknown[], rawBody: Record<string, unknown>) =>
+    ({ context: { tools }, _rawBody: rawBody }) as never;
+
+  test("V2 flat spawn_agent tool description is rewritten to the configured picks", async () => {
+    const rawBody = {
+      model: "gpt-a",
+      tools: [
+        { type: "function", name: "exec", description: "Run JavaScript" },
+        {
+          type: "function",
+          name: "spawn_agent",
+          description: `\n        ${upstreamBlock}\n        Spawns an agent to work on the specified task.`,
+          parameters: { type: "object" },
+        },
+      ],
+    };
+    const rewritten = await rewriteSpawnAgentToolModelOverrides(
+      parsedFor([{ name: "spawn_agent" }], rawBody),
+      { subagentModels: subagents },
+      {
+        collectCatalogState: () => ({ state: "fresh" }),
+        resolveEffectiveSubagentRoster: (models, surface) =>
+          effectiveSubagentRoster(models, surface, catalog),
+      },
+    );
+    expect(rewritten).toBe(1);
+    const description = (rawBody.tools[1] as { description: string }).description;
+    // The wire description Codex forwards now advertises the configured picks,
+    // not the two lowest-priority native rows upstream rendered.
+    expect(description).toContain(OVERRIDES_HEADER);
+    expect(description).toContain("- `google/gemini-2.5-flash`: Routed via opencodex → google gemini-2.5-flash Reasoning efforts: low, high (default).");
+    expect(description).toContain("- `tyler/deepseek-v4`: Routed via opencodex → tyler deepseek-v4 Reasoning efforts: medium. Service tiers: ultrafast.");
+    expect(description).not.toContain("`gpt-a`");
+    expect(description).not.toContain("`gpt-b`");
+    expect(description).toContain("Spawns an agent to work on the specified task.");
+    expect((rawBody.tools[0] as { description: string }).description).toBe("Run JavaScript");
+  });
+
+  test("V1 namespaced spawn_agent inside a namespace tool is rewritten", async () => {
+    const rawBody = {
+      tools: [
+        {
+          type: "namespace",
+          name: "multi_agent_v1",
+          tools: [
+            {
+              type: "function",
+              name: "spawn_agent",
+              description: `\n        ${upstreamBlock}\n        Spawn a sub-agent for a well-scoped task.`,
+            },
+          ],
+        },
+        {
+          type: "namespace",
+          name: "mcp__other",
+          tools: [{ type: "function", name: "spawn_agent", description: upstreamBlock }],
+        },
+      ],
+    };
+    const rewritten = await rewriteSpawnAgentToolModelOverrides(
+      parsedFor([
+        { name: "spawn_agent", namespace: "agents" },
+        { name: "send_input", namespace: "agents" },
+      ], rawBody),
+      { subagentModels: subagents },
+      {
+        collectCatalogState: () => ({ state: "fresh" }),
+        resolveEffectiveSubagentRoster: (models, surface) =>
+          effectiveSubagentRoster(models, surface, catalog),
+      },
+    );
+    expect(rewritten).toBe(1);
+    const namespaces = rawBody.tools as Array<{ name: string; tools: Array<{ description: string }> }>;
+    expect(namespaces[0]!.tools[0]!.description).toContain("- `google/gemini-2.5-flash`");
+    expect(namespaces[0]!.tools[0]!.description).toContain("Spawn a sub-agent for a well-scoped task.");
+    // An MCP server's own spawn_agent is not the native surface.
+    expect(namespaces[1]!.tools[0]!.description).toBe(upstreamBlock);
+  });
+
+  test("stale or unknown catalog state leaves the native description untouched", async () => {
+    for (const state of ["stale", "unknown"] as const) {
+      const rawBody = {
+        tools: [{
+          type: "function", name: "spawn_agent",
+          description: `${upstreamBlock}\n        Spawns an agent.`,
+        }],
+      };
+      const rewritten = await rewriteSpawnAgentToolModelOverrides(
+        parsedFor([{ name: "spawn_agent" }], rawBody),
+        { subagentModels: subagents },
+        {
+          collectCatalogState: () => ({ state }),
+          resolveEffectiveSubagentRoster: (models, surface) =>
+            effectiveSubagentRoster(models, surface, catalog),
+        },
+      );
+      expect(rewritten).toBe(0);
+      expect(rawBody.tools[0]!.description).toContain("`gpt-a`");
+    }
+  });
+
+  test("no collaboration surface, no configured picks, or guidance disabled means no rewrite", async () => {
+    const rawBody = () => ({
+      tools: [{
+        type: "function", name: "spawn_agent",
+        description: `${upstreamBlock}\n        Spawns an agent.`,
+      }],
+    });
+    const deps = {
+      collectCatalogState: () => ({ state: "fresh" as const }),
+      resolveEffectiveSubagentRoster: (models: readonly string[], surface: "v1" | "v2") =>
+        effectiveSubagentRoster(models, surface, catalog),
+    };
+    // no collab surface
+    const noSurface = rawBody();
+    expect(await rewriteSpawnAgentToolModelOverrides(
+      parsedFor([{ name: "exec" }], noSurface), { subagentModels: subagents }, deps)).toBe(0);
+    // nothing configured
+    const unconfigured = rawBody();
+    expect(await rewriteSpawnAgentToolModelOverrides(
+      parsedFor([{ name: "spawn_agent" }], unconfigured), {}, deps)).toBe(0);
+    // operator disabled multi-agent guidance entirely
+    const disabled = rawBody();
+    expect(await rewriteSpawnAgentToolModelOverrides(
+      parsedFor([{ name: "spawn_agent" }], disabled),
+      { multiAgentGuidanceEnabled: false, subagentModels: subagents }, deps)).toBe(0);
+    expect(noSurface.tools[0]!.description).toContain("`gpt-a`");
+    expect(unconfigured.tools[0]!.description).toContain("`gpt-a`");
+    expect(disabled.tools[0]!.description).toContain("`gpt-a`");
+  });
+
+  test("hide-style descriptions without the overrides block are left untouched", () => {
+    const rawBody = {
+      tools: [{
+        type: "function", name: "spawn_agent",
+        description: "\n        Spawns an agent to work on the specified task.",
+      }],
+    };
+    const rewritten = rewriteSpawnAgentToolDescriptions(rawBody, [
+      { model: "x/y", efforts: [] },
+    ]);
+    expect(rewritten).toBe(0);
+    expect(rawBody.tools[0]!.description).toBe("\n        Spawns an agent to work on the specified task.");
+  });
+
+  test("empty advertised roster renders the upstream empty marker", () => {
+    expect(spawnAgentModelOverridesBlock([]))
+      .toBe("No picker-visible model overrides are currently loaded.");
+  });
+});

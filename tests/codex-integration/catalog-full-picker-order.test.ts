@@ -1,4 +1,4 @@
-// Holds INV-AGENT-01 from structure/overview.md; keep the id here if this file is split or renamed.
+// Spawn-display-priority coverage moved to px-1276-subagent-decoupling.test.ts (INV-AGENT-01 lives there).
 import { routedSlug } from "../../src/providers/slug-codec";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -91,8 +91,9 @@ test("fresh routed rows do not inherit a previously ordered native template's gu
   expect(featuredRows.map(row => row[SPAWN_PRIORITY_FIELD] ?? row.priority)).toEqual([0, 1, 2, 3, 4]);
   const expectedCandidates = featured.map(model => ({ model, efforts: ["high", "xhigh"] }));
   const before = effectiveSubagentRoster(featured, "v2", rows);
-  expect(before.candidates).toEqual(expectedCandidates);
-  expect(before.advertised).toEqual(expectedCandidates);
+  const slim = (list: typeof before.candidates) => list.map(({ model, efforts }) => ({ model, efforts }));
+  expect(slim(before.candidates)).toEqual(expectedCandidates);
+  expect(slim(before.advertised)).toEqual(expectedCandidates);
 
   applyFullModelPickerOrder(rows, order);
   expect(effectiveSubagentRoster(featured, "v2", rows)).toEqual(before);
