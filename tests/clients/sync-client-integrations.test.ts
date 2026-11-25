@@ -190,7 +190,7 @@ describe("Desktop sync rechecks persisted state after discovery", () => {
           expect(key).toBe("ocx_new_sync_fixture");
           expect(mode).toBe("static");
           expect(profile).toEqual(latest.claudeCode!.desktopProfile);
-          expect(limits).toEqual({ cap: 922_000, providerWindow: 1_000_000 });
+          expect(limits).toEqual({ cap: 922_000, providerWindow: 1_000_000, autoCompactTokenLimit: 600_000 });
           expect(results.find(result => result.client === "claude-desktop")).toEqual(outcome === "refusal"
             ? { client: "claude-desktop", ok: false, reason: "desktop_remote_store_active" }
             : { client: "claude-desktop", ok: true, changed: true });

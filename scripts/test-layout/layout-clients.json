@@ -170,5 +170,11 @@
   "hermes-profile-routes.test.ts": "clients",
   "cli-sync-expect-link.test.ts": "cli",
   "link-connection-generation.test.ts": "clients",
-  "ci-pr-hygiene-approvals.test.ts": "ci-workflows"
+  "ci-pr-hygiene-approvals.test.ts": "ci-workflows",
+  "claude-intercept-privacy-redaction.test.ts": "claude-integration",
+  "messages-native-combo.test.ts": "claude-integration",
+  "oauth-account-export-formats.test.ts": "oauth",
+  "privacy-e2e.test.ts": "server",
+  "privacy-redaction.test.ts": "server",
+  "privacy-restore.test.ts": "server"
 }

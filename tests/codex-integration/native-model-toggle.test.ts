@@ -322,7 +322,7 @@ describe("native GPT model toggles (bare slugs in disabledModels)", () => {
 
   test("remembered disabled caps do not narrow native windows or input budgets", () => {
     const config = makeConfig({ providerContextCapValues: { openai: 128_000 } });
-    expect(nativeContextLimits(config)).toEqual({});
+    expect(nativeContextLimits(config)).toEqual({ autoCompactTokenLimit: 600_000 });
     expect(nativeModelRows(config)).toEqual(nativeModelRows(makeConfig()));
     expect(nativeModelRows(config).find(row => row.slug === "gpt-5.6-sol")).toMatchObject({
       contextWindow: 272_000,

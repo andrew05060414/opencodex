@@ -11,7 +11,7 @@ import {
   fakeEmail,
   fakeOpenAiKey,
   fakePassword,
-} from "./secrets";
+} from "./privacy-secrets";
 
 /** The value deliberately placed inside a SIGNED thinking block, which must survive untouched. */
 export const THINKING_BLOCK_SECRET = fakeAnthropicKey("thinking-block");

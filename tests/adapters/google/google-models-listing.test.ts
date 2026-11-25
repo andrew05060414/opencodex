@@ -159,7 +159,8 @@ describe("Antigravity live model discovery", () => {
       expect(flashLow).toMatchObject({
         context_window: 1_048_576,
         max_context_window: 1_048_576,
-        auto_compact_token_limit: 943_718,
+        // min(90% of the window, default autoCompactTokenLimit ceiling of 600k)
+        auto_compact_token_limit: 600_000,
         input_modalities: ["text", "image"],
       });
       expect(flashLow).not.toHaveProperty("default_reasoning_level");

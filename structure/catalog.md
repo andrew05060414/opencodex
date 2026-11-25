@@ -597,5 +597,4 @@ gathering. Each sync waits at most two seconds for a fresh or shared fetch, then
 only when an existing snapshot answers with an expired ladder. Missing or corrupt snapshots do not fetch on the request path; catalog sync owns their bootstrap. Automatic account exhaustion and recovery use the [spendable Codex credit evidence contract](providers/openai-tiers.md#spendable-codex-credits), including independent freshness, upstream refusal, and reset-ticket separation.
 
 ## Configurable catalog defaults
-
 Unknown routed windows use `unknownContextWindow` (default 200,000) only after observed, configured and vendor limits. Defaulted windows are not upstream capability evidence. `autoCompactTokenLimit` (default 600,000) is a soft global ceiling: compaction uses the minimum of it, 90% of the window, known input limits and existing per-model budgets. Native and routed catalogs share the policy. `PUT /api/settings` applies both controls in one transaction and refreshes the catalog. Complete combo members receive provider capability hints before intersection.
