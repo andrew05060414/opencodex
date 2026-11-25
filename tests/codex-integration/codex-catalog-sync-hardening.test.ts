@@ -658,7 +658,7 @@ describe("Codex catalog sync hardening", () => {
       display_name: "Daybreak Blue",
       context_window: 922_000,
       max_context_window: 922_000,
-      auto_compact_token_limit: 829_800,
+      auto_compact_token_limit: 600_000,
       comp_hash: "3000",
       tool_mode: "code_mode_only",
       use_responses_lite: true,

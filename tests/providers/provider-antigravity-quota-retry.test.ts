@@ -52,7 +52,7 @@ describe("Antigravity quota summary 403 compatibility retry (#5940)", () => {
       const calls = transport([denied, Response.json(summary)]);
       const result = await probeAntigravityUsageQuota("test-access", "test-project");
       expect(cancelled).toBe(true);
-      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, "antigravity/1.0")]);
+      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, antigravityUserAgent())]);
       expect(result).toMatchObject({ kind: "available", source: "google-antigravity:retrieveUserQuotaSummary", quota: { customWindows: [{ label: "Gem", percent: 40 }] } });
     });
   }
@@ -85,7 +85,7 @@ describe("Antigravity quota summary 403 compatibility retry (#5940)", () => {
     if (result.kind !== "available") {
       throw new Error("expected available quota");
     }
-    expect(result.quota.customWindows?.map(window => window.label)).toEqual(["Gem", "Gem (Weekly)", "Cla", "Cla (Weekly)", "Argon (Weekly)"]);
+    expect(result.quota.customWindows?.map(window => window.label)).toEqual(["Gem", "Gem (Weekly)", "Claude / GPT", "Claude / GPT (Weekly)", "Argon (Weekly)"]);
     expect(result.quota.customWindows?.at(-1)).toMatchObject({ label: "Argon (Weekly)", modelId: "gemini-4-argon", percent: 25 });
   });
 
@@ -95,11 +95,26 @@ describe("Antigravity quota summary 403 compatibility retry (#5940)", () => {
     expect(calls).toEqual([expectedCall(summaryUrl)]);
   });
 
-  for (const status of [401, 403, 302]) {
-    test(`retry status ${status} stops without further requests`, async () => {
+  // The 403 ladder is CLI, then IDE, then the legacy fingerprint; only a 403 moves to the next rung.
+  for (const status of [401, 302]) {
+    test(`IDE retry status ${status} stops without further requests`, async () => {
       const calls = transport([new Response(null, { status: 403 }), new Response(null, { status, headers: { location: "https://redirect.example/" } })]);
       expect(await probeAntigravityUsageQuota("test-access", "test-project")).toMatchObject({ kind: "unavailable", failure: status === 302 ? "redirect_blocked" : "access_denied" });
-      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, "antigravity/1.0")]);
+      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, antigravityUserAgent())]);
+    });
+  }
+
+  test("a second 403 falls back to the legacy fingerprint, which can still succeed", async () => {
+    const calls = transport([new Response(null, { status: 403 }), new Response(null, { status: 403 }), Response.json(summary)]);
+    expect(await probeAntigravityUsageQuota("test-access", "test-project")).toMatchObject({ kind: "available", source: "google-antigravity:retrieveUserQuotaSummary" });
+    expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, antigravityUserAgent()), expectedCall(summaryUrl, "antigravity/1.0")]);
+  });
+
+  for (const status of [401, 403, 302]) {
+    test(`legacy retry status ${status} stops without further requests`, async () => {
+      const calls = transport([new Response(null, { status: 403 }), new Response(null, { status: 403 }), new Response(null, { status, headers: { location: "https://redirect.example/" } })]);
+      expect(await probeAntigravityUsageQuota("test-access", "test-project")).toMatchObject({ kind: "unavailable", failure: status === 302 ? "redirect_blocked" : "access_denied" });
+      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, antigravityUserAgent()), expectedCall(summaryUrl, "antigravity/1.0")]);
     });
   }
 
@@ -107,7 +122,7 @@ describe("Antigravity quota summary 403 compatibility retry (#5940)", () => {
     test(`retry failure (${failure instanceof Error ? "transport" : failure.status}) recovers through IDE models probe`, async () => {
       const calls = transport([new Response(null, { status: 403 }), failure, Response.json(models)]);
       expect(await probeAntigravityUsageQuota("test-access", "test-project")).toMatchObject({ kind: "available", source: "google-antigravity:fetchAvailableModels", quota: { customWindows: [{ label: "Gem", percent: 25 }, { label: "gemini", modelId: "gemini", percent: 25 }] } });
-      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, "antigravity/1.0"), expectedCall(modelsUrl)]);
+      expect(calls).toEqual([expectedCall(summaryUrl), expectedCall(summaryUrl, antigravityUserAgent()), expectedCall(modelsUrl)]);
     });
   }
 

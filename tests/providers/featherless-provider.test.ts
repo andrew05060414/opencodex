@@ -188,7 +188,8 @@ describe("Featherless provider", () => {
       capabilities: ["tool_use"],
       reasoningEfforts: [],
     });
-    expect(sparse).not.toHaveProperty("contextWindow");
+    // No discovered window: the catalog default applies and is flagged as a placeholder.
+    expect(sparse).toMatchObject({ contextWindow: 200_000, contextWindowDefaulted: true });
     expect(sparse).not.toHaveProperty("inputModalities");
 
     for (const modelId of models.map(row => row.id)) {
