@@ -1,12 +1,12 @@
 # 后端有、仪表盘藏着的功能：盘点与上游 issue 草稿
 
-> 创建日期：2026-11-21 ｜ 最后更新：2026-11-24 ｜ 版本：1.2 ｜ 票：PX-1450（母票 PX-1446）
+> 创建日期：2026-11-21 ｜ 最后更新：2026-11-25 ｜ 版本：1.3 ｜ 票：PX-1450（母票 PX-1446）
 
 ## 结论（先看这里）
 
 - 两个方向都扫了：配置字段（`OcxConfig` + `OcxProviderConfig` 共 330 个）和管理接口（`src/server/management/route-registry.ts` 的 `MANAGEMENT_ROUTES` 全量 **366** 条 `(method, path)`、覆盖 285 个唯一路径、含 36 条参数化路由），基准都是上游 `572e65cd7`（`upstream/dev`，2026-11-21）。**224 个配置字段按整词搜不到；98 条 `(method, path)` 管理接口按路径边界与模板插值规则在 `gui/src` 搜不到**（逐条分流后为：40 条经动态拼接或替代路径已有入口、31 条为内部/测试/CLI 运维专用、8 条已归入主表 H5/M8/M9/M11、**19 条构成主表外 8 项界面缺口 R1–R8**）。
 - 票面里四个例子，三个已经过时：Vertex 免 key 上游已修好（#8311），协议直通/转换在上游已经能看到，`visionSidecar` 和 Lab 矩阵都已有入口。**真正还藏着的高价值项是：供应商改名、超时与重试、账号池缓存亲和与切换阈值。**
-- fork `dev-2.93` 落后上游 692 个提交。Vertex 修复、供应商页的原生直通开关、按供应商设超时、内置 `openai` 的 5xx 重试控件都只在上游有。**fork 同步一次上游，就能直接拿到其中几项，不用自己写。**
+- fork `dev-2.93` 落后上游 692 个提交。Vertex 修复、供应商页的原生直通开关、按供应商设超时（JSON 配置）、内置 `openai` 的 5xx 重试控件都只在上游有。**fork 同步一次上游，就能直接拿到其中几项，不用自己写。**
 - 上游 issue 草稿 4 份，见文末，**还没提交，等 Andrew 同意**。其中第 4 份是更深一层的做法：不再一个开关一个开关地补，而是按配置类型的注释自动生成一个「高级设置」页，把长尾一次性收进去。
 
 ## 方法与局限
@@ -19,7 +19,7 @@
    - 配置字段的字面扫描会有假阳性（字段经接口改名后其实有入口），所以附录里的 224 字段全量清单**没有逐条核实**，只有主表和第三节的 366 条管理路由逐条核实过。
    - 配置解析器会漏掉少数跨行声明的字段；管理路由注册表覆盖所有 `/api/*` 管理端点，不包含根级健康探针（如 `/healthz`、`/readyz`）。
    - 「有没有入口」只看源码，没有打开实际页面点过。
-6. 「JSON 编辑器」是兜底：仪表盘有整份配置的 JSON 编辑（`gui/src/hooks/useJsonConfigEditor.ts`），所以下文的「没有入口」指的是**没有专门的控件**，改 JSON 仍然可以开。
+6. 「没有入口」指的是**没有专门的控件**。仪表盘的供应商 JSON 编辑器只接受 `defaultProvider` 和可编辑的 `providers` 字段（`gui/src/hooks/useJsonConfigEditor.ts`、`src/server/auth-cors.ts:1445-1460`），不能编辑全局配置字段。全局字段需要编辑磁盘上的 `config.json`，或使用对应的专用接口。
 
 ## 一、票面例子的现状（纠正之前猜的那张表）
 
@@ -38,11 +38,11 @@
 
 | # | 字段或能力 | 作用（白话） | 后端位置 | 前端现状 | 价值 | fork |
 |---|---|---|---|---|---|---|
-| H1 | 供应商改名 | 把供应商配置键 `providers.foo` 改成 `providers.bar`。**注意现有能力的边界**：批量接口把「改名」视为「删旧键 + 加新键」，有依赖它的组合时直接拒绝（`409 provider_has_dependent_combos`）；引用跟着迁是**待新增的能力**，不是现状 | `PUT /api/providers`（baseline/next 批量编辑，`src/server/management/provider-routes.ts:1025`；409 逻辑在 `src/server/management/provider-routes.ts:241-250`）；CLI `ocx provider batch apply` 支持改名（`src/cli/provider-batch.ts:56`） | 供应商页 CRUD（`gui/src/pages/use-providers-crud.ts`）没有专门的改名入口（`PUT /api/providers` 仅由原始 JSON 编辑器 `gui/src/hooks/useJsonConfigEditor.ts:133` 调用）；只有组合有专门改名（`combo-workspace-data.ts:522` 的 `renameFrom`）。模型页已有**供应商别名**入口：`PUT /api/providers/{provider}/alias`（`gui/src/pages/models-alias-editing.ts:22-35`），但**别名不只是显示名**——写入 `providers.<name>.alias` 后会同时作为请求路由前缀 `<alias>/<model>`（大小写不敏感，`src/router.ts:547-554`），并覆盖/停用原来的内置简称（`tests/providers/provider-model-aliases.test.ts:99-120`、`docs-site/src/content/docs/reference/configuration/providers.md:333`）；**与配置键改名的区别**：规范配置键 `providers.<name>` 原样保留（`<name>/<model>`、combos / routingProfiles / defaultProvider / OAuth 存储仍绑定旧键名） | 高 | 同 |
-| H2 | 上游超时：`stallTimeoutSec`、`connectTimeoutMs`（全局 + 按供应商） | 多久没数据算卡死、多久连不上算失败；Antigravity 这类慢的线路最需要调 | `src/types/config.ts:1083,1092`；按供应商覆盖 `src/types/provider.ts:363,370`（仅上游）；实现 `src/stall-timeout.ts`、`src/lib/pinned-http.ts:151` | 只在日志的失败原因里显示「连接超时 / 卡住超时」（`gui/src/pages/logs-failure-summary.ts:133,142`），没有地方能改；**上游按供应商设超时目前也只能走 JSON 编辑器** | 高 | fork 只有全局字段 |
+| H1 | 供应商改名 | 把供应商配置键 `providers.foo` 改成 `providers.bar`。**注意现有能力的边界**：批量接口把「改名」视为「删旧键 + 加新键」，有依赖它的组合时直接拒绝（`409 provider_has_dependent_combos`）；引用跟着迁是**待新增的能力**，不是现状 | `PUT /api/providers`（baseline/next 批量编辑，`src/server/management/provider-routes.ts:1025`；409 逻辑在 `src/server/management/provider-routes.ts:241-250`）；CLI `ocx provider apply` 支持批量删旧键、加新键（`src/cli/provider-batch.ts:56`） | 供应商页 CRUD（`gui/src/pages/use-providers-crud.ts`）没有专门的改名入口（`PUT /api/providers` 仅由原始 JSON 编辑器 `gui/src/hooks/useJsonConfigEditor.ts:133` 调用）；只有组合有专门改名（`combo-workspace-data.ts:522` 的 `renameFrom`）。模型页已有**供应商别名**入口：`PUT /api/providers/{provider}/alias`（`gui/src/pages/models-alias-editing.ts:22-35`），但**别名不只是显示名**——写入 `providers.<name>.alias` 后会同时作为请求路由前缀 `<alias>/<model>`（大小写不敏感，`src/router.ts:547-554`），并覆盖/停用原来的内置简称（`tests/providers/provider-model-aliases.test.ts:99-120`、`docs-site/src/content/docs/reference/configuration/providers.md:333`）；**与配置键改名的区别**：规范配置键 `providers.<name>` 原样保留（`<name>/<model>`、combos / routingProfiles / defaultProvider / OAuth 存储仍绑定旧键名） | 高 | 同 |
+| H2 | 上游超时：`stallTimeoutSec`、`connectTimeoutMs`（全局 + 按供应商） | 多久没数据算卡死、多久连不上算失败；Antigravity 这类慢的线路最需要调 | `src/types/config.ts:1083,1092`；按供应商覆盖 `src/types/provider.ts:363,370`（仅上游）；实现 `src/stall-timeout.ts`、`src/lib/pinned-http.ts:151` | 只在日志的失败原因里显示「连接超时 / 卡住超时」（`gui/src/pages/logs-failure-summary.ts:133,142`），没有地方能改；**上游的超时目前只能改 JSON：全局改 `config.json`，供应商可用供应商 JSON 编辑器** | 高 | fork 只有全局字段 |
 | H3 | 重试策略：`retryOn429`、`retryOnReset`，以及 `transientRetryOn5xx` 的供应商覆盖缺口 | 被限流（429）时同一个 key 等一下再发；连接被重置时自动重发 | `src/types/provider.ts:1189,1195,1201`；实现 `src/providers/key-failover.ts:292-308`、`src/lib/upstream-retry.ts` | `retryOn429`/`retryOnReset` 完全搜不到。`transientRetryOn5xx` 上游有控件，但**只对内置 `openai` 显示**（`ProviderSettings.tsx:580-588` 的 `isCanonicalOpenAi` 门），保存也只在 `saved.name === "openai"` 时写（`target-drafts.ts:366-367`，界面字段名 `subscriptionRetries`）；后端还支持 key-auth 的 `openai-chat` 和 `openai-responses` 适配器（`src/providers/key-failover.ts:754-773`），这些供应商界面上仍缺入口 | 高 | fork 连 openai 的 5xx 控件也没有 |
 | H4 | 账号池 `pool.cacheAffinity` / `pool.kernel` / `pool.credentialGroups` | 缓存优先还是额度优先选账号（影响 prompt cache 命中和 token 花费）；通用 OAuth 账号池内核；凭据分组 | `src/types/config.ts:1278,1301,1324`；`src/codex/routing/selection.ts:370`、`src/codex/routing/cache-affinity.ts` | 三个名字在 `gui/src` 里都是 0 次 | 高（上游 #4546 就是缓存被打爆、token 烧 10~50 倍） | 同 |
-| H5 | `upstreamFailoverThreshold` | 上游连续失败几次后，新会话改走别的账号（默认 3，0 = 关） | 字段 `src/types/config.ts:1346`；**管理接口已经写好**：`PUT /api/codex-auth/failover`（`src/codex/auth-api/routes.ts:409-416`） | 仪表盘从没调用过这个接口（`codex-auth/failover` 在 `gui/src` 里 0 次）——接口写了，但没接到界面上 | 高（成本最低） | 同 |
+| H5 | `upstreamFailoverThreshold` | 上游连续失败几次后，新会话改走别的账号（默认 3，0 仅关闭连续失败计数触发的切换，不关闭独立的失败率窗口） | 字段 `src/types/config.ts:1346`；**管理接口已经写好**：`PUT /api/codex-auth/failover`（`src/codex/auth-api/routes.ts:409-416`） | 仪表盘从没调用过这个接口（`codex-auth/failover` 在 `gui/src` 里 0 次）——接口写了，但没接到界面上 | 高（成本最低） | 同 |
 | M1 | `protocols.rollout.*`（`directEncoders`、`antigravityDirect`、`nativeChatCombos`、`shadowPlan`）和 `protocols.unrepresentable` | 各条原生直通路径的灰度开关；遇到没法转换的字段是报错还是退回旧路径 | `src/types/config.ts:700`；`src/protocols/settings.ts:87-114` | 上游只有一个 Gemini/Antigravity 原生直通开关（`NativePassthroughSetting.tsx:74`，写入 `geminiNativeAntigravity`），其余灰度开关都没有；fork 连这个开关都没有 | 中 | fork 缺原生直通开关 |
 | M2 | `blockedModelRedirects` | 把被封或下线的模型 id 自动改发到替代模型 | `src/types/config.ts:965`；`src/server/responses/core-combo.ts:171,865` | 0 次 | 中 | 同 |
 | M3 | `modelAdapters`（按模型换协议） | 同一个网关下，个别模型走 Responses、其余走 Chat | `src/types/provider.ts:385`；`src/providers/fastwire.ts:176` | 0 次 | 中 | 同 |
@@ -192,7 +192,7 @@ for m, p in zero: print(f"{m:6s} {p}")
 - **Example usage or interface**
   Providers → `custom-1` → ⋯ → Rename → `ark-kimi` → the dialog lists "2 combos and 1 routing profile reference this provider; they will be updated" → Save.
 - **Alternatives or workarounds**
-  Edit `providers` in the raw JSON editor, or run `ocx provider batch apply --baseline FILE --file FILE --yes`. Both use `PUT /api/providers`: it rejects removing the old key with `409 provider_has_dependent_combos` if a combo still references it, and neither flow migrates references or OAuth accounts.
+  The provider JSON editor and `ocx provider apply --baseline FILE --file FILE --yes` can submit a delete-and-add through `PUT /api/providers`, but this is not a safe rename workaround. It rejects removing the old key with `409 provider_has_dependent_combos` if a combo still references it; persisted credentials hidden from the editor are not copied to the new key, and references and OAuth accounts are not migrated.
 - **Additional context**
   Found while auditing which config fields have no dashboard entry point.
 
@@ -206,12 +206,12 @@ for m, p in zero: print(f"{m:6s} {p}")
   `stallTimeoutSec` / `connectTimeoutMs` (global, `src/types/config.ts`, and per-provider overrides in `src/types/provider.ts`), `retryOn429` and `retryOnReset` (`src/types/provider.ts`). The Logs page already tells me a request failed with "connect timeout" or "stall timeout" (`gui/src/pages/logs-failure-summary.ts`), but offers no way to act on it.
   `transientRetryOn5xx` from the same family does have a control, but only for the built-in `openai` provider: the settings field is gated on `isCanonicalOpenAi` (`ProviderSettings.tsx`, the `subscriptionRetries` select) and the save path only writes it when `saved.name === "openai"` (`target-drafts.ts`). The backend also accepts this policy for key-auth `openai-chat` and `openai-responses` providers (`src/providers/key-failover.ts:754-773`), which have no dashboard control for it.
 - **What should OpenCodex do?**
-  Provider settings get a "Network & retries" section with: connect timeout, stall timeout (inherit global / custom / off), 429 retry (off / on with max wait), reset replay (off / on), and the existing 5xx retry control — extended from `openai` only to every provider whose adapter accepts `transientRetryOn5xx`. The global defaults are editable in Settings. A failure row in Logs that says "stall timeout" links to that provider's section.
+  Provider settings get a "Network & retries" section with: connect timeout, stall timeout (inherit global / custom / off), 429 retry (off / on with max wait), reset replay (off / on), and the existing 5xx retry control — extended from `openai` only to providers whose adapter and auth mode accept `transientRetryOn5xx`. Show the retry switches only where the request path supports them. The global defaults are editable in Settings. A failure row in Logs that says "stall timeout" links to that provider's section.
 - **Example usage or interface**
   ```json
-  "providers": { "antigravity": { "stallTimeoutSec": 600, "connectTimeoutMs": 45000, "retryOn429": {}, "retryOnReset": {} } }
+  "providers": { "custom-openai": { "stallTimeoutSec": 600, "connectTimeoutMs": 45000, "retryOn429": {}, "retryOnReset": {} } }
   ```
-  should be reachable as four controls on the provider page.
+  should be reachable as four controls for a key-auth OpenAI Responses provider. Same-key 429 replay is not available for Antigravity OAuth.
 - **Alternatives or workarounds**
   Hand-edit JSON. It works, but nobody discovers these fields unless they read `src/types/provider.ts`.
 
@@ -223,11 +223,17 @@ for m, p in zero: print(f"{m:6s} {p}")
 - **What prevents this today?**
   `pool.cacheAffinity`, `pool.kernel`, and `pool.credentialGroups` (`src/types/config.ts`; read in `src/codex/routing/selection.ts`) have no dashboard control. `upstreamFailoverThreshold` even has a finished management endpoint, `PUT /api/codex-auth/failover` (`src/codex/auth-api/routes.ts`), but the dashboard never calls it. #4546 shows what goes wrong when cache affinity is not what the operator expects.
 - **What should OpenCodex do?**
-  The account pool card shows: cache affinity (on / off, with one line on the trade-off), failover threshold (0–20, 0 = off, wired to the existing endpoint), and optionally the failure window and the pinned-account policy (`codexFailureWindow`, `codexPinnedTransientPolicy`).
+  The account pool card shows: cache affinity (on / off, with one line on the trade-off), consecutive-failure threshold (0–20, 0 disables this trigger, not the separate failure-rate window, wired to the existing endpoint), and optionally the failure window and the pinned-account policy (`codexFailureWindow`, `codexPinnedTransientPolicy`).
 - **Example usage or interface**
   Account pool → Routing → "Prefer cache (keep a thread on one account)" ☑ ; "Move new threads after [3] consecutive failures".
 - **Alternatives or workarounds**
-  Hand-edit JSON, or `curl -X PUT /api/codex-auth/failover`.
+  Edit `config.json`, or set the threshold through the running proxy’s management API. With `OCX_BASE_URL` set to the local proxy URL and `OCX_ADMIN_TOKEN` set to its management token:
+  ```sh
+  curl -X PUT "${OCX_BASE_URL}/api/codex-auth/failover" \
+    -H "Authorization: Bearer ${OCX_ADMIN_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data '{"threshold":3}'
+  ```
 
 ### 草稿 4 — Dashboard: schema-driven "Advanced settings" page for the long tail
 
@@ -235,13 +241,13 @@ for m, p in zero: print(f"{m:6s} {p}")
 - **What are you trying to accomplish?**
   Find and change an existing config option without reading the source, and see which non-default options are currently active.
 - **What prevents this today?**
-  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`GET /api/workflow-budget`, `POST /api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `GET/POST /api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and today the only path is the raw JSON editor, which gives no hints about what exists.
+  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`GET /api/workflow-budget`, `POST /api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `GET/POST /api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and editing JSON gives no hints about which fields exist. The dashboard JSON editor is provider-only; global fields require editing `config.json`.
 - **What should OpenCodex do?**
-  An "Advanced" page (global, plus a tab on each provider) is generated from the existing zod schema and the JSDoc on the config types. It lists every documented field with its description and type. It highlights the fields currently set to a non-default value, and edits them through the same `validateConfigCandidate` write boundary the JSON editor uses. Fields marked internal (migration markers, revisions, runtime-only like `_apiKeyAttempt`) are excluded by an explicit allow/deny list, not by guessing. A later iteration can surface uncalled management actions the same way (an action registry listing `POST /api/workflow-budget/clear` next to the budget settings).
+  An "Advanced" page (global, plus a tab on each provider) is generated from the existing zod schema and the JSDoc on the config types. It lists every documented field with its description and type. It highlights the fields currently set to a non-default value, and saves them through validated management writes. Provider fields can reuse the JSON editor's `PUT /api/providers` validation; exposing global fields requires an explicit write boundary for those fields. Fields marked internal (migration markers, revisions, runtime-only like `_apiKeyAttempt`) are excluded by an explicit allow/deny list, not by guessing. A later iteration can surface uncalled management actions the same way (an action registry listing `POST /api/workflow-budget/clear` next to the budget settings).
 - **Example usage or interface**
   Settings → Advanced → search "temperature" → `providers.<name>.noTemperatureModels` — "Model ids that reject caller-specified temperature." → add `grok-4.6` → Save (validated server-side).
 - **Alternatives or workarounds**
-  The raw JSON editor (no discoverability, no per-field help), or one-off controls per field (doesn't scale).
+  Edit `config.json` (or use the provider JSON editor for editable provider fields), or add one-off controls per field (doesn't scale).
 - **Additional context**
   The descriptions already exist in `src/types/config.ts` and `src/types/provider.ts`, so the page needs no new copy except section titles. Locale handling: field descriptions could stay English (technical text), with only the page chrome in i18n.
 
@@ -304,8 +310,8 @@ for m, p in zero: print(f"{m:6s} {p}")
 | `OcxConfig.noProxy` | `src/types/config.ts:1078` | Hosts that bypass `proxy` for OpenCodex's own outbound provider calls, merged into NO_PROXY at startup. Accepts a comma-separated string (NO… |
 | `OcxConfig.stallTimeoutSec` | `src/types/config.ts:1083` | Upstream stall timeout (seconds). After this many seconds of no upstream data, emits response.incomplete. Default 300. Min 1. |
 | `OcxConfig.connectTimeoutMs` | `src/types/config.ts:1092` | Connect timeout (ms) for upstream fetch — the deadline from dispatch until the upstream returns its first response header (covers DNS, TCP,… |
-| `OcxConfig.shutdownTimeoutMs` | `src/types/config.ts:1095` | Opt-in (#7958): seconds (max 300) to wait for DNS after a pre-connect failure, then resend once. Unset or 0 is off.  offlineResendWaitSec?:… |
-| `OcxConfig.codexNativeSteering` | `src/types/config.ts:1100` | Advertise supports_websockets so Codex opens the WS endpoint. Default false; set true to opt in.  websockets?: boolean; Accept the Responses… |
+| `OcxConfig.shutdownTimeoutMs` | `src/types/config.ts:1095` | Graceful shutdown drain timeout (ms). Active turns are aborted after this deadline. Default 5000. |
+| `OcxConfig.codexNativeSteering` | `src/types/config.ts:1100` | Experimental single-lane native OpenAI WebSocket steering; default off. |
 | `OcxConfig.codexNativeInjection` | `src/types/config.ts:1102` | Experimental, default-off saved function-result injection on native multi-agent WebSockets. |
 | `OcxConfig.storageCleanupPolicy` | `src/types/config.ts:1108` | Opt-in auto-cleanup policy for archived Codex sessions (issue #42 Phase 3). Default OFF (`enabled` false / unset). Never enabled implicitly.… |
 | `OcxConfig.usageLedgerMaxBytes` | `src/types/config.ts:1115` | Opt-in ceiling in bytes for `usage.jsonl`. Absent means the ledger grows without limit, which stays the default: history an operator did not… |
