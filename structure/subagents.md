@@ -115,21 +115,24 @@ advertises) but `expose_spawn_agent_model_overrides` on V2 (default `true`; when
 is omitted *and* the `model`/`reasoning_effort` schema fields are removed). And V2's
 `hide_spawn_agent_metadata` defaults true, which removes `service_tier`.
 
-`modelPickerOrder` (#1649) separates **OpenCodex guidance** from native advertisement.
-`SPAWN_PRIORITY_FIELD` preserves the natural priority used by `effectiveSubagentRoster`, so
-OpenCodex's preferred/guidance candidate calculation stays independent of display order.
-Native Codex ignores that private field: its advertised five on V1 and exposed V2 follow the
-native `priority` and may change when the picker is reordered. Exact-name override lookup is
-not restricted to those five advertised rows. V1 receives no OpenCodex preferred-roster
+`modelPickerOrder` (#1649) is now purely a **display** ordering (PX-1276). The advertised
+spawn_agent list no longer derives from native `priority` at all: the proxy rewrites the
+outbound `Available model overrides` block in the tool description from
+`effectiveSubagentRoster().advertised` on both V1 and V2
+(`src/server/responses/spawn-agent-model-overrides.ts`), so the native tool always offers the
+configured picks regardless of picker order. `SPAWN_PRIORITY_FIELD` still preserves the natural
+priority used by `effectiveSubagentRoster`, so OpenCodex's preferred/guidance candidate
+calculation stays independent of display order, and the same `stale`/`unknown` catalog-state
+silence that gates V2 guidance gates the rewrite on both surfaces. Exact-name override lookup
+is not restricted to the advertised rows. V1 still receives no OpenCodex preferred-roster
 injection; V2 can additionally receive natural-priority guidance when its catalog state permits.
-The helper tests pin guidance behavior, not native tool-description equivalence.
 
 A nonblank bare id in `modelPickerOrder` opts into complete-picker display ordering. Exact
 ids take precedence over raw/encoded equivalents; routed-only and empty lists keep the legacy
 ordering behavior. This does not change the separate `opencodex_spawn_priority` contract.
-Retained rows recompute their natural ranks from the current featured roster and account-selector
-stride before display order is applied, so a discovery outage cannot preserve an obsolete
-featured or picker rank. Canonical `opencode-go` rows retain their configured reasoning ladder
+Retained rows recompute their natural ranks from the current featured-roster input (empty in
+production since PX-1276) and account-selector stride before display order is applied, so a
+discovery outage cannot preserve an obsolete featured or picker rank. Canonical `opencode-go` rows retain their configured reasoning ladder
 and provider-scoped context metadata both when generated and when merged from retained catalog
 state; `deepseek-v4.1-flash` therefore keeps its 1,048,576-token window, while synthetic max/ultra
 choices are not added to that provider's declared ladder.
@@ -247,7 +250,8 @@ final catalog merge fences pending retained rows, including delete/re-add recove
 Raw management rows remain visible as pending/OFF. Config listener bindings are
 excluded from inventory identity because live and persisted bindings may differ.
 
-Codex `spawn_agent` advertises only the highest-priority first five picker-visible catalog rows.
+Upstream Codex `spawn_agent` would advertise only the highest-priority first five picker-visible
+catalog rows; the proxy rewrites that block on the wire to the configured picks (PX-1276).
 Use at most five configured `subagentModels` ids; they may contain bare catalog ids, routed
 `provider/model` ids, or exact account-qualified `<selector>/<native-openai-model>` ids. The
 dashboard offers bare native and routed choices; exact account-qualified choices are configured
@@ -277,9 +281,9 @@ the published catalog and its `models_cache.json` copy carry equal priorities. C
 observe the complete previous or next publication. Coverage: `tests/codex-integration/native-source-priority.test.ts`
 and `tests/server/server-native-catalog-priority.test.ts`.
 
-When account selectors are active, one featured bare native id expands into a complete selector row
-group. Catalog priorities use the selector count as a stride so each group stays together without
-widening Codex's five-row advertisement window. Fresh defaults are Astra, GPT-6.1 Sol and Luna
+When account selectors are active, one configured bare native pick expands into a complete
+selector row group. Catalog priorities use the selector count as a stride so each group stays
+together. Fresh defaults are Astra, GPT-6.1 Sol and Luna
 (`DEFAULT_SUBAGENT_MODELS`). Startup upgrades unmarked rosters once: prepend `gpt-6-astra`, retain the first four unique
 non-Astra choices, then move retained bare `gpt-5.5` last. The old fifth choice is dropped;
 an unmarked empty list becomes Astra only, and an unset list receives the fresh defaults.

@@ -746,24 +746,26 @@ export interface OcxConfig {
     legacyProfileId?: number | null;
   };
   /**
-   * Up to 5 Codex-facing catalog ids to feature first. Values may be bare catalog ids,
-   * exact account-qualified "<selector>/<native-openai-model>" ids, or routed
+   * Up to 5 Codex-facing catalog ids advertised to sub-agents. Values may be bare catalog
+   * ids, exact account-qualified "<selector>/<native-openai-model>" ids, or routed
    * "<provider>/<model>" ids. With account selectors, one bare native choice can expand
-   * into a selector-qualified group; Codex still advertises only the first 5 visible rows.
+   * into a selector-qualified group. These ids no longer pin catalog priority (#PX-1276):
+   * the outbound spawn_agent tool description is rewritten to advertise them instead.
    */
   subagentModels?: string[];
   /** One-time featured-roster upgrade marker; later user ordering is preserved. */
   subagentModelsVersion?: number;
   /**
    * Display-only order for the Codex picker, independent of subagentModels.
-   * Routed-only lists order non-featured routed rows; featured and native rows keep
-   * their normal positions. Including a bare native id opts into ordering the complete
-   * picker: listed ids appear first in array order, followed by unlisted rows in their
-   * natural priority order. Exact catalog ids take precedence over equivalent raw/encoded
-   * routed ids; empty entries are ignored. The separate natural priority used by
-   * OpenCodex guidance is preserved. Native Codex's advertised five follow display
-   * priority and may change; exact-name override eligibility is not restricted by that list.
-   * Unset or empty leaves catalog priorities unchanged.
+   * Routed-only lists order the listed routed rows; unlisted rows keep their normal
+   * positions. Including a bare native id opts into ordering the complete picker:
+   * listed ids appear first in array order, followed by unlisted rows in their
+   * natural priority order. Subagent picks are ordinary rows here (#PX-1276); their
+   * spawn_agent advertisement comes from the wire rewrite, not this order. Exact
+   * catalog ids take precedence over equivalent raw/encoded routed ids; empty entries
+   * are ignored. The separate natural priority used by OpenCodex guidance is preserved.
+   * Exact-name override eligibility is not restricted by the advertised list. Unset or
+   * empty leaves catalog priorities unchanged.
    */
   modelPickerOrder?: string[];
   /** Saved preset provenance; snapshots are not recomputed during catalog discovery. */

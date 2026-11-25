@@ -72,6 +72,12 @@ export function isEligibleV2SubagentEntry(entry: RawEntry): boolean {
 export interface EffectiveSubagentModel {
   model: string;
   efforts: string[];
+  /** Entry's declared default effort, when it is one of `efforts`. */
+  defaultEffort?: string;
+  /** Codex-facing row description, rendered into rewritten spawn_agent tool text (PX-1276). */
+  description?: string;
+  /** Declared service-tier ids, in catalog order. */
+  serviceTiers?: string[];
 }
 
 export interface SubagentRosterExclusion {
@@ -101,6 +107,25 @@ function configuredSubagentModelMatchesEntry(configured: string, entry: RawEntry
     && nativeSlug !== undefined
     && SUPPORTED_NATIVE_OPENAI_SLUGS.has(nativeSlug)
     && slugsEquivalent(configured, nativeSlug);
+}
+
+function effectiveSubagentModel(entry: RawEntry): EffectiveSubagentModel {
+  const efforts = catalogEntryEfforts(entry);
+  const defaultEffort = typeof entry.default_reasoning_level === "string"
+    && efforts.includes(entry.default_reasoning_level)
+    ? entry.default_reasoning_level : undefined;
+  const serviceTiers = Array.isArray(entry.service_tiers)
+    ? entry.service_tiers.flatMap(tier =>
+      !!tier && typeof tier === "object" && typeof (tier as { id?: unknown }).id === "string"
+        ? [(tier as { id: string }).id] : [])
+    : [];
+  return {
+    model: entry.slug as string,
+    efforts,
+    ...(defaultEffort === undefined ? {} : { defaultEffort }),
+    ...(typeof entry.description === "string" ? { description: entry.description } : {}),
+    ...(serviceTiers.length > 0 ? { serviceTiers } : {}),
+  };
 }
 
 export function effectiveSubagentRoster(
@@ -158,10 +183,7 @@ export function effectiveSubagentRoster(
     for (const entry of compatibleEntries) {
       if (advertised.length < MAX_SPAWN_AGENT_MODEL_OVERRIDES) {
         if (!advertised.some(a => slugsEquivalent(a.model, entry.slug as string))) {
-          advertised.push({
-            model: entry.slug as string,
-            efforts: catalogEntryEfforts(entry),
-          });
+          advertised.push(effectiveSubagentModel(entry));
         }
       } else {
         excluded.push({
@@ -177,10 +199,7 @@ export function effectiveSubagentRoster(
   for (const { entry } of naturalPriorityOrdered) {
     if (candidates.length >= MAX_SPAWN_AGENT_MODEL_OVERRIDES) break;
     if (!candidates.some(c => slugsEquivalent(c.model, entry.slug as string))) {
-      candidates.push({
-        model: entry.slug as string,
-        efforts: catalogEntryEfforts(entry),
-      });
+      candidates.push(effectiveSubagentModel(entry));
     }
   }
 
