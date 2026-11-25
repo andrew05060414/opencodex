@@ -19,7 +19,7 @@
    - 配置字段的字面扫描会有假阳性（字段经接口改名后其实有入口），所以附录里的 224 字段全量清单**没有逐条核实**，只有主表和第三节的 366 条管理路由逐条核实过。
    - 配置解析器会漏掉少数跨行声明的字段；管理路由注册表覆盖所有 `/api/*` 管理端点，不包含根级健康探针（如 `/healthz`、`/readyz`）。
    - 「有没有入口」只看源码，没有打开实际页面点过。
-6. 「没有入口」指的是**没有专门的控件**。仪表盘的供应商 JSON 编辑器只接受 `defaultProvider` 和可编辑的 `providers` 字段（`gui/src/hooks/useJsonConfigEditor.ts`、`src/server/auth-cors.ts:1445-1460`），不能编辑全局配置字段。全局字段需要编辑磁盘上的 `config.json`，或使用对应的专用接口。
+6. 「没有入口」指的是**没有专门的控件**。仪表盘的供应商 JSON 编辑器只接受 `defaultProvider` 和可编辑的 `providers` 字段（`gui/src/hooks/useJsonConfigEditor.ts`、`src/server/auth-cors.ts:1445-1460`），不能编辑其他全局字段。全局设置可按字段编辑磁盘上的 `config.json`、使用 `ocx config set`，或走已有的专用控件和接口。
 
 ## 一、票面例子的现状（纠正之前猜的那张表）
 
@@ -227,13 +227,7 @@ for m, p in zero: print(f"{m:6s} {p}")
 - **Example usage or interface**
   Account pool → Routing → "Prefer cache (keep a thread on one account)" ☑ ; "Move new threads after [3] consecutive failures".
 - **Alternatives or workarounds**
-  Edit `config.json`, or set the threshold through the running proxy’s management API. With `OCX_BASE_URL` set to the local proxy URL and `OCX_ADMIN_TOKEN` set to its management token:
-  ```sh
-  curl -X PUT "${OCX_BASE_URL}/api/codex-auth/failover" \
-    -H "Authorization: Bearer ${OCX_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    --data '{"threshold":3}'
-  ```
+  Edit `config.json`, or send an authenticated `PUT /api/codex-auth/failover` request with JSON body `{"threshold":3}` to the running proxy. See the [management API authentication guide](https://opencodex.me/reference/management-api/#authentication-model).
 
 ### 草稿 4 — Dashboard: schema-driven "Advanced settings" page for the long tail
 
@@ -241,7 +235,7 @@ for m, p in zero: print(f"{m:6s} {p}")
 - **What are you trying to accomplish?**
   Find and change an existing config option without reading the source, and see which non-default options are currently active.
 - **What prevents this today?**
-  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`GET /api/workflow-budget`, `POST /api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `GET/POST /api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and editing JSON gives no hints about which fields exist. The dashboard JSON editor is provider-only; global fields require editing `config.json`.
+  A field-name audit of `OcxConfig` and `OcxProviderConfig` against `gui/src` found 224 of 330 fields never referenced by the dashboard (an upper bound; some are reachable through renamed DTOs), plus management endpoints the dashboard never calls (`GET /api/workflow-budget`, `POST /api/workflow-budget/clear`, `/api/*/accounts/clear-cooldown`, `GET/POST /api/providers/keychain`, …). Many are small, well-documented compatibility switches (`noTemperatureModels`, `thinkingToggleModels`, `reasoningEffortMap`, `modelAdapters`, `blockedModelRedirects`, `cacheRetention`, `streamMode`, …). Giving each one a dedicated control does not scale, and editing JSON gives no hints about which fields exist. The provider JSON editor does not cover most global fields; depending on the field, existing alternatives include `config.json`, `ocx config set`, or a dedicated dashboard control or API endpoint.
 - **What should OpenCodex do?**
   An "Advanced" page (global, plus a tab on each provider) is generated from the existing zod schema and the JSDoc on the config types. It lists every documented field with its description and type. It highlights the fields currently set to a non-default value, and saves them through validated management writes. Provider fields can reuse the JSON editor's `PUT /api/providers` validation; exposing global fields requires an explicit write boundary for those fields. Fields marked internal (migration markers, revisions, runtime-only like `_apiKeyAttempt`) are excluded by an explicit allow/deny list, not by guessing. A later iteration can surface uncalled management actions the same way (an action registry listing `POST /api/workflow-budget/clear` next to the budget settings).
 - **Example usage or interface**
