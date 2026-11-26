@@ -9,6 +9,7 @@ import {
   providerQuotaStatesFromReports,
   nextProviderQuotaStateExpiration,
   toPutBody,
+  validateComboDraft,
 } from "../combo-workspace-data";
 import { hostDocumentHidden, onHostVisibilityChange } from "../host-visibility";
 import { hideRedundantChatGptForwardProviders } from "../provider-workspace/catalog";
@@ -17,9 +18,35 @@ import { Notice } from "../ui";
 import { useT } from "../i18n/shared";
 import { useDataSurface } from "../data-surface";
 import { DataSurfaceSkeleton } from "../components/data-surface";
-import { replaceHash } from "../hash-routing";
+import { navigateHash, replaceHash } from "../hash-routing";
 import { jevAutoCreateDecisionProvider } from "../app-routing";
+import { COMBOS_ADVANCED_HASH } from "./combos-advanced-hash";
 import type { ComboAddIntent } from "../components/combo-workspace-types";
+import { RouteBoard } from "../components/route-board/RouteBoard";
+import type { EditableChannel } from "../components/route-board/ChannelEditor";
+import { comboDraftErrorText } from "../components/combo-workspace-utils";
+import { putModelVisibility } from "../model-visibility";
+import {
+  accountCountFromList,
+  channelKey,
+  channelTargetsForPut,
+  withIdleRoutingFields,
+  capabilitySource,
+  parseCapabilitySources,
+  parseInferredCapabilities,
+  parseProbeResponse,
+  type MemberInferred,
+  type ProbeOutcome,
+  configuredMemberModels,
+  withConfiguredMembers,
+  parseCapabilitySettings,
+  type AccountCount,
+  type ComboCapabilitySettings,
+  type ComboCatalogMeta,
+  type MemberSources,
+  type ComboSettingsPatch,
+} from "../route-board-model";
+import { readCombosView, type CombosView } from "./combos-view";
 
 type ProviderOption = {
   name: string;
@@ -43,6 +70,9 @@ type ModelOption = {
   inputModalities?: string[];
   inputModalitiesDeclared?: string[];
   visionSidecarConsumer?: boolean;
+  contextWindow?: number;
+  sources?: MemberSources;
+  inferred?: MemberInferred;
 };
 type ProviderDto = {
   adapter: string;
@@ -63,6 +93,14 @@ type CachedCombosPage = {
   models: ModelOption[];
   capabilityModels?: ModelOption[];
   cataloguedComboIds: string[];
+  /** Route board extras; absent in a session cache written before they existed. */
+  comboCatalog?: Record<string, ComboCatalogMeta>;
+  lastResort?: Record<string, string[]>;
+  lastResortActive?: string[];
+  capability?: Record<string, ComboCapabilitySettings>;
+  /** Catalog models plus configured-only members, for the route board's member table. */
+  memberModels?: ModelOption[];
+  /** `provider/model` rows hidden from the catalog; suggestions rank combos with a listed member first. */
   hiddenModels?: string[];
 };
 type ProviderQuotasDto = { reports?: unknown };
@@ -128,17 +166,49 @@ export default function Combos({
     () => jevAutoCreateDecisionProvider(window.location.hash) ?? null,
   );
 
+  /*
+   * Overview by default; the full workspace behind "Advanced" (and the JEV Auto deep link).
+   * The workspace stays mounted once opened, so an unsaved editor draft survives a trip to the
+   * overview the same way it survives a tab hop.
+   */
+  const [view, setView] = useState<CombosView>(() => readCombosView());
+  const [workspaceMounted, setWorkspaceMounted] = useState(() => readCombosView() === "advanced");
+  const [selectRequest, setSelectRequest] = useState<{ id: string; seq: number } | undefined>();
+  // An overview save on this combo would replace the workspace's baseline and drop its draft.
+  const [draftComboId, setDraftComboId] = useState<string | null>(null);
+  useEffect(() => {
+    const sync = () => {
+      const next = readCombosView();
+      setView(next);
+      if (next === "advanced") setWorkspaceMounted(true);
+    };
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+
   const closeAdd = useCallback(() => {
     setAddIntent(null);
     setAddDecisionProvider(null);
     if (jevAutoCreateDecisionProvider(window.location.hash) !== undefined) {
-      replaceHash("models/combos");
+      replaceHash(COMBOS_ADVANCED_HASH);
     }
   }, []);
 
   const notify = (msg: string, ok: boolean) => {
     setStatus(msg);
     setStatusOk(ok);
+  };
+
+  const openAdvanced = (id?: string, reason?: "jev") => {
+    if (id) setSelectRequest((current) => ({ id, seq: (current?.seq ?? 0) + 1 }));
+    if (reason === "jev") notify(t("routeBoard.jevInAdvanced"), true);
+    setWorkspaceMounted(true);
+    setView("advanced");
+    navigateHash(COMBOS_ADVANCED_HASH);
+  };
+  const openOverview = () => {
+    setView("overview");
+    navigateHash("models/combos");
   };
 
   // Success banners are transient; errors stay until the next notify.
@@ -173,6 +243,25 @@ export default function Combos({
         : [];
 
     const combos = parseComboList(combosJson);
+    // parseComboList keeps only what the workspace edits; the overview also shows last-resort marks.
+    const lastResort: Record<string, string[]> = {};
+    const lastResortActive: string[] = [];
+    const capability: Record<string, ComboCapabilitySettings> = {};
+    const rawCombos = (combosJson as { combos?: unknown } | null)?.combos;
+    for (const raw of Array.isArray(rawCombos) ? rawCombos : []) {
+      if (!raw || typeof raw !== "object") continue;
+      const { id, targets, cooldownWaitPolicy, capabilityPolicy, onUnservable } = raw as {
+        id?: unknown; targets?: unknown; cooldownWaitPolicy?: unknown; capabilityPolicy?: unknown; onUnservable?: unknown;
+      };
+      if (typeof id !== "string" || !Array.isArray(targets)) continue;
+      capability[id.trim()] = parseCapabilitySettings({ capabilityPolicy, onUnservable });
+      lastResort[id.trim()] = targets.flatMap((target: { provider?: unknown; model?: unknown; lastResort?: unknown } | null) =>
+        target?.lastResort === true && typeof target.provider === "string" && typeof target.model === "string"
+          ? [channelKey(target.provider.trim(), target.model.trim())]
+          : []);
+      if (cooldownWaitPolicy === "before-last-resort") lastResortActive.push(id.trim());
+    }
+
     const allProviders = configJson.providers ?? {};
     // Collapse canonical forward aliases only in the new-member picker. Validation keeps
     // every configured provider id, including legacy chatgpt members already in a combo.
@@ -193,9 +282,13 @@ export default function Combos({
     }));
 
     const models: ModelOption[] = [];
+    /** Where each catalog member's capability values come from; only the route board reads it. */
+    const sourcesByKey = new Map<string, MemberSources>();
+    const inferredByKey = new Map<string, MemberInferred>();
     const capabilityModels: ModelOption[] = [];
-    const hiddenModels: string[] = [];
     const catalogued = new Set<string>();
+    const comboCatalog: Record<string, ComboCatalogMeta> = {};
+    const hiddenModels: string[] = [];
     const parseModalities = (raw: unknown): string[] | undefined =>
       Array.isArray(raw)
         ? raw.flatMap((modality) => {
@@ -210,10 +303,17 @@ export default function Combos({
         id?: unknown;
         namespaced?: unknown;
         disabled?: unknown;
+        displayName?: unknown;
+        displayNameSource?: unknown;
+        contextWindow?: unknown;
         reasoningEfforts?: unknown;
         inputModalities?: unknown;
         inputModalitiesDeclared?: unknown;
         visionSidecarConsumer?: unknown;
+        contextWindowDeclared?: unknown;
+        reasoningOverridden?: unknown;
+        capabilitySources?: unknown;
+        inferredCapabilities?: unknown;
       };
       if (typeof model.provider !== "string" || typeof model.id !== "string") continue;
       const provider = model.provider.trim();
@@ -221,6 +321,15 @@ export default function Combos({
       if (!provider || !id) continue;
       if (provider === "combo") {
         catalogued.add(id);
+        comboCatalog[id] = {
+          disabled: model.disabled === true,
+          ...(typeof model.displayName === "string" && model.displayNameSource !== "fallback"
+            ? { displayName: model.displayName }
+            : {}),
+          ...(typeof model.contextWindow === "number" && model.contextWindow > 0
+            ? { contextWindow: model.contextWindow }
+            : {}),
+        };
         continue; // combos cannot nest other combos as targets
       }
       const reasoningEfforts = Array.isArray(model.reasoningEfforts)
@@ -236,8 +345,18 @@ export default function Combos({
         ...(inputModalities && inputModalities.length > 0 ? { inputModalities } : {}),
         ...(inputModalitiesDeclared && inputModalitiesDeclared.length > 0 ? { inputModalitiesDeclared } : {}),
         visionSidecarConsumer: model.visionSidecarConsumer === true,
+        ...(typeof model.contextWindow === "number" && model.contextWindow > 0 ? { contextWindow: model.contextWindow } : {}),
       };
+      // The server labels each axis (`capabilitySources`); an older server does not, so fall back
+      // to the manual flags it does send.
+      sourcesByKey.set(channelKey(provider, id), parseCapabilitySources(model.capabilitySources) ?? {
+        context: capabilitySource(typeof model.contextWindow === "number", typeof model.contextWindowDeclared === "number"),
+        input: capabilitySource(Boolean(inputModalities?.length), Boolean(inputModalitiesDeclared?.length)),
+        efforts: capabilitySource(reasoningEfforts !== undefined, model.reasoningOverridden === true),
+      });
       if (model.disabled === true) hiddenModels.push(`${provider}/${id}`);
+      const inferred = parseInferredCapabilities(model.inferredCapabilities);
+      if (inferred) inferredByKey.set(channelKey(provider, id), inferred);
       capabilityModels.push(option);
       models.push(option); // Catalog visibility does not restrict internal Combo selection.
     }
@@ -251,7 +370,40 @@ export default function Combos({
       }
     }
 
-    const next = { combos, providers, models, capabilityModels, hiddenModels, cataloguedComboIds: [...catalogued] } satisfies CachedCombosPage;
+    // Only real catalog rows shadow the per-model config; a default-model placeholder takes it.
+    const catalogKeys = new Set(capabilityModels.map((model) => channelKey(model.provider, model.id)));
+    const memberModels = withConfiguredMembers(
+      models.map((model): ModelOption => {
+        const key = channelKey(model.provider, model.id);
+        const sources = sourcesByKey.get(key);
+        const inferred = inferredByKey.get(key);
+        return { ...model, ...(sources ? { sources } : {}), ...(inferred ? { inferred } : {}) };
+      }),
+      catalogKeys,
+      configuredMemberModels(allProviders)
+        .map((member): ModelOption => ({
+          provider: member.provider,
+          id: member.id,
+          namespaced: `${member.provider}/${member.id}`,
+          ...(member.contextWindow ? { contextWindow: member.contextWindow } : {}),
+          ...(member.inputModalities ? { inputModalities: [...member.inputModalities] } : {}),
+          ...(member.reasoningEfforts ? { reasoningEfforts: [...member.reasoningEfforts] } : {}),
+          ...(member.sources ? { sources: member.sources } : {}),
+        })),
+    );
+    const next = {
+      combos,
+      providers,
+      models,
+      capabilityModels,
+      cataloguedComboIds: [...catalogued],
+      comboCatalog,
+      lastResort,
+      lastResortActive,
+      capability,
+      memberModels,
+      hiddenModels,
+    } satisfies CachedCombosPage;
     writeSessionListCacheEntry(cacheKey, next);
     // Retain the coherent payload here — one place, on the success path, never during
     // render. See the `retainedData` note below.
@@ -341,6 +493,30 @@ export default function Combos({
   }, [active, apiBase, quotaResource.data, quotaResource.lastAttemptOk, quotaExpiry]);
 
   const data = state.data ?? retainedData ?? undefined;
+
+  /*
+   * Account counts for OAuth providers whose quota report carries no aggregate (Antigravity
+   * pools, Anthropic). One list read per provider while the tab is active; a failure shows no count.
+   */
+  const oauthProviders = (data?.providers ?? []).filter((provider) => provider.authMode === "oauth" && !provider.disabled)
+    .map((provider) => provider.name).sort().join(",");
+  const [accountCounts, setAccountCounts] = useState<Record<string, AccountCount>>({});
+  useEffect(() => {
+    if (!active || !oauthProviders) return;
+    let cancelled = false;
+    void Promise.all(oauthProviders.split(",").map(async (provider) => {
+      try {
+        const res = await fetch(`${apiBase}/api/oauth/accounts?provider=${encodeURIComponent(provider)}`);
+        const count = res.ok ? accountCountFromList(await res.json()) : null;
+        return count ? [[provider, count] as const] : [];
+      } catch {
+        return [];
+      }
+    })).then((entries) => {
+      if (!cancelled) setAccountCounts(Object.fromEntries(entries.flat()));
+    });
+    return () => { cancelled = true; };
+  }, [active, apiBase, oauthProviders]);
   const combos = data?.combos ?? [];
 
   /*
@@ -356,19 +532,34 @@ export default function Combos({
   const capabilityModels = data?.capabilityModels ?? models;
   const cataloguedComboIds = new Set(data?.cataloguedComboIds ?? []);
 
-  const saveCombo = async (item: ComboItem, isCreate: boolean, renameFrom?: string) => {
+  /** `overview` saves report failures in their own row, so they skip the page banner. */
+  const saveCombo = async (
+    item: ComboItem,
+    isCreate: boolean,
+    renameFrom?: string,
+    overview?: { channels?: readonly EditableChannel[]; capability?: ComboSettingsPatch },
+  ) => {
+    const channels = overview?.channels;
     try {
+      const body = toPutBody(item, {
+        ...(renameFrom ? { renameFrom } : {}),
+        // Enabling images declares text-only members for the Vision Sidecar so the
+        // operator never has to hand-edit provider config for a multimodal combo.
+        ...(item.imageInput !== "disabled"
+          ? { visionSidecarTargets: comboVisionSidecarTargets(item.targets, capabilityModels) }
+          : {}),
+      });
+      // Overview saves (row strategy pick, channel editor) keep idle weights and sticky limit.
+      const kept = overview ? { ...body, combo: withIdleRoutingFields(body.combo, item) } : body;
+      // Only the channel editor sends `lastResort`; every other save omits it and the server keeps it.
+      // Capability fields go out only when the operator changed them in the channel editor.
+      const wire = channels
+        ? { ...kept, combo: { ...kept.combo, targets: channelTargetsForPut(kept.combo.targets, channels), ...overview?.capability } }
+        : kept;
       const res = await fetch(`${apiBase}/api/combos`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(toPutBody(item, {
-          ...(renameFrom ? { renameFrom } : {}),
-          // Enabling images declares text-only members for the Vision Sidecar so the
-          // operator never has to hand-edit provider config for a multimodal combo.
-          ...(item.imageInput !== "disabled"
-            ? { visionSidecarTargets: comboVisionSidecarTargets(item.targets, capabilityModels) }
-            : {}),
-        })),
+        body: JSON.stringify(wire),
       });
       const data = res.ok
         ? await res.json() as unknown
@@ -378,7 +569,7 @@ export default function Combos({
         // A body-less failure (proxy 502 while the service restarts, an HTML error page) still
         // names its status, so "could not save" is never the whole story.
         const err = serverError || (res.ok ? t("cws.saveFailed") : `${t("cws.saveFailed")} (${res.status})`);
-        notify(err, false);
+        if (!overview) notify(err, false);
         return { ok: false as const, error: err };
       }
       resource.refresh();
@@ -393,10 +584,82 @@ export default function Combos({
       // fetch rejects only when the request never got an answer: the service is down or restarting.
       const reason = error instanceof Error && error.message ? error.message : "network error";
       const err = `${t("cws.saveFailed")} (${reason})`;
-      notify(err, false);
+      if (!overview) notify(err, false);
       return { ok: false as const, error: err };
     }
   };
+
+  /**
+   * One member model's per-provider settings (context, input, effort levels), the same write the
+   * Models page's settings dialog makes. Every combo using that model sees the change.
+   */
+  const saveModelSettings = async (provider: string, modelId: string, patch: Record<string, unknown>) => {
+    try {
+      const res = await fetch(`${apiBase}/api/model-settings`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider, modelId, ...patch }),
+      });
+      const body = await res.json().catch(() => null) as unknown;
+      const receipt = body && typeof body === "object" ? body as { ok?: unknown; provider?: unknown; modelId?: unknown } : {};
+      if (!res.ok || receipt.ok !== true || receipt.provider !== provider || receipt.modelId !== modelId) {
+        return responseError(body) || t("cws.saveFailed");
+      }
+      resource.refresh();
+      return null;
+    } catch {
+      return t("cws.saveFailed");
+    }
+  };
+
+  /**
+   * `POST /api/providers/probe-capabilities` for one member, applying conclusive results. A metered
+   * provider answers `requiresConfirmation` first; the repeat carries the operator's consent.
+   */
+  const probeModel = async (provider: string, modelId: string, confirmed: boolean): Promise<ProbeOutcome> => {
+    try {
+      const res = await fetch(`${apiBase}/api/providers/probe-capabilities`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: provider, model: modelId, apply: true, ...(confirmed ? { confirmMetered: true } : {}) }),
+      });
+      const outcome = parseProbeResponse(res.status, await res.json().catch(() => null));
+      if (outcome.kind === "done" && Object.keys(outcome.applied).length > 0) resource.refresh();
+      return outcome;
+    } catch {
+      return { kind: "failed" };
+    }
+  };
+
+  const setComboEnabled = async (id: string, enabled: boolean) => {
+    try {
+      const res = await putModelVisibility(apiBase, "models", "combo", [{ id }], enabled);
+      const body = await res.json().catch(() => null) as unknown;
+      if (!res.ok) {
+        const err = responseError(body) || t("cws.saveFailed");
+        return { ok: false as const, error: err };
+      }
+      resource.refresh();
+      return { ok: true as const };
+    } catch {
+      return { ok: false as const, error: t("cws.saveFailed") };
+    }
+  };
+
+  const providerRows = Object.fromEntries(providers.map((provider) => [provider.name, {
+    disabled: provider.disabled,
+    adapter: provider.adapter,
+    baseUrl: provider.baseUrl,
+    defaultModel: provider.defaultModel,
+    models: provider.models,
+  }]));
+  const validateOverviewEdit = (item: ComboItem) => validateComboDraft(item, {
+    existingIds: combos.flatMap((combo) => combo.id === item.id ? [] : [combo.id]),
+    existingAliases: combos.flatMap((combo) => combo.id !== item.id && combo.alias ? [combo.alias] : []),
+    combos: combos.filter((combo) => combo.id !== item.id),
+    isCreate: false,
+    providers: providerRows,
+  });
 
   const removeCombo = async (id: string) => {
     try {
@@ -443,7 +706,7 @@ export default function Combos({
   }
 
   return (
-    <div className="combos-workspace-shell">
+    <div className={`combos-workspace-shell${view === "overview" ? " combos-workspace-shell--overview" : ""}`}>
       {status && (
         <div className={statusOk ? "combos-workspace-shell-banner combos-workspace-shell-toast" : "combos-workspace-shell-banner"}>
           <Notice tone={statusOk ? "ok" : "err"}>{status}</Notice>
@@ -456,45 +719,81 @@ export default function Combos({
       )}
       {/* Revalidation is silent by design: existing combos stay visible, and the
           shell announces the in-flight refresh to assistive tech only. */}
+      <div className="rb-viewbar">
+        {view === "overview" ? (
+          <button type="button" className="btn btn-ghost btn-sm" title={t("routeBoard.advancedHint")} onClick={() => openAdvanced()}>
+            {t("routeBoard.advanced")}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={openOverview}>{t("routeBoard.backToOverview")}</button>
+        )}
+      </div>
       <div className="combos-workspace-shell-body" aria-busy={state.refreshing}>
         <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.refreshing ? t("common.loading") : ""}
         </span>
-        <ComboWorkspace
-          apiBase={apiBase}
-          combos={combos}
-          providerQuotaStates={providerQuotaStates}
-          providers={providers}
-          models={models}
-          capabilityModels={capabilityModels}
-          cataloguedComboIds={cataloguedComboIds}
-          visionEnabled={visionEnabled}
-          loading={false}
-          onRefresh={() => { resource.refresh(); quotaResource.refresh(); }}
-          renderSuggestions={(lockedComboId) => (
-            <WorkspaceSuggestions
-              key={apiBase}
+        {view === "overview" && (
+          <WorkspaceSuggestions
+            key={apiBase}
+            apiBase={apiBase}
+            active={active}
+            combos={combos}
+            providers={providers}
+            models={models}
+            hiddenModels={data?.hiddenModels}
+            quotaReports={quotaReports}
+            quotaNow={quotaNow}
+            lockedComboId={draftComboId}
+            onRefresh={() => resource.refresh()}
+          />
+        )}
+        {view === "overview" && (
+          <RouteBoard
+            combos={combos}
+            catalog={data?.comboCatalog ?? {}}
+            lastResort={data?.lastResort ?? {}}
+            lastResortActive={new Set(data?.lastResortActive ?? [])}
+            providers={providers}
+            models={data?.memberModels ?? models}
+            quotaReports={quotaReports}
+            validate={validateOverviewEdit}
+            errorText={(code, item) => comboDraftErrorText(t, code, item, providerRows)}
+            onSave={(item, channels, capability) => saveCombo(item, false, undefined, { channels, capability })}
+            accountCounts={accountCounts}
+            capability={data?.capability ?? {}}
+            onSetEnabled={setComboEnabled}
+            onOpenAdvanced={openAdvanced}
+            lockedId={draftComboId}
+            onSaveModel={saveModelSettings}
+            onProbeModel={probeModel}
+          />
+        )}
+        {workspaceMounted && (
+          <div hidden={view !== "advanced"} className="rb-advanced">
+            <ComboWorkspace
               apiBase={apiBase}
-              active={active}
               combos={combos}
+              providerQuotaStates={providerQuotaStates}
               providers={providers}
               models={models}
-              hiddenModels={data?.hiddenModels}
-              quotaReports={quotaReports}
-              quotaNow={quotaNow}
-              lockedComboId={lockedComboId}
-              onRefresh={() => resource.refresh()}
+              capabilityModels={capabilityModels}
+              cataloguedComboIds={cataloguedComboIds}
+              visionEnabled={visionEnabled}
+              loading={false}
+              onRefresh={() => { resource.refresh(); quotaResource.refresh(); }}
+              onSave={saveCombo}
+              onRemove={removeCombo}
+              onAdd={(intent = "blank") => setAddIntent(intent)}
+              adding={addIntent !== null}
+              addIntent={addIntent ?? undefined}
+              addDecisionProvider={addDecisionProvider}
+              onCloseAdd={closeAdd}
+              onCreated={() => resource.refresh()}
+              selectRequest={selectRequest}
+              onDraftComboChange={setDraftComboId}
             />
-          )}
-          onSave={saveCombo}
-          onRemove={removeCombo}
-          onAdd={(intent = "blank") => setAddIntent(intent)}
-          adding={addIntent !== null}
-          addIntent={addIntent ?? undefined}
-          addDecisionProvider={addDecisionProvider}
-          onCloseAdd={closeAdd}
-          onCreated={() => resource.refresh()}
-        />
+          </div>
+        )}
       </div>
     </div>
   );

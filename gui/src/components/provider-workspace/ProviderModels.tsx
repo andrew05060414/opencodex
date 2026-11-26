@@ -13,6 +13,8 @@ import type { ProviderModelVisibility } from "../../provider-workspace/use-provi
 import { ModelVisibilitySwitch } from "../../model-visibility-switch";
 import { IntegrationRefreshWarning } from "../integration-refresh-warning";
 import ProviderModelChip from "./ProviderModelChip";
+import { latestPerFamilyBy } from "../../lib/model-family";
+import { useLatestPerFamilyPref } from "../../lib/latest-per-family-pref";
 
 type Mutation = {
   revision: string;
@@ -53,6 +55,7 @@ function ProviderModelInventory({ item, apiBase, availableModels, selectedModels
   const [query, setQuery] = useState("");
   // Free-only narrowing for this provider's inventory (#3666), mirroring the Models page.
   const [freeOnly, setFreeOnly] = useState(false);
+  const [latestOnly, setLatestOnly] = useLatestPerFamilyPref();
   const [draft, setDraft] = useState("");
   const [ownershipEpoch, setOwnershipEpoch] = useState(0);
   const ownershipKey = JSON.stringify([apiBase, item.name, modelRevision, ownershipEpoch]);
@@ -98,7 +101,11 @@ function ProviderModelInventory({ item, apiBase, availableModels, selectedModels
   // prices, and a stale `freeOnly` would otherwise keep filtering an inventory in which nothing
   // can classify as free.
   const freeOnlyActive = freeOnlyInForce(freeOnly, visible);
-  const priced = filterFreeModelRows(visible, freeOnlyActive);
+  // "Latest only" hides older family members, never the operator's own: custom definitions
+  // and the provider's default model stay, or their delete/default controls would vanish.
+  const latest = latestOnly ? new Set(latestPerFamilyBy(visible, row => row.id)) : null;
+  const newest = latest ? visible.filter(row => latest.has(row) || row.custom === true || row.id === item.defaultModel) : visible;
+  const priced = filterFreeModelRows(newest, freeOnlyActive);
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = priced.filter(row => [row.id, row.namespaced].some(value => value.toLowerCase().includes(normalizedQuery)));
   const labels = new Map<string, number>();
@@ -298,9 +305,11 @@ function ProviderModelInventory({ item, apiBase, availableModels, selectedModels
         <button type="button" className="btn btn-ghost btn-sm" onClick={retry} disabled={requestPending}>{t("common.retry")}</button>}
       {/* Above the search box, matching the Models page group: the same filter must not sit on
           opposite sides of the search input on the two surfaces that offer it. */}
-      {pricingKnown && <div className="row">
-        <Switch on={freeOnly} onClick={() => setFreeOnly(!freeOnly)} label={t("models.freeOnly")} showLabel />
-      </div>}
+      <div className="row">
+        {pricingKnown && <Switch on={freeOnly} onClick={() => setFreeOnly(!freeOnly)} label={t("models.freeOnly")} showLabel />}
+        <Switch on={latestOnly} onClick={() => setLatestOnly(!latestOnly)} label={t("models.latestPerFamily")}
+          title={t("models.latestPerFamilyHint")} showLabel />
+      </div>
       <input ref={searchRef} type="search" className="input pws-model-search" placeholder={t("pws.modelSearchPlaceholder")}
         value={query} onChange={event => setQuery(event.target.value)} aria-label={t("pws.modelSearchPlaceholder")} />
       {modelRows !== null && visible.length === 0 ? <p className="muted">{t("pws.noModels")}</p>
