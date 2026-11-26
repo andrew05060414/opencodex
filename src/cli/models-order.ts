@@ -37,8 +37,10 @@ async function readIdentities(deps: RuntimeApiDeps): Promise<PickerModelIdentity
   if (!Array.isArray(rows)) unusable();
   return rows.map(row => {
     if (!record(row) || typeof row.provider !== "string" || !row.provider.trim()
-      || !isValidModelDiscoveryModelId(row.id) || !isValidModelDiscoveryModelId(row.namespaced)) unusable();
-    return { provider: row.provider, id: row.id, namespaced: row.namespaced };
+      || !isValidModelDiscoveryModelId(row.id) || !isValidModelDiscoveryModelId(row.namespaced)
+      || (row.native !== undefined && typeof row.native !== "boolean")) unusable();
+    return { provider: row.provider, id: row.id, namespaced: row.namespaced,
+      ...(row.native === true ? { native: true } : {}) };
   });
 }
 function snapshot(settings: PickerOrderSettings, identities: PickerModelIdentity[]): string {

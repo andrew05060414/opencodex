@@ -41,7 +41,7 @@ export default function ModelPickerOrderEditor({ apiBase, active, identities, on
     drag: null as { id: string; token: string } | null,
   });
   const [activation, setActivation] = useState({ apiBase, active, onBusyChange });
-  const identitySignature = JSON.stringify(identities.map(({ provider, id, namespaced }) => [provider, id, namespaced]));
+  const identitySignature = JSON.stringify(identities.map(({ provider, id, namespaced, native }) => [provider, id, namespaced, native === true]));
   const latestIdentitySignature = useRef(identitySignature);
   useLayoutEffect(() => { latestIdentitySignature.current = identitySignature; }, [identitySignature]);
   const identityChanged = snapshot !== null && snapshot.identities !== identitySignature;
@@ -133,6 +133,7 @@ export default function ModelPickerOrderEditor({ apiBase, active, identities, on
   };
   const draftSet = new Set(draft);
   const fixedSet = new Set(snapshot?.fixed);
+  const nativeSet = new Set(identities.filter(row => row.native === true).map(row => row.namespaced));
   const movable = (id: string) => !disabled && draftSet.has(id) && !fixedSet.has(id);
   const dragOver = (event: DragEvent<HTMLLIElement>, id: string) => {
     if (!lifetime.current.drag || lifetime.current.drag.id === id || !movable(lifetime.current.drag.id) || !movable(id)
@@ -165,7 +166,7 @@ export default function ModelPickerOrderEditor({ apiBase, active, identities, on
               event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(DRAG_TYPE, token);
             }}><IconGrip width={14} height={14} aria-hidden="true" /></button>
           <code className="picker-order-name">{id}</code>
-          {!id.includes("/") && <span className="models-chip muted text-caption">{t("models.pickerOrder.native")}</span>}
+          {nativeSet.has(id) && <span className="models-chip muted text-caption">{t("models.pickerOrder.native")}</span>}
           {fixed && <span className="muted text-caption">{t("models.pickerOrder.featured")}</span>}
           <span className="picker-order-actions">
             <button type="button" className="btn btn-ghost btn-sm"

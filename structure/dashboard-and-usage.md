@@ -432,7 +432,7 @@ Data keys authorize only the data matrix and authenticated catalog. Admin creden
 
 ### Model picker ordering settings
 
-`GET /api/subagent-models` retains `chosen`, `available`, and `catalogState`, and exposes unified `pickerAvailable` (visible bare native models followed by visible routed slugs, matching PUT's visibility check), saved `pickerOrder`, and nullable `pickerOrderMode`. `available` still includes saved disabled/missing roster choices; it is not the eligible-picker set.
+`GET /api/subagent-models` retains `chosen`, `available`, and `catalogState`, and exposes unified `pickerAvailable` (visible bare native models followed by visible catalog/routed slugs including bare combo aliases, matching PUT's visibility check), saved `pickerOrder`, and nullable `pickerOrderMode`. `available` still includes saved disabled/missing roster choices; it is not the eligible-picker set.
 
 PUT accepts `models` and/or `pickerOrder`; `pickerOrderMode` requires `pickerOrder` and accepts
 `alphabetical`, `provider`, `most-used`, or null. Roster arrays keep their existing exact string

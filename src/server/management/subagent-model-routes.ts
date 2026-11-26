@@ -13,15 +13,14 @@ import { jsonResponse } from "../auth-cors";
 import { isPlainRecord, fetchInitializedModels as fetchAllModels } from "./shared";
 import { readManagementJsonBody, rethrowManagementBodyTooLarge } from "./body";
 
-/** Visible native and routed slugs eligible for unified picker ordering. */
+/** Visible native and catalog slugs (including bare combo aliases) eligible for unified picker ordering. */
 function visiblePickerModels(models: CatalogModel[], config: OcxConfig): string[] {
   const visibleNative = nativeModelRows(config)
     .filter(row => !row.disabled)
     .map(row => row.slug);
-  const visibleRouted = filterCatalogVisibleModels(models, config)
-    .map(catalogModelSlug)
-    .filter(slug => slug.includes("/"));
-  return [...new Set([...visibleNative, ...visibleRouted])];
+  const visibleCatalog = filterCatalogVisibleModels(models, config)
+    .map(catalogModelSlug);
+  return [...new Set([...visibleNative, ...visibleCatalog])];
 }
 
 export async function handleSubagentModelRoutes(ctx: ManagementContext, autoApplyDesktopBestEffort: () => Promise<void>): Promise<Response | null> {

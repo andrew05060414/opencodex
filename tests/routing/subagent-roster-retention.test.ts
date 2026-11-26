@@ -183,6 +183,50 @@ describe("picker updates preserve roster and persistence intent", () => {
     expect(reloaded.pickerOrder).toEqual(mixedOrder);
     expect(reloaded.pickerAvailable).toEqual(initial.pickerAvailable);
   });
+  test("GET and PUT /api/subagent-models include bare combo aliases in mixed picker order and enforce visibility", async () => {
+    const config = makeConfig({
+      providers: {
+        alpha: { adapter: "openai-chat", baseUrl: "https://example.test/v1", apiKey: "k", models: ["one"],
+          modelContextWindows: { one: 128_000 }, liveModels: false },
+      },
+      combos: { myFast: { targets: [{ provider: "alpha", model: "one" }], alias: "fast" } },
+    });
+    const getRes = await handleManagementAPI(
+      new Request("http://localhost/api/subagent-models"),
+      new URL("http://localhost/api/subagent-models"),
+      config,
+    );
+    expect(getRes?.status).toBe(200);
+    const initial = await getRes!.json() as { pickerAvailable: string[]; pickerOrder: string[] };
+    expect(initial.pickerAvailable).toContain("fast");
+    expect(initial.pickerAvailable).toContain("gpt-5.6-sol");
+    expect(initial.pickerAvailable).toContain("alpha/one");
+    expect(initial.pickerAvailable).not.toContain("combo/myFast");
+
+    const mixedOrder = ["fast", "gpt-5.6-sol", "alpha/one", ...initial.pickerAvailable.filter(id => !["fast", "gpt-5.6-sol", "alpha/one"].includes(id))];
+    const comboRows = [{ provider: "alpha", id: "one" }, { provider: "combo", id: "myFast", alias: "fast", owned_by: "combo" }];
+    const saveCtx = context(config, { pickerOrder: mixedOrder, pickerOrderMode: null });
+    saveCtx.deps.fetchAllModels = async () => comboRows;
+    expect((await handleAgentSettingsRoutes(saveCtx))?.status).toBe(200);
+    expect(config.modelPickerOrder).toEqual(mixedOrder);
+
+    const reloadCtx = context(config, {});
+    reloadCtx.req = new Request(reloadCtx.url);
+    reloadCtx.deps.fetchAllModels = async () => comboRows;
+    const reloaded = await (await handleAgentSettingsRoutes(reloadCtx))!.json() as { pickerAvailable: string[]; pickerOrder: string[] };
+    expect(reloaded.pickerOrder).toEqual(mixedOrder);
+    expect(reloaded.pickerAvailable).toContain("fast");
+
+    const hiddenConfig = makeConfig({ ...config, disabledModels: ["fast"] });
+    const hiddenRead = context(hiddenConfig, {});
+    hiddenRead.req = new Request(hiddenRead.url);
+    hiddenRead.deps.fetchAllModels = async () => comboRows;
+    const hiddenInitial = await (await handleAgentSettingsRoutes(hiddenRead))!.json() as { pickerAvailable: string[] };
+    expect(hiddenInitial.pickerAvailable).not.toContain("fast");
+    const hiddenPut = context(hiddenConfig, { pickerOrder: ["fast", "alpha/one"] });
+    hiddenPut.deps.fetchAllModels = async () => comboRows;
+    expect((await handleAgentSettingsRoutes(hiddenPut))?.status).toBe(400);
+  });
   test("a visible bare native id orders the complete picker; a disabled one is rejected (#6338)", async () => {
     const config = makeConfig({ subagentModels: ["keep"] });
     const ok = context(config, { pickerOrder: ["gpt-5.5", "beta/two"] });

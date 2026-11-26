@@ -3,6 +3,7 @@ import { handleModelsOrderCommand } from "../../src/cli/models-order";
 import * as cli from "../../src/cli/model-picker-ordering";
 import * as gui from "../../gui/src/model-picker-order";
 import { handleSubagentModelRoutes } from "../../src/server/management/subagent-model-routes";
+import { listManagementModelRows } from "../../src/server/management/model-rows";
 import type { OcxConfig } from "../../src/types";
 import type { RuntimeApiDeps } from "../../src/cli/runtime-api";
 import { createTempHome, type TempHome } from "../helpers/temp-home";
@@ -86,17 +87,24 @@ describe("pure picker projections", () => {
     const { chosen: _, ...unchosen } = settings;
     expect(cli.customPickerRows(unchosen, ids)).toEqual({ fixed: [], order: ["p/a", "p/b"] });
   });
-  test("GUI conformance: modes, manual normalization, mixed native+routed rows and identity ambiguity", () => {
+  test("GUI conformance: modes, manual normalization, mixed native+routed+combo rows and identity ambiguity", () => {
     const variants: Array<{ available: string[]; rows: cli.PickerModelIdentity[] }> = [
       { available: identities.map(row => row.namespaced), rows: identities },
       { available: ["gpt-5.6-sol", ...identities.map(row => row.namespaced)],
-        rows: [{ provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" }, ...identities] },
+        rows: [{ provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true }, ...identities] },
+      { available: ["gpt-5.6-sol", "fast", ...identities.map(row => row.namespaced)],
+        rows: [
+          { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true },
+          { provider: "combo", id: "my-fast", namespaced: "fast" },
+          ...identities,
+        ] },
       { available: ["gpt-5.6-sol", "openai/gpt-5.6-sol", "alpha/a"],
         rows: [
-          { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+          { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true },
           { provider: "openai", id: "gpt-5.6-sol", namespaced: "openai/gpt-5.6-sol" },
           { provider: "alpha", id: "a", namespaced: "alpha/a" },
         ] },
+      { available: ["fast", "alpha/a"], rows: [{ provider: "alpha", id: "a", namespaced: "alpha/a" }] },
       { available: identities.map(row => row.namespaced),
         rows: [...identities, { provider: "alpha", id: "different", namespaced: "alpha/a" }] },
       { available: ["p/a-b", "p/a-b-encoded"],
@@ -107,29 +115,31 @@ describe("pure picker projections", () => {
       for (const mode of ["default", "alphabetical", "provider", "most-used"] as const) {
         expect(cli.modelPickerOrder(mode, available, usage, rows)).toEqual(gui.modelPickerOrder(mode, available, usage, rows));
       }
-      const tokens = [...available, "native", "gpt-5.6-sol", "openai/gpt-5.6-sol", ...rows.map(row => `${row.provider}/${row.id}`)];
+      const tokens = [...available, "native", "fast", "combo/my-fast", "gpt-5.6-sol", "openai/gpt-5.6-sol", ...rows.map(row => `${row.provider}/${row.id}`)];
       expect(cli.normalizePickerIds(tokens, available, rows)).toEqual(gui.normalizePickerIds(tokens, available, rows));
       expect(cli.pickerIdentityCoverage(available, rows)).toEqual(gui.pickerIdentityCoverage(available, rows));
-      for (const pickerOrder of [[], ["native", ...available], ["gpt-5.6-sol", ...available.slice().reverse()], available]) {
+      for (const pickerOrder of [[], ["native", ...available], ["fast", ...available], ["gpt-5.6-sol", ...available.slice().reverse()], available]) {
         const settings = { pickerAvailable: available, pickerOrder, pickerOrderMode: null, chosen: [...available].reverse() };
         expect(cli.customPickerRows(settings, rows)).toEqual(gui.customPickerRows(settings, rows));
       }
     }
   });
-  test("bare native ids match verbatim without slugsEquivalent or provider/id alias guessing", () => {
-    const rows = [
-      { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+  test("bare native ids match verbatim while bare combo aliases resolve by explicit non-native identity", () => {
+    const rows: cli.PickerModelIdentity[] = [
+      { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true },
+      { provider: "combo", id: "my-fast", namespaced: "fast" },
       { provider: "alpha", id: "a", namespaced: "alpha/a" },
     ];
-    const available = ["gpt-5.6-sol", "alpha/a"];
-    expect(cli.normalizePickerIds(["openai/gpt-5.6-sol", "GPT-5.6-SOL", "gpt-5.6-sol"], available, rows))
-      .toEqual(["gpt-5.6-sol"]);
-    expect(cli.pickerIdentityCoverage(["gpt-5.6-sol", "openai/gpt-5.6-sol", "alpha/a"], [
+    const available = ["gpt-5.6-sol", "fast", "alpha/a"];
+    expect(cli.normalizePickerIds(["openai/gpt-5.6-sol", "GPT-5.6-SOL", "gpt-5.6-sol", "combo/my-fast", "fast"], available, rows))
+      .toEqual(["gpt-5.6-sol", "fast"]);
+    expect(cli.pickerIdentityCoverage(["fast", "alpha/a"], [{ provider: "alpha", id: "a", namespaced: "alpha/a" }])).toBe(false);
+    expect(cli.pickerIdentityCoverage(["gpt-5.6-sol", "openai/gpt-5.6-sol", "fast", "alpha/a"], [
       ...rows, { provider: "openai", id: "gpt-5.6-sol", namespaced: "openai/gpt-5.6-sol" },
     ])).toBe(true);
     expect(cli.customPickerRows({
-      pickerAvailable: available, pickerOrder: ["alpha/a", "gpt-5.6-sol"], pickerOrderMode: null,
-    }, rows)).toEqual({ fixed: [], order: ["alpha/a", "gpt-5.6-sol"] });
+      pickerAvailable: available, pickerOrder: ["fast", "alpha/a", "gpt-5.6-sol"], pickerOrderMode: null,
+    }, rows)).toEqual({ fixed: [], order: ["fast", "alpha/a", "gpt-5.6-sol"] });
   });
 });
 
@@ -222,7 +232,7 @@ describe("models order commands", () => {
   }
   test("replaces an existing native-inclusive saved order without requiring reset", async () => {
     const mixedCandidates = ["gpt-5.6-sol", ...candidates];
-    const mixedIdentities = [{ provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" }, ...identities];
+    const mixedIdentities = [{ provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true }, ...identities];
     const settings = { pickerAvailable: mixedCandidates, pickerOrder: ["gpt-5.6-sol", "alpha/a"], pickerOrderMode: null, chosen: [] };
     const f = fixture({ settings, models: mixedIdentities });
     expect(await handleModelsOrderCommand(["set", "--models=beta/z,gpt-5.6-sol,alpha/a,alpha/b", "--json"], f.deps)).toBe(0);
@@ -320,27 +330,29 @@ describe("picker save through the actual settings handler", () => {
     expect(config.modelPickerOrder).toEqual(reset ? undefined : ["alpha/b", "alpha/a"]);
     expect(result()).toMatchObject({ applied: ["alpha/b"], force: "alpha/b", pickerOrder: reset ? [] : ["alpha/b", "alpha/a"] });
   });
-  test("mixed native and routed order edits and saves round-trip through the actual settings handler", async () => {
+  test("mixed native, bare combo alias, and routed order edits and saves round-trip through the actual settings handler", async () => {
     const config: OcxConfig = { port: 10100, defaultProvider: "alpha", modelCacheTtlMs: 60_000,
       providers: { alpha: { adapter: "openai-chat", baseUrl: "https://fixture.invalid/v1", models: ["a", "b"], liveModels: false } },
+      combos: { myFast: { strategy: "failover", targets: [{ provider: "alpha", model: "a" }], alias: "fast" } },
       subagentModels: ["alpha/b"], disabledModels: ["gpt-5.5"] };
     const persisted: OcxConfig[] = [];
-    const routedRows = [{ provider: "alpha", id: "a", namespaced: "alpha/a" }, { provider: "alpha", id: "b", namespaced: "alpha/b" }];
+    const catalogRows = [
+      { provider: "alpha", id: "a", namespaced: "alpha/a" },
+      { provider: "alpha", id: "b", namespaced: "alpha/b" },
+      { provider: "combo", id: "myFast", alias: "fast", owned_by: "combo", namespaced: "fast" },
+    ];
     const handler = (input: RequestInfo | URL, init?: RequestInit) => {
       const req = new Request(String(input), init);
       return handleSubagentModelRoutes({ req, url: new URL(req.url), config,
         deps: { saveConfigPreservingClaudeCode: saved => { persisted.push(structuredClone(saved)); },
-          fetchAllModels: async () => routedRows },
+          fetchAllModels: async () => catalogRows },
         convergeCodexCatalog: async () => ({ status: "committed", changed: false, degraded: false, notices: [] }),
         syncClaudeAgentDefsBestEffort: async () => { throw new Error("Must not synchronize featured state"); },
       }, async () => { throw new Error("Must not apply Desktop"); });
     };
     const deps: RuntimeApiDeps = { baseUrl: "http://127.0.0.1:14501", fetchImpl: (async (input, init) => {
       if (String(input).endsWith("/api/models")) {
-        return Response.json([
-          { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
-          ...routedRows,
-        ]);
+        return Response.json(await listManagementModelRows(config, { models: catalogRows }));
       }
       const response = await handler(input, init);
       if (!response) throw new Error("Handler did not match");
@@ -351,11 +363,12 @@ describe("picker save through the actual settings handler", () => {
     const before = result() as { pickerAvailable: string[]; pickerOrder: string[] };
     expect(before.pickerAvailable).toContain("gpt-5.6-sol");
     expect(before.pickerAvailable).not.toContain("gpt-5.5");
+    expect(before.pickerAvailable).toContain("fast");
     expect(before.pickerAvailable).toContain("alpha/a");
     expect(before.pickerAvailable).toContain("alpha/b");
 
-    const rest = before.pickerAvailable.filter(id => !["alpha/b", "gpt-5.6-sol", "alpha/a"].includes(id));
-    const mixedOrder = ["alpha/b", "gpt-5.6-sol", "alpha/a", ...rest];
+    const rest = before.pickerAvailable.filter(id => !["fast", "alpha/b", "gpt-5.6-sol", "alpha/a"].includes(id));
+    const mixedOrder = ["fast", "alpha/b", "gpt-5.6-sol", "alpha/a", ...rest];
     output.mockClear();
     expect(await handleModelsOrderCommand(["set", `--models=${mixedOrder.join(",")}`, "--json"], deps)).toBe(0);
     expect(persisted).toHaveLength(1);

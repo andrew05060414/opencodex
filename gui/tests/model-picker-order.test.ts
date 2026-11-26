@@ -80,42 +80,53 @@ test("real mixed-resolved usage summary never credits an entire legacy bucket to
 });
 
 
-test("Custom normalizes exact canonical/native names before routed provider/raw aliases, without native guesses", () => {
+test("Custom normalizes exact canonical/native names before non-native provider/raw aliases, without native guesses", () => {
   const identities = [
-    { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+    { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true },
+    { provider: "combo", id: "my-fast", namespaced: "fast" },
     { provider: "p", id: "team/model", namespaced: "p/team-model" },
     { provider: "p", id: "collision", namespaced: "p/a" },
     { provider: "p", id: "collision", namespaced: "p/b" },
   ];
-  expect(normalizePickerIds(["p/team/model", "p/collision", "native", "openai/gpt-5.6-sol", "GPT-5.6-SOL", "gpt-5.6-sol", "p/team-model"],
-    ["gpt-5.6-sol", "p/team-model", "p/a", "p/b"], identities)).toEqual(["p/team-model", "gpt-5.6-sol"]);
+  expect(normalizePickerIds(["p/team/model", "p/collision", "native", "openai/gpt-5.6-sol", "GPT-5.6-SOL", "gpt-5.6-sol", "combo/my-fast", "p/team-model"],
+    ["gpt-5.6-sol", "fast", "p/team-model", "p/a", "p/b"], identities)).toEqual(["p/team-model", "gpt-5.6-sol", "fast"]);
   expect(normalizePickerIds(["p/team/model"], ["p/team/model", "p/team-model"], identities)).toEqual(["p/team/model"]);
 });
 
 test("saved order wins without a fixed featured prefix, newcomers follow GET candidate order", () => {
-  expect(customPickerRows({ pickerAvailable: ["gpt-5.6-sol", "p/new", "p/b", "p/a", "p/top", "p/b"],
-    chosen: ["native", "p/top", "p/a", "missing/model"], pickerOrder: ["gone/model", "p/b", "gpt-5.6-sol", "p/a"], pickerOrderMode: null,
-  }, ["new", "b", "a", "top"].map(id => ({ provider: "p", id, namespaced: `p/${id}` }))))
-    .toEqual({ fixed: [], order: ["p/b", "gpt-5.6-sol", "p/a", "p/new", "p/top"] });
+  expect(customPickerRows({ pickerAvailable: ["gpt-5.6-sol", "fast", "p/new", "p/b", "p/a", "p/top", "p/b"],
+    chosen: ["native", "p/top", "p/a", "missing/model"], pickerOrder: ["gone/model", "p/b", "fast", "gpt-5.6-sol", "p/a"], pickerOrderMode: null,
+  }, [
+    { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true },
+    { provider: "combo", id: "my-fast", namespaced: "fast" },
+    ...["new", "b", "a", "top"].map(id => ({ provider: "p", id, namespaced: `p/${id}` })),
+  ]))
+    .toEqual({ fixed: [], order: ["p/b", "fast", "gpt-5.6-sol", "p/a", "p/new", "p/top"] });
   expect(customPickerRows({ pickerAvailable: [], chosen: [], pickerOrder: [], pickerOrderMode: null }, []))
     .toEqual({ fixed: [], order: [] });
 });
 
-test("unknown chosen stays editable; malformed supplied chosen rejects; mixed native+routed stays editable without colliding with openai/<slug>", () => {
-  const settings = { pickerAvailable: ["gpt-5.6-sol", "p/a"], pickerOrder: ["p/a", "gpt-5.6-sol"], pickerOrderMode: null };
+test("unknown chosen stays editable; malformed supplied chosen rejects; mixed native+combo+routed requires explicit native/catalog identity", () => {
+  const settings = { pickerAvailable: ["gpt-5.6-sol", "fast", "p/a"], pickerOrder: ["p/a", "fast", "gpt-5.6-sol"], pickerOrderMode: null };
+  const nativeSol = { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true };
+  const comboFast = { provider: "combo", id: "my-fast", namespaced: "fast" };
   const a = { provider: "p", id: "a", namespaced: "p/a" };
   expect(isPickerOrderSettings(settings)).toBe(true);
   expect(customPickerRows(settings, [])).toBeNull();
-  expect(customPickerRows(settings, [a])).toEqual({ fixed: [], order: ["p/a", "gpt-5.6-sol"] });
-  expect(customPickerRows({ ...settings, chosen: [] }, [a])).toEqual({ fixed: [], order: ["p/a", "gpt-5.6-sol"] });
-  expect(customPickerRows({ pickerAvailable: ["gpt-5.6-sol"], pickerOrder: ["gpt-5.6-sol"], pickerOrderMode: null }, []))
+  expect(customPickerRows(settings, [nativeSol, a])).toBeNull();
+  expect(customPickerRows(settings, [comboFast, a])).toBeNull();
+  expect(customPickerRows(settings, [nativeSol, comboFast, a])).toEqual({ fixed: [], order: ["p/a", "fast", "gpt-5.6-sol"] });
+  expect(customPickerRows({ ...settings, chosen: [] }, [nativeSol, comboFast, a])).toEqual({ fixed: [], order: ["p/a", "fast", "gpt-5.6-sol"] });
+  expect(customPickerRows({ pickerAvailable: ["gpt-5.6-sol"], pickerOrder: ["gpt-5.6-sol"], pickerOrderMode: null }, [nativeSol]))
     .toEqual({ fixed: [], order: ["gpt-5.6-sol"] });
-  expect(pickerIdentityCoverage(["gpt-5.6-sol", "openai/gpt-5.6-sol", "p/a"], [
-    { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+  expect(pickerIdentityCoverage(["gpt-5.6-sol", "openai/gpt-5.6-sol", "fast", "p/a"], [
+    nativeSol,
     { provider: "openai", id: "gpt-5.6-sol", namespaced: "openai/gpt-5.6-sol" },
+    comboFast,
     a,
   ])).toBe(true);
-  expect(settings.pickerOrder).toEqual(["p/a", "gpt-5.6-sol"]);
+  expect(pickerIdentityCoverage(["gpt-5.6-sol"], [nativeSol, { provider: "combo", id: "c1", namespaced: "gpt-5.6-sol" }])).toBe(false);
+  expect(settings.pickerOrder).toEqual(["p/a", "fast", "gpt-5.6-sol"]);
   for (const chosen of [null, undefined, "p/a", [2]]) expect(isPickerOrderSettings({ ...settings, chosen })).toBe(false);
   expect(isPickerOrderSettings({ ...settings, chosen: [] })).toBe(true);
 });
