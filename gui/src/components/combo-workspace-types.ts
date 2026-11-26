@@ -24,6 +24,8 @@ export type ModelOption = {
   inputModalitiesDeclared?: string[];
   /** Authoritative runtime verdict from /api/models: the Vision Sidecar describes this model's images. */
   visionSidecarConsumer?: boolean;
+  /** Catalog context window in tokens, when the model row reports one. */
+  contextWindow?: number;
 };
 
 export type QuotaComboPreset = "openai-first" | "claude-first";
@@ -58,4 +60,8 @@ export interface ComboWorkspaceProps {
   addDecisionProvider?: string | null;
   onCloseAdd: () => void;
   onCreated: (id: string) => void;
+  /** Select this combo when `seq` changes (the overview's "open in Advanced"); dirty drafts still prompt. */
+  selectRequest?: { id: string; seq: number };
+  /** The existing combo with an unsaved draft in the detail editor, or null. */
+  onDraftComboChange?: (id: string | null) => void;
 }
