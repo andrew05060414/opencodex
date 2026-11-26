@@ -68,7 +68,7 @@ test("live HTTP, published catalog and cache honor pristine 9 over static snapsh
   expect(native.priority).toBe(4);
   writeFileSync(catalogPath, JSON.stringify({ models: [native] }), "utf8");
   writeFileSync(catalogBackupPathFor(catalogPath), JSON.stringify({ models: [{ ...native, priority: 9 }] }), "utf8");
-  await checkSurfaces(config(slug), slug, 110, 9);
+  await checkSurfaces(config(slug), slug, 9, 9);
 });
 test("without descriptor or baseline exact-slug source beats snapshot across live, repeated sync and feature/unfeature", async () => {
   const slug = "gpt-5.6-sol";
@@ -80,10 +80,10 @@ test("without descriptor or baseline exact-slug source beats snapshot across liv
   ] }), "utf8");
   // An existing malformed backup is unavailable, never a reason for an HTTP writer to repair it.
   writeFileSync(catalogBackupPathFor(catalogPath), "{corrupt", "utf8");
-  await checkSurfaces(config(slug), slug, 104, 3);
-  await checkSurfaces(config(slug), slug, 104, 3);
-  await checkSurfaces(config(slug, [slug]), slug, 0, 3);
-  await checkSurfaces(config(slug), slug, 104, 3);
+  await checkSurfaces(config(slug), slug, 3, 3);
+  await checkSurfaces(config(slug), slug, 3, 3);
+  await checkSurfaces(config(slug, [slug]), slug, 3, 3);
+  await checkSurfaces(config(slug), slug, 3, 3);
   expect(readFileSync(catalogBackupPathFor(catalogPath), "utf8")).toBe("{corrupt");
 });
 
@@ -142,7 +142,7 @@ test("retained sync ignores malformed backup rows and preserves the backup bytes
   writeFileSync(catalogBackupPathFor(catalogPath), backup, "utf8");
   const result = await syncCatalogModels(next, { allowWhenDesiredDisabled: true });
   expect(result.refreshOutcome).toBe("committed");
-  expect(readRows(catalogPath).find(row => row.slug === slug)?.priority).toBe(110);
+  expect(readRows(catalogPath).find(row => row.slug === slug)?.priority).toBe(9);
   expect(readFileSync(catalogBackupPathFor(catalogPath), "utf8")).toBe(backup);
 });
 

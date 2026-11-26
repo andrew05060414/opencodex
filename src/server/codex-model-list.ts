@@ -36,8 +36,9 @@ export function buildCodexModelList({
   const catalogNativeSlugs = accountSelectors.length > 0
     ? [...new Set([...availableAccountNativeSlugs, ...accountNativeSlugs])]
     : nativeSlugs;
+  // Subagent picks no longer lead by priority (#PX-1276); the wire rewrite handles them.
   const entries = buildCatalogEntries(
-    loadCatalogTemplate(), catalogNativeSlugs, goOrdered, config.subagentModels,
+    loadCatalogTemplate(), catalogNativeSlugs, goOrdered, undefined,
     websocketsEnabled(config), maMode, exactComboSlugs, accountSelectors,
     suppressedBareNativeSlugs, new Set(), nativeContextLimits(config), accountNativeSlugs,
     accountNativeSlugsBySelector, config.keepNativeChatGptOnV1 === true, config.modelPickerOrder,

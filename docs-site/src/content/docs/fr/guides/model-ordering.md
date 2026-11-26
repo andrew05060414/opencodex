@@ -25,13 +25,15 @@ lignes visibles dans le sélecteur.
 
 Sans ordre global du sélecteur, les priorités sans sélecteur pertinentes sont :
 
+Depuis PX-1276, `subagentModels` ne réécrit plus la `priority` (`0` à `4`) dans le catalogue global et ne place plus ces modèles en tête du sélecteur. Le proxy réécrit plutôt le bloc des modèles proposés dans la description sortante de `spawn_agent` sur V1 et V2, tandis que le sélecteur global conserve les priorités naturelles ou votre `modelPickerOrder`.
+
+Sans ordre global du sélecteur, les priorités sans sélecteur pertinentes sont :
+
 | Entrée du catalogue | Priorité | Source |
 | --- | --- : | --- |
-| `subagentModels[i]` | `i` (`0` à `4`) | La carte de classement présentée dans `src/codex/catalog/sync.ts` |
-| Autres modèles acheminés | `5` | Création d'une entrée routé dans `src/codex/catalog/sync.ts` |
-| Modèles routés non mis en avant et présents dans `modelPickerOrder` | `1000 + i` | Rang d’affichage du sélecteur dans `src/codex/catalog/sync.ts` |
-| Slugs GPT natifs par défaut | `sourcePriority` | Création d'entrées natives dans `src/codex/catalog/sync.ts` |
-| Modèles natifs non sélectionnés alors qu'une liste sélectionnée existe | Au moins `featured.length + 100` | Fusion du catalogue natif dans `src/codex/catalog/sync.ts` |
+| Modèles acheminés ordinaires | `5` | Création d'une entrée routée dans `src/codex/catalog/sync.ts` |
+| Modèles routés présents dans `modelPickerOrder` (liste routée uniquement) | `1000 + i` | Rang d’affichage du sélecteur dans `src/codex/catalog/sync.ts` |
+| Slugs GPT natifs par défaut | `sourcePriority` (repli `9`) | Résolveur partagé de priorité source native |
 
 La direction API limite `subagentModels` à cinq entrées avec `slice(0, 5)` en
 `src/server/management/agent-settings-routes.ts`. Cela correspond à la surface Codex `spawn_agent`, qui
@@ -49,12 +51,6 @@ Cela signifie qu'aucun de ces détails de configuration ne modifie l'ordre final
 - l'ordre de déclaration des clés dans l'objet `providers` ;
 - l'ordre des identifiants dans le tableau `models` d'un fournisseur.
 
-`orderForSubagents()` utilise ensuite un tri stable pour placer les choix mis en avant au début de la liste, dans le
-même ordre que `subagentModels`. Les modèles non mis en avant conservent l’ordre relatif alphabétique fournisseur/identifiant
-établi précédemment (`src/codex/catalog/sync.ts`). Le classement présenté est également converti en
-priorités `0` à `4` lorsque les entrées sont construites, donc le tri prioritaire de Codex préserve ce premier
-séquence.
-
 ## La visibilité est distincte de l’ordre
 
 `selectedModels` et `disabledModels` déterminent quels modèles routés sont exposés ; ils ne contrôlent pas
@@ -66,15 +62,12 @@ change uniquement si un modèle est inclus.
 
 ## Ordre effectif du sélecteur
 
-Sans sélecteur de compte éligible et sans liste de sélection non vide, l'ordre résultant est le suivant :
+Sans `modelPickerOrder` :
 
-1. Modèles dans l'ordre `subagentModels` configuré exactement, avec des priorités `0` à `4`.
-2. Tous les modèles acheminés restants, classés par ordre alphabétique par fournisseur, puis par identifiant de modèle, en priorité `5`.
-3. Modèles natifs non sélectionnés, poussés sous le bloc sélectionné lors de la fusion du catalogue.
+1. Tous les modèles acheminés ont la priorité `5`, classés par ordre alphabétique par fournisseur, puis par identifiant de modèle.
+2. Les entrées natives GPT conservent leur priorité source normale (repli `9`).
 
-Sans `subagentModels`, les modèles routés restent en priorité `5`, les entrées natives GPT utilisent leur
-priorité (sourcePriority, avec `9` en dernier recours), et le groupe routé reste provider/id
-alphabétique.
+`subagentModels` ne place plus ces choix devant les autres modèles dans le sélecteur global ; il définit uniquement les remplacements annoncés dans `spawn_agent` lors de la réécriture sortante.
 
 ## Exemple
 
@@ -90,26 +83,18 @@ subagentModels = [
 ]
 ```
 
-Le sélecteur commence ainsi :
+Sans `modelPickerOrder`, les priorités du sélecteur global restent naturelles :
 
-| Position dans le sélecteur | Modèle | Priorité | Motif de cette position |
-| --- : | --- | --- : | --- |
-| 1 | `gpt-5.5` | `0` | Première sélection `subagentModels` |
-| 2 | `opencode-go/glm-5.2` | `1` | Deuxième sélection, même si son fournisseur trie après `anthropic` |
-| 3 | `anthropic/claude-opus-4-6` | `2` | Troisième sélection |
-| 4 | `gpt-5.6-sol` | `3` | Quatrième sélection |
-| 5 | `gpt-5.6-terra` | `4` | Cinquième sélection |
-| 6 | `anthropic/claude-fable-5` | `5` | Premier identifiant routé restant dans l’ordre alphabétique fournisseur/identifiant |
-| 7 en avant | Modèles acheminés restants | `5` | Fournisseur par ordre alphabétique, puis identifiant du modèle par ordre alphabétique |
-| Après les modèles routés | Modèles natifs restants | `featured.length + 100` ou supérieur | Les modèles natifs non sélectionnés sont déplacés sous le bloc mis en avant |
+| Groupe du sélecteur | Modèle | Priorité | Motif de cette position |
+| --- | --- | ---: | --- |
+| Modèles routés | `anthropic/claude-opus-4-6`, `opencode-go/glm-5.2`, ... | `5` | Fournisseur par ordre alphabétique, puis identifiant du modèle |
+| Modèles natifs | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, ... | `sourcePriority` (repli `9`) | Ordre source natif |
 
-Les cinq premières entrées sont les substitutions annoncées à `spawn_agent` ; les autres suivent l’ordre
-normal du sélecteur. Avec des sélecteurs de compte, la limite de cinq entrées s’applique après que les choix natifs non qualifiés
-ont été déclinés en groupes qualifiés par sélecteur.
+En parallèle, `spawn_agent` annonce les cinq entrées `subagentModels` dans leur ordre configuré via la réécriture sortante. Avec des sélecteurs de compte, la limite de cinq entrées s’applique après que les choix natifs non qualifiés ont été déclinés en groupes qualifiés par sélecteur.
 
 ## Modification de l'ordre
 
-Utilisez `subagentModels` pour choisir et ordonner les premiers modèles que Codex annonce également à
+Utilisez `subagentModels` pour choisir et ordonner les substitutions annoncées à
 `spawn_agent`. La page **Sous-agents** du tableau de bord peut réorganiser les identifiants natifs non
 qualifiés et les identifiants routés. Utilisez `ocx agent subagents set` ou modifiez la configuration
 OpenCodex pour définir des choix exacts de la forme `<selector>/<native-openai-model>` ; le tableau de bord
@@ -118,8 +103,7 @@ des sélecteurs de compte, un choix natif non qualifié peut se décliner en plu
 qualifiées par sélecteur ; les choix configurés et les lignes annoncées ne correspondent donc pas
 nécessairement un à un.
 
-Utilisez `modelPickerOrder` pour ordonner uniquement l’affichage des lignes routées `<provider>/<model>`
-au-delà de ce bloc mis en avant :
+Utilisez `modelPickerOrder` pour ordonner uniquement l’affichage des lignes routées `<provider>/<model>` :
 
 ```json
 {
@@ -131,10 +115,9 @@ au-delà de ce bloc mis en avant :
 }
 ```
 
-Les lignes routées indiquées apparaissent dans l’ordre configuré. Une ligne absente du tableau conserve sa
-priorité normale et reste donc devant la bande d’affichage de `modelPickerOrder` ; indiquez toutes les
-lignes routées dont vous souhaitez contrôler l’ordre relatif. Une ligne également présente dans
-`subagentModels` conserve sa priorité de mise en avant. Une liste contenant uniquement des identifiants
+Les lignes routées indiquées apparaissent dans l’ordre configuré (`1000 + i`). Une ligne absente du tableau conserve sa
+priorité normale (`5`) et reste donc devant la bande d’affichage de `modelPickerOrder` ; indiquez toutes les
+lignes routées dont vous souhaitez contrôler l’ordre relatif. Une liste contenant uniquement des identifiants
 routés conserve la position normale des lignes natives.
 
 Pour ordonner tout le sélecteur, incluez un identifiant natif non qualifié :

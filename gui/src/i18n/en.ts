@@ -4030,7 +4030,6 @@ export const en = {
   "usage.range.applied": "Selected interval: {start} – {end} (both inclusive).",
   "models.pickerOrder.editorHint": "Reorder routed models, then save your draft. Featured rows are fixed; native models are not shown.",
   "models.pickerOrder.nativeLocked": "This saved order includes native models. Apply a routed preset or Default before editing Custom.",
-  "models.pickerOrder.unknownChosen": "Featured choices are unknown. Reload before editing.",
   "models.pickerOrder.changed": "Picker settings changed. Your draft is kept; reload to discard it and use current settings.",
   "models.pickerOrder.savedReload": "Order saved. Reload current settings before editing again.",
   "models.pickerOrder.requestFailed": "Request failed. Your draft is kept; retry or reload.",

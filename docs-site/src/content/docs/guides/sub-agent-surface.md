@@ -81,62 +81,26 @@ that the model belongs to the other collaboration surface.
 
 ## Which models `spawn_agent` advertises
 
-Codex lists at most five models in the `spawn_agent` tool description, and it chooses them
-itself: it sorts the picker-visible catalog rows by `priority`, lowest first, and takes the first
-five. The roster on the **Subagents** page (`subagentModels`) shapes that list only by giving its
-models the lowest priorities in roster order (`0` through `4` without account selectors). It
-does not limit the list to the roster.
+Codex itself builds the initial `spawn_agent` model-overrides block from the first five
+picker-visible catalog rows sorted by ascending `priority`. Since PX-1276, `subagentModels` no
+longer pins catalog `priority` (`0` through `4`) in the global picker; instead, when
+`multiAgentGuidanceEnabled` is enabled and catalog state is not `stale` or `unknown`, the proxy
+rewrites the outbound `spawn_agent` tool description on both V1 and V2 surfaces to advertise
+`effectiveSubagentRoster().advertised` directly from `subagentModels` (up to five eligible rows,
+skipping `"disabled"` pins on V2).
 
-When you feature one to four models, Codex fills the remaining slots with the next rows by
-priority. You did not choose those rows, and the dashboard does not show which ones they are. They
-depend on the catalog:
+Because `subagentModels` no longer re-ranks the global picker:
 
-| Catalog | Rows that fill the remaining slots |
-| --- | --- |
-| No Codex account selectors | Other routed `provider/model` rows. They all share priority `5`, so they appear by provider name and then model id, alphabetically. Unfeatured native GPT rows use `featured.length + 100 + sourcePriority`, preserving native source order behind those routed rows. |
-| Codex account selectors | Account-qualified native rows (`<selector>/<native-model>`), which directly follow the featured rows. Unfeatured routed rows move to priority `1005` and come after them. |
-
-For example, with no account selectors and this roster:
-
-```json
-{ "subagentModels": ["xai/grok-4.5", "anthropic/claude-sonnet-5"] }
-```
-
-| Slot | Model | Priority | Why |
-| ---: | --- | ---: | --- |
-| 1 | `xai/grok-4.5` | `0` | First roster entry |
-| 2 | `anthropic/claude-sonnet-5` | `1` | Second roster entry |
-| 3 | `deepseek/deepseek-v4-flash` | `5` | First remaining routed row alphabetically |
-| 4 | `google/gemini-3-pro` | `5` | Next routed row |
-| 5 | `moonshot/kimi-k3` | `5` | Next routed row |
-| 6+ | `zai/glm-5.2`, then native GPT rows | `5`, then `102 + sourcePriority` | Outside the five |
-
-The native source rank uses current discovery before the pristine backup, exact-model retained
-source rank and upstream snapshot, with fallback `9`. Repeated sync and feature/unfeature preserve
-that unbanded rank. The live list, published catalog and cache agree for equal inputs. See
-[Model ordering](/guides/model-ordering/) for validation and picker-order overrides.
-
-With an empty roster, opencodex pins nothing and the five follow the catalog's normal
-priorities.
-
-The filled slots are ordinary advertisements, so the main agent may pick one of those models.
-The list is also not an allowlist: Codex accepts a catalog model outside the five when the main
-agent names it exactly. To control what Codex advertises:
-
-- Feature five models. With a full roster, no slot is left to fill.
-- Disable a model you never want offered, or leave it out of its provider's `selectedModels`.
-  A disabled or unselected model leaves the picker and cannot fill a slot.
-- `modelPickerOrder` changes the priorities Codex sorts by. A routed-only list moves the listed
-  unfeatured rows to `1000` and up, so the unlisted routed rows fill the slots first. A list that
-  contains a bare native id orders the complete picker, featured rows included: listed rows come
-  first and take the advertised slots before any unlisted row. See
-  [Model ordering](/guides/model-ordering/).
-
-On v2, Codex skips rows pinned `"disabled"` before it takes the five; otherwise the window works
-the same way. The opencodex v2 guidance roster (`{{roster}}`) names only configured roster models
-inside the five, so filler models appear in Codex's tool description and never in opencodex
-guidance. Codex reads the catalog when a session starts, so a roster change applies to new
-sessions.
+- Global picker order follows natural catalog priorities (`5` for ordinary routed rows, native
+  `sourcePriority` with fallback `9` for bare native rows) or your configured `modelPickerOrder`.
+- Changing `modelPickerOrder` changes picker display order without changing which overrides
+  `spawn_agent` advertises when the proxy rewrite is active.
+- If `multiAgentGuidanceEnabled` is `false` or catalog state is `stale`/`unknown`, the proxy leaves
+  upstream's native `spawn_agent` description untouched rather than advertising stale disk picks.
+- The advertised list is not an allowlist: Codex still accepts any eligible catalog model when the
+  main agent names it explicitly, and the v2 guidance roster (`{{roster}}`) follows the same
+  configured roster. See [Model ordering](/guides/model-ordering/) for priority and
+  `modelPickerOrder` details.
 
 ## Delegation model and effort
 

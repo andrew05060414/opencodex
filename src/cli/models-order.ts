@@ -61,10 +61,8 @@ function manualOrder(csv: string, settings: PickerOrderSettings, identities: Pic
   if (new Set(order).size !== order.length || order.length !== settings.pickerAvailable.length) {
     throw new CliUsageError("--models must contain every routed candidate exactly once", ORDER_USAGE);
   }
-  const draft = customPickerRows(settings, identities);
-  if (!draft) throw new CliUsageError("Featured state or model identities are incomplete. Read status before trying again.");
-  if (!draft.fixed.every((id, index) => order[index] === id)) {
-    throw new CliUsageError("--models must keep the current featured models as its exact leading prefix.");
+  if (!customPickerRows(settings, identities)) {
+    throw new CliUsageError("Model identities are incomplete or the saved order needs reset. Read status before trying again.");
   }
   return order;
 }

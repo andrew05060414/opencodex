@@ -146,17 +146,14 @@ export function pickerIdentityCoverage(available: readonly string[], identities:
 }
 
 export function customPickerRows(settings: PickerOrderSettings, identities: readonly PickerModelIdentity[]): { order: string[]; fixed: string[] } | null {
-  // Unknown featured state and complete/native orders cannot safely become routed-only drafts.
-  if (settings.chosen === undefined || settings.pickerOrder.some(id => !id.includes("/"))) return null;
+  // Complete/native orders cannot safely become routed-only drafts.
+  if (settings.pickerOrder.some(id => !id.includes("/"))) return null;
   const available = [...new Set(settings.pickerAvailable.filter(id => id.includes("/")))];
   if (!pickerIdentityCoverage(available, identities)) return null;
-  // Roster strings stay verbatim. Map uses the LAST occurrence; each row prefers its exact canonical rank.
-  const chosenRank = new Map(settings.chosen.map((id, index) => [id, index]));
-  const rawBySlug = new Map(identities.map(row => [row.namespaced, `${row.provider}/${row.id}`]));
-  const rankOf = (slug: string) => chosenRank.get(slug) ?? chosenRank.get(rawBySlug.get(slug)!);
-  const fixed = available.filter(slug => rankOf(slug) !== undefined).sort((a, b) => rankOf(a)! - rankOf(b)!);
+  // PX-1276: featured subagent picks are ordinary rows — the saved order alone
+  // decides display order, so nothing is pinned ahead of it anymore.
   const saved = normalizePickerIds(settings.pickerOrder, available, identities);
-  return { fixed, order: [...new Set([...fixed, ...saved, ...available])] };
+  return { fixed: [], order: [...new Set([...saved, ...available])] };
 }
 
 /** Drop semantics: remove first, re-find the target, then insert before it. */

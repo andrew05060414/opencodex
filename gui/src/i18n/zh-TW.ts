@@ -3982,7 +3982,6 @@ export const zhTW: Record<TKey, string> = {
   "usage.range.applied": "所選範圍：{start} – {end}（包含兩端）。",
   "models.pickerOrder.editorHint": "調整路由模型順序後儲存草稿。精選列固定，原生模型不在此顯示。",
   "models.pickerOrder.nativeLocked": "已儲存的順序包含原生模型。請先套用路由預設或預設順序，再編輯自訂順序。",
-  "models.pickerOrder.unknownChosen": "精選模型資訊未知。請重新載入後再編輯。",
   "models.pickerOrder.changed": "模型選擇設定已變更。草稿已保留；重新載入將捨棄草稿並使用目前設定。",
   "models.pickerOrder.savedReload": "順序已儲存。再次編輯前請重新載入目前設定。",
   "models.pickerOrder.requestFailed": "請求失敗。草稿已保留；請重試或重新載入。",

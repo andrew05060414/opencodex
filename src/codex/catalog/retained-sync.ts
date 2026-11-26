@@ -85,7 +85,6 @@ import {
   buildCatalogEntriesFromObservedState,
   mergeCatalogEntriesFromObservedState,
   mergeCatalogModelsWithNativeRecovery,
-  orderForSubagents,
 } from "./build-entries";
 import { finishUpstreamNativeEntry } from "./derive-entry";
 import { finalizeAutoReviewModelOverride } from "./auto-review";
@@ -323,14 +322,12 @@ function writeRetainedCatalogSync({
   // Capture inheritance only after pristine backup preparation, before any row projection.
   const template = captureNativeInheritanceTemplate(catalog, config.omitDisabledNativeModels === true);
 
-  // Hide disabled models from Codex, then feature the chosen subagent models (native OR routed)
-  // by giving them the lowest priority — see buildCatalogEntries for why priority, not array order.
+  // Hide disabled models from Codex. subagentModels no longer pin catalog priority
+  // (#PX-1276): the spawn_agent tool description is rewritten on the wire instead.
   const enabledGo = filterCatalogVisibleModels(goModels, config);
-  const featured = config.subagentModels ?? [];
-  const orderedGoModels = orderForSubagents(enabledGo, featured); // stable tie-break among equal priorities
   const suppressedSyntheticMaxSlugs = suppressedSyntheticMaxCatalogSlugs(
     config,
-    orderedGoModels,
+    enabledGo,
     catalogModelsForMerge,
   );
   const modelPickerOrder = config.modelPickerOrder ?? [];
@@ -454,8 +451,7 @@ function writeRetainedCatalogSync({
   const goEntries = buildCatalogEntriesFromObservedState({
     template: template ? JSON.parse(JSON.stringify(template)) : null,
     gptSlugs: [],
-    goModels: orderedGoModels,
-    featured,
+    goModels: enabledGo,
     modelPickerOrder,
     wsEnabled,
     multiAgentMode,
@@ -502,7 +498,6 @@ function writeRetainedCatalogSync({
       template: template ? JSON.parse(JSON.stringify(template)) : null,
       gptSlugs: availableAccountNativeSlugs,
       goModels: [],
-      featured,
       wsEnabled,
       multiAgentMode,
       exactComboSlugs,
@@ -519,15 +514,14 @@ function writeRetainedCatalogSync({
     : [];
   catalog.models = mergeCatalogEntriesFromObservedState({
     ultraFastTier: ultraFastTierEnabled(config),
-    configuredUltraFastSlugs: configuredUltraFastSlugs(orderedGoModels),
-    retainedFlexPolicyBySlug: retainedFlexPolicyBySlug(config.providers ?? {}, catalogModelsForMerge, orderedGoModels),
+    configuredUltraFastSlugs: configuredUltraFastSlugs(enabledGo),
+    retainedFlexPolicyBySlug: retainedFlexPolicyBySlug(config.providers ?? {}, catalogModelsForMerge, enabledGo),
     modelPickerOrder,
     accountSelectors,
     catalogModels: catalogModelsForMerge,
     baselineCatalogModels: baselineCatalog?.models ?? [],
     routedEntries: goEntries,
     baseline,
-    featured,
     wsEnabled,
     template,
     disabledModels: new Set(config.disabledModels ?? []),

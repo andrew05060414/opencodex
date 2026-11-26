@@ -412,17 +412,17 @@ Ultra Fast increases usage/cost, and Codex's own feature requirements still appl
 
 ## Subagent selection
 
-Codex sorts picker-visible catalog entries by ascending `priority` and advertises the first five as
-`spawn_agent` model overrides. The dashboard Subagents page can select and save up to five bare
-native ids or routed `provider/model` ids. Manually configured `subagentModels` also accepts
-account-qualified `<selector>/<native-openai-model>` ids, but the dashboard does not offer those
-exact ids; saving the page replaces the list with dashboard-visible choices. opencodex assigns low
-catalog priorities in the selected order; when account-qualified picker rows are enabled, bare native selections
-expand into selector-qualified groups. Other models remain callable by exact id.
+The dashboard Subagents page can select and save up to five bare native ids or routed
+`provider/model` ids in `subagentModels`. Manually configured `subagentModels` also accepts
+account-qualified `<selector>/<native-openai-model>` ids, though the dashboard does not offer those
+exact ids; saving the page replaces the list with dashboard-visible choices. opencodex rewrites the
+outbound `spawn_agent` tool description to advertise these configured picks in order (expanding bare
+native selections into selector-qualified groups when account selectors are enabled) without pinning
+them to the top of the global model picker. Other models remain callable by exact id.
 
-The featured-model list is separate from the Dashboard's **Sub-agent delegation** selection. It
-controls which overrides Codex offers first; it does not select a model or trigger delegation by
-itself.
+The `subagentModels` list is separate from the Dashboard's **Sub-agent delegation** selection and
+from `modelPickerOrder`. It controls which overrides `spawn_agent` advertises; it does not select a
+parent model, reorder the global picker, or trigger delegation by itself.
 
 ## Desktop remote servers
 

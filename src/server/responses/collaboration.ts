@@ -390,7 +390,7 @@ export interface MultiAgentGuidanceDeps {
     | Promise<{ state: "fresh" | "stale" | "not_running" | "unknown" }>;
 }
 
-async function defaultCollectCatalogState(): Promise<{ state: "fresh" | "stale" | "not_running" | "unknown" }> {
+export async function defaultCollectCatalogState(): Promise<{ state: "fresh" | "stale" | "not_running" | "unknown" }> {
   // Explicit override for tests and diagnostics: process state is global and
   // would otherwise leak the host machine's app-server into hermetic tests.
   const override = process.env.OPENCODEX_APP_SERVER_CATALOG_STATE_OVERRIDE;
@@ -444,7 +444,7 @@ async function freshSubagentCatalogEntries(): Promise<RawEntry[]> {
 }
 
 /** Reuse one parsed catalog snapshot across every roster projection for this request. */
-async function createRequestScopedSubagentRosterResolver(): Promise<NonNullable<
+export async function createRequestScopedSubagentRosterResolver(): Promise<NonNullable<
   MultiAgentGuidanceDeps["resolveEffectiveSubagentRoster"]
 >> {
   const { effectiveSubagentRoster } = await import("../../codex/catalog");
@@ -592,6 +592,45 @@ export async function multiAgentGuidanceText(
 }
 
 
+
+export interface SpawnAgentToolRewriteOptions {
+  multiAgentGuidanceEnabled?: boolean;
+  subagentModels?: string[];
+}
+
+/**
+ * PX-1276: rewrite the outbound `spawn_agent` tool description so the model
+ * overrides it advertises follow config.subagentModels on BOTH surfaces. codex-rs
+ * renders that block from the five lowest-priority picker-visible catalog rows,
+ * which was the only channel that surfaced featured picks while their priorities
+ * were pinned to 0..4; decoupling display order removed it. The rewritten list is
+ * `effectiveSubagentRoster().advertised` — the same projection V2 guidance uses,
+ * so eligibility, the five-model cap, and V1/V2 filtering match upstream. Shares
+ * the guidance contract for evidence: a stale or unobservable app-server could
+ * not spawn what we would advertise, so stale/unknown stays silent. Mutates
+ * `parsed._rawBody`; returns the number of tool descriptions rewritten.
+ */
+export async function rewriteSpawnAgentToolModelOverrides(
+  parsed: OcxParsedRequest,
+  options: SpawnAgentToolRewriteOptions = {},
+  deps: MultiAgentGuidanceDeps = {},
+): Promise<number> {
+  if (options.multiAgentGuidanceEnabled === false) return 0;
+  const configured = (options.subagentModels ?? []).filter(model => model.trim().length > 0);
+  if (configured.length === 0) return 0;
+  const surface = collabSurface(parsed);
+  if (surface === null) return 0;
+  const catalogState = await (deps.collectCatalogState ?? defaultCollectCatalogState)();
+  if (catalogState.state === "stale" || catalogState.state === "unknown") return 0;
+  const resolveRoster = deps.resolveEffectiveSubagentRoster
+    ?? await createRequestScopedSubagentRosterResolver();
+  const effective = await resolveRoster(configured, surface);
+  if (effective.advertised.length === 0) return 0;
+  const { rewriteSpawnAgentToolDescriptions, rewriteParsedSpawnAgentTools } = await import("./spawn-agent-model-overrides");
+  const rawRewritten = rewriteSpawnAgentToolDescriptions(parsed._rawBody, effective.advertised);
+  const parsedRewritten = rewriteParsedSpawnAgentTools(parsed.context.tools, effective.advertised);
+  return Math.max(rawRewritten, parsedRewritten);
+}
 
 export const V2_GUIDANCE_CHAR_BUDGET = 700;
 

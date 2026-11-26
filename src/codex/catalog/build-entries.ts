@@ -153,6 +153,9 @@ export function buildCatalogEntriesFromObservedState({
   // models to spawn_agent (sort_by_key(priority) + MAX_MODEL_OVERRIDES_IN_SPAWN_AGENT=5). Catalog
   // ARRAY order is discarded — so "featuring" a model = giving it the LOWEST priority (0..N-1) so
   // it sorts to the front. This works for native gpt slugs AND routed slugs alike.
+  // #PX-1276: production callers pass no featured roster — the advertised spawn_agent list
+  // is rewritten on the outbound wire from config.subagentModels instead. `featured` remains
+  // only as this builder's rank input for the natural/spawn priority band computed below.
   const rank = new Map((featured ?? []).map((slug, i) => [slug, i] as const));
   const priorityStride = Math.max(accountSelectors.length, 1);
   // Optional full picker order (#1649). Independent of the 5-slot spawn_agent cap: it only
@@ -496,7 +499,7 @@ export interface ObservedCatalogMergeInput {
   readonly baselineCatalogModels: readonly RawEntry[];
   readonly routedEntries: readonly RawEntry[];
   readonly baseline: ReadonlyMap<string, number>;
-  readonly featured: readonly string[];
+  readonly featured?: readonly string[];
   readonly modelPickerOrder?: readonly string[];
   readonly accountSelectors?: readonly string[];
   readonly wsEnabled: boolean;
@@ -544,7 +547,7 @@ export function mergeCatalogEntriesFromObservedState({
   baselineCatalogModels,
   routedEntries,
   baseline,
-  featured,
+  featured = [],
   modelPickerOrder = [],
   accountSelectors = [],
   wsEnabled,

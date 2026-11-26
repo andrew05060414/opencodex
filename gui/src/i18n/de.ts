@@ -3996,7 +3996,6 @@ export const de: Record<TKey, string> = {
   "usage.range.applied": "Ausgewählter Zeitraum: {start} – {end} (beide Grenzen eingeschlossen).",
   "models.pickerOrder.editorHint": "Routingsmodelle neu ordnen und den Entwurf speichern. Hervorgehobene Zeilen sind fest; native Modelle werden nicht angezeigt.",
   "models.pickerOrder.nativeLocked": "Diese Reihenfolge enthält native Modelle. Vor der Bearbeitung eine Routing-Vorgabe oder Standard anwenden.",
-  "models.pickerOrder.unknownChosen": "Hervorgehobene Modelle sind unbekannt. Vor der Bearbeitung neu laden.",
   "models.pickerOrder.changed": "Die Einstellungen haben sich geändert. Der Entwurf bleibt erhalten; erneutes Laden verwirft ihn und lädt die aktuellen Einstellungen.",
   "models.pickerOrder.savedReload": "Reihenfolge gespeichert. Vor weiterer Bearbeitung aktuelle Einstellungen laden.",
   "models.pickerOrder.requestFailed": "Anfrage fehlgeschlagen. Der Entwurf bleibt erhalten; erneut versuchen oder neu laden.",

@@ -4019,7 +4019,6 @@ export const tr: Record<TKey, string> = {
   "usage.range.applied": "Seçilen aralık: {start} – {end} (iki sınır da dahil).",
   "models.pickerOrder.editorHint": "Yönlendirilen modelleri sıralayıp taslağı kaydedin. Öne çıkan satırlar sabittir; yerel modeller gösterilmez.",
   "models.pickerOrder.nativeLocked": "Kayıtlı sıra yerel modeller içeriyor. Özel sırayı düzenlemeden önce yönlendirme ön ayarını veya Varsayılan seçeneğini uygulayın.",
-  "models.pickerOrder.unknownChosen": "Öne çıkan modeller bilinmiyor. Düzenlemeden önce yeniden yükleyin.",
   "models.pickerOrder.changed": "Seçici ayarları değişti. Taslağınız korunuyor; yeniden yüklemek taslağı siler ve güncel ayarları kullanır.",
   "models.pickerOrder.savedReload": "Sıra kaydedildi. Yeniden düzenlemeden önce güncel ayarları yükleyin.",
   "models.pickerOrder.requestFailed": "İstek başarısız. Taslağınız korunuyor; tekrar deneyin veya yeniden yükleyin.",

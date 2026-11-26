@@ -92,8 +92,7 @@ export default function ModelPickerOrderEditor({ apiBase, active, identities, on
       const rows = customPickerRows(settings, identities);
       if (!rows) {
         setBlocked(settings.pickerOrder.some(id => !id.includes("/"))
-          ? "models.pickerOrder.nativeLocked" : settings.chosen === undefined
-            ? "models.pickerOrder.unknownChosen" : "models.pickerOrder.catalogRequired");
+          ? "models.pickerOrder.nativeLocked" : "models.pickerOrder.catalogRequired");
         return;
       }
       if (!save) {

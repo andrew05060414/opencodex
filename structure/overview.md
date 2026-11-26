@@ -119,9 +119,11 @@ still cover the rule, which is a judgement only review makes.
 - **INV-OPENAI-01** — OpenAI has one `openai` Codex-login provider with Pool(default)/Direct modes
   and a separate `openai-apikey`; see [`openai-tiers.md`](providers/openai-tiers.md).
   Enforced by `tests/adapters/openai/openai-provider-option.test.ts`.
-- **INV-AGENT-01** — Codex `spawn_agent` visibility depends on the first five featured catalog
-  entries.
-  Enforced by `tests/codex-integration/catalog-full-picker-order.test.ts`.
+- **INV-AGENT-01** — The `spawn_agent` tool description advertises `config.subagentModels`, not
+  the five lowest-priority picker rows: the proxy rewrites the outbound tool text from
+  `effectiveSubagentRoster().advertised` on both collaboration surfaces (PX-1276), and catalog
+  display order no longer decides what spawn_agent offers.
+  Enforced by `tests/codex-integration/px-1276-subagent-decoupling.test.ts`.
 - **INV-AUTH-01** — The management plane (`/api/*`) and the data plane (`/v1/*`) never share an
   admission credential.
   Enforced by `tests/server/server-management-auth.test.ts`.

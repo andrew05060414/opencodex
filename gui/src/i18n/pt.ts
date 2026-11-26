@@ -3991,7 +3991,6 @@ export const pt: Record<TKey, string> = {
   "usage.range.applied": "Intervalo selecionado: {start} – {end} (ambos inclusivos).",
   "models.pickerOrder.editorHint": "Reordene os modelos roteados e salve seu rascunho. As linhas em destaque são fixas; modelos nativos não são exibidos.",
   "models.pickerOrder.nativeLocked": "Esta ordem salva inclui modelos nativos. Aplique um preset roteado ou Padrão antes de editar o Personalizado.",
-  "models.pickerOrder.unknownChosen": "As escolhas em destaque são desconhecidas. Recarregue antes de editar.",
   "models.pickerOrder.changed": "As configurações do seletor mudaram. Seu rascunho foi mantido; recarregue para descartá-lo e usar as configurações atuais.",
   "models.pickerOrder.savedReload": "Ordem salva. Recarregue as configurações atuais antes de editar novamente.",
   "models.pickerOrder.requestFailed": "A requisição falhou. Seu rascunho foi mantido; tente novamente ou recarregue.",

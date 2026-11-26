@@ -72,6 +72,12 @@ export function isEligibleV2SubagentEntry(entry: RawEntry): boolean {
 export interface EffectiveSubagentModel {
   model: string;
   efforts: string[];
+  /** Entry's declared default effort, when it is one of `efforts`. */
+  defaultEffort?: string;
+  /** Codex-facing row description, rendered into rewritten spawn_agent tool text (PX-1276). */
+  description?: string;
+  /** Declared service-tier ids, in catalog order. */
+  serviceTiers?: string[];
 }
 
 export interface SubagentRosterExclusion {
@@ -103,6 +109,25 @@ function configuredSubagentModelMatchesEntry(configured: string, entry: RawEntry
     && slugsEquivalent(configured, nativeSlug);
 }
 
+function effectiveSubagentModel(entry: RawEntry): EffectiveSubagentModel {
+  const efforts = catalogEntryEfforts(entry);
+  const defaultEffort = typeof entry.default_reasoning_level === "string"
+    && efforts.includes(entry.default_reasoning_level)
+    ? entry.default_reasoning_level : undefined;
+  const serviceTiers = Array.isArray(entry.service_tiers)
+    ? entry.service_tiers.flatMap(tier =>
+      !!tier && typeof tier === "object" && typeof (tier as { id?: unknown }).id === "string"
+        ? [(tier as { id: string }).id] : [])
+    : [];
+  return {
+    model: entry.slug as string,
+    efforts,
+    ...(defaultEffort === undefined ? {} : { defaultEffort }),
+    ...(typeof entry.description === "string" ? { description: entry.description } : {}),
+    ...(serviceTiers.length > 0 ? { serviceTiers } : {}),
+  };
+}
+
 export function effectiveSubagentRoster(
   configuredModels: readonly string[],
   surface: SpawnAgentSurface,
@@ -114,63 +139,69 @@ export function effectiveSubagentRoster(
       !all.slice(0, index).some(previous => slugsEquivalent(previous, model))
     );
   const entries = catalogEntries ?? readCatalog(readCodexCatalogPath())?.models ?? [];
-  const ordered = entries
+
+  const spawnPriorityOf = (entry: RawEntry): number => {
+    const spawn = entry[SPAWN_PRIORITY_FIELD];
+    if (typeof spawn === "number" && Number.isFinite(spawn)) return spawn;
+    return typeof entry.priority === "number" && Number.isFinite(entry.priority)
+      ? entry.priority : Number.MAX_SAFE_INTEGER;
+  };
+
+  const naturalPriorityOrdered = entries
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => typeof entry.slug === "string")
     .filter(({ entry }) => entry.visibility === "list")
     .filter(({ entry }) => surface !== "v2" || isEligibleV2SubagentEntry(entry))
     .sort((left, right) => {
-      // OpenCodex guidance candidates rank by natural priority (SPAWN_PRIORITY_FIELD when present),
-      // so modelPickerOrder does not change this projection. Native tool advertisements differ. Rows the
-      // override did not move fall back to their Codex-visible `priority`.
-      const spawnPriorityOf = (entry: RawEntry): number => {
-        const spawn = entry[SPAWN_PRIORITY_FIELD];
-        if (typeof spawn === "number" && Number.isFinite(spawn)) return spawn;
-        return typeof entry.priority === "number" && Number.isFinite(entry.priority)
-          ? entry.priority : Number.MAX_SAFE_INTEGER;
-      };
       const leftPriority = spawnPriorityOf(left.entry);
       const rightPriority = spawnPriorityOf(right.entry);
       return leftPriority - rightPriority || left.index - right.index;
-    })
-    .slice(0, MAX_SPAWN_AGENT_MODEL_OVERRIDES);
-  const orderedEntries = new Set(ordered.map(({ entry }) => entry));
+    });
 
-  const candidates = ordered.map(({ entry }) => ({
-    model: entry.slug as string,
-    efforts: catalogEntryEfforts(entry),
-  }));
-  const advertised = ordered
-    .filter(({ entry }) => configured.some(model => configuredSubagentModelMatchesEntry(model, entry)))
-    .map(({ entry }) => ({
-      model: entry.slug as string,
-      efforts: catalogEntryEfforts(entry),
-    }));
-  const excluded = configured.flatMap((model): SubagentRosterExclusion[] => {
+  const advertised: EffectiveSubagentModel[] = [];
+  const excluded: SubagentRosterExclusion[] = [];
+
+  // Decouple priority from subagent tool description (#PX-1276).
+  // Recommended models are read directly from configured subagentModels (up to MAX_SPAWN_AGENT_MODEL_OVERRIDES).
+  for (const model of configured) {
     const matchingEntries = entries.filter(entry => configuredSubagentModelMatchesEntry(model, entry));
-    if (matchingEntries.some(entry => orderedEntries.has(entry))) return [];
-    if (matchingEntries.length === 0) return [{ configured: model, reason: "missing_catalog_entry" }];
-    const visibleCompatible = matchingEntries.find(entry =>
-      entry.visibility === "list"
-      && (surface !== "v2" || isEligibleV2SubagentEntry(entry))
-    );
-    if (visibleCompatible) {
-      return [{
-        configured: model,
-        catalogModel: visibleCompatible.slug as string,
-        reason: "outside_display_limit",
-      }];
+    if (matchingEntries.length === 0) {
+      excluded.push({ configured: model, reason: "missing_catalog_entry" });
+      continue;
     }
-    const visible = matchingEntries.find(entry => entry.visibility === "list");
-    if (visible) {
-      return [{
-        configured: model,
-        catalogModel: visible.slug as string,
-        reason: "surface_incompatible",
-      }];
+    const visibleEntries = matchingEntries.filter(entry => entry.visibility === "list");
+    if (visibleEntries.length === 0) {
+      const hidden = configuredCatalogEntry(entries, model) ?? matchingEntries[0]!;
+      excluded.push({ configured: model, catalogModel: hidden.slug as string, reason: "picker_hidden" });
+      continue;
     }
-    const hidden = configuredCatalogEntry(entries, model) ?? matchingEntries[0]!;
-    return [{ configured: model, catalogModel: hidden.slug as string, reason: "picker_hidden" }];
-  });
+    const compatibleEntries = visibleEntries.filter(entry => surface !== "v2" || isEligibleV2SubagentEntry(entry));
+    if (compatibleEntries.length === 0) {
+      excluded.push({ configured: model, catalogModel: visibleEntries[0]!.slug as string, reason: "surface_incompatible" });
+      continue;
+    }
+    for (const entry of compatibleEntries) {
+      if (advertised.length < MAX_SPAWN_AGENT_MODEL_OVERRIDES) {
+        if (!advertised.some(a => slugsEquivalent(a.model, entry.slug as string))) {
+          advertised.push(effectiveSubagentModel(entry));
+        }
+      } else {
+        excluded.push({
+          configured: model,
+          catalogModel: entry.slug as string,
+          reason: "outside_display_limit",
+        });
+      }
+    }
+  }
+
+  const candidates: EffectiveSubagentModel[] = [...advertised];
+  for (const { entry } of naturalPriorityOrdered) {
+    if (candidates.length >= MAX_SPAWN_AGENT_MODEL_OVERRIDES) break;
+    if (!candidates.some(c => slugsEquivalent(c.model, entry.slug as string))) {
+      candidates.push(effectiveSubagentModel(entry));
+    }
+  }
+
   return { candidates, advertised, excluded };
 }

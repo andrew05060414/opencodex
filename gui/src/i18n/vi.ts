@@ -3947,7 +3947,6 @@ export const vi: Record<TKey, string> = {
   "usage.range.applied": "Khoảng thời gian đã chọn: {start} – {end} (bao gồm cả hai).",
   "models.pickerOrder.editorHint": "Sắp xếp lại các model được định tuyến, sau đó lưu bản nháp của bạn. Các hàng nổi bật (featured) được cố định; các model gốc (native) không được hiển thị.",
   "models.pickerOrder.nativeLocked": "Thứ tự đã lưu này bao gồm các model gốc. Hãy áp dụng một cài đặt sẵn (preset) định tuyến hoặc Mặc định (Default) trước khi chỉnh sửa Tùy chỉnh (Custom).",
-  "models.pickerOrder.unknownChosen": "Các lựa chọn nổi bật không xác định. Hãy tải lại trước khi chỉnh sửa.",
   "models.pickerOrder.changed": "Cài đặt bộ chọn (picker) đã thay đổi. Bản nháp của bạn vẫn được giữ lại; hãy tải lại để loại bỏ nó và sử dụng cài đặt hiện tại.",
   "models.pickerOrder.savedReload": "Đã lưu thứ tự. Hãy tải lại cài đặt hiện tại trước khi chỉnh sửa lại.",
   "models.pickerOrder.requestFailed": "Yêu cầu thất bại. Bản nháp của bạn vẫn được giữ lại; hãy thử lại hoặc tải lại.",

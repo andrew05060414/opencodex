@@ -212,7 +212,7 @@ Codex affiche les modèles provenant d'un catalogue sur disque — par défaut
 3. **Fusionne** les modèles routés sous forme d'entrées qualifiées (`provider/model`), clonées depuis un modèle
    de catalogue Codex natif afin que l'analyseur strict de Codex les accepte.
 4. **Filtre** `config.disabledModels` et la liste d'autorisation `selectedModels` non vide de chaque fournisseur.
-5. **Reclasse** les modèles afin que ceux mis en avant apparaissent en premier — voir ci-dessous — puis réécrit
+5. **Applique l'ordre du sélecteur** (si `modelPickerOrder` est configuré ; `subagentModels` ne réordonne plus le sélecteur global et est annoncé via la réécriture sortante de `spawn_agent`), puis réécrit
    le catalogue fusionné.
 
 L'identité GPT-5 des entrées routées du catalogue est également remplacée par le véritable nom du modèle en

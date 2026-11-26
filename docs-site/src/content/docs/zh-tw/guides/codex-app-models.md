@@ -155,15 +155,9 @@ DeepSeek 與 Volcengine Ark 歸類為 `false`），而未分類的自訂 gateway
 
 ## 子代理選擇
 
-Codex 會按 `priority` 升序排列選擇器中可見的目錄條目，並將前五個顯示為 `spawn_agent` 模型
-override。儀表板的 Subagents 頁面可以選擇並儲存最多五個裸原生 id 或路由的 `provider/model`
-id。手動設定的 `subagentModels` 也接受帳號限定的 `<selector>/<native-openai-model>` id，但
-儀表板不提供這些精確 id；儲存頁面時會把列表替換為儀表板可見的選擇。opencodex 會按所選順序
-賦予較低的目錄 priority；啟用帳號限定選擇器列時，裸原生選擇會展開為選擇器限定群組。其他模型
-仍可透過精確 id 直接呼叫。
+儀表板的 Subagents 頁面可以選擇並儲存最多五個裸原生 id 或路由的 `provider/model` id 到 `subagentModels`。手動設定的 `subagentModels` 也接受帳號限定的 `<selector>/<native-openai-model>` id，但儀表板不提供這些精確 id；儲存頁面時會把列表替換為儀表板可見的選擇。opencodex 會在出站轉發時按所選順序改寫 `spawn_agent` 工具說明來公佈這些模型（啟用帳號限定選擇器列時，裸原生選擇會展開為選擇器限定群組），而不再將它們置頂到全域模型選擇器。其他模型仍可透過精確 id 直接呼叫。
 
-置頂模型列表與 Dashboard 的 **Sub-agent delegation** 選擇相互獨立。它只控制 Codex 優先提供
-哪些 override；本身不會選定模型或觸發委派。
+`subagentModels` 列表與 Dashboard 的 **Sub-agent delegation** 選擇及 `modelPickerOrder` 相互獨立。它只控制 `spawn_agent` 公佈哪些 override；本身不會更改全域選擇器順序、選定主模型或觸發委派。
 
 ## Desktop remote 伺服器
 

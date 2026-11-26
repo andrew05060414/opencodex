@@ -3985,7 +3985,6 @@ export const fr: Record<TKey, string> = {
   "usage.range.applied": "Période sélectionnée : {start} – {end} (bornes incluses).",
   "models.pickerOrder.editorHint": "Réordonnez les modèles routés, puis enregistrez le brouillon. Les lignes mises en avant sont fixes ; les modèles natifs ne sont pas affichés.",
   "models.pickerOrder.nativeLocked": "Cet ordre contient des modèles natifs. Appliquez un préréglage de routage ou Par défaut avant de le personnaliser.",
-  "models.pickerOrder.unknownChosen": "Les modèles mis en avant sont inconnus. Rechargez avant de modifier.",
   "models.pickerOrder.changed": "Les paramètres ont changé. Le brouillon est conservé ; rechargez pour le supprimer et utiliser les paramètres actuels.",
   "models.pickerOrder.savedReload": "Ordre enregistré. Rechargez les paramètres actuels avant de modifier à nouveau.",
   "models.pickerOrder.requestFailed": "Échec de la requête. Le brouillon est conservé ; réessayez ou rechargez.",

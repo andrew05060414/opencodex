@@ -49,7 +49,6 @@ import {
   finalizeAutoReviewModelOverride,
   mergeCatalogEntriesFromObservedState,
   mergeCatalogModelsWithNativeRecovery,
-  orderForSubagents,
   } from "./catalog/sync";
   import { multiAgentV2EnabledFromConfigText } from "./features";
   import { comboCatalogDescriptions, enforceCatalogSlugUniqueness, exactComboCatalogSlugs } from "./catalog/aggregation";
@@ -272,9 +271,9 @@ function prepareCatalog(
   const catalog = JSON.parse(JSON.stringify(source.catalog)) as RawCatalog;
   // Strict selector: an unknown bare row must never become the routed template (#2813).
   const template = captureNativeInheritanceTemplate(catalog, config.omitDisabledNativeModels === true);
-  const enabled = filterCatalogVisibleModels(routedModels, config);
-  const featured = config.subagentModels ?? [];
-  const ordered = orderForSubagents(enabled, featured);
+  // Decoupled from global catalog priorities (#PX-1276): subagentModels feed the
+  // rewritten spawn_agent tool description on the wire, not featured priority.
+  const ordered = filterCatalogVisibleModels(routedModels, config);
   const modelPickerOrder = config.modelPickerOrder ?? [];
   const multiAgentMode = config.multiAgentMode === "v1" || config.multiAgentMode === "v2"
     ? config.multiAgentMode : "default";
@@ -341,7 +340,6 @@ function prepareCatalog(
     template: template ? JSON.parse(JSON.stringify(template)) : null,
     gptSlugs: [],
     goModels: ordered,
-    featured,
     modelPickerOrder,
     wsEnabled: websocketsEnabled(config),
     multiAgentMode,
@@ -358,7 +356,6 @@ function prepareCatalog(
       template: template ? JSON.parse(JSON.stringify(template)) : null,
       gptSlugs: availableAccountNativeSlugs,
       goModels: [],
-      featured,
       wsEnabled: websocketsEnabled(config),
       multiAgentMode,
       exactComboSlugs,
@@ -389,7 +386,6 @@ function prepareCatalog(
     baselineCatalogModels,
     routedEntries,
     baseline,
-    featured,
     wsEnabled: websocketsEnabled(config),
     template,
     disabledModels: new Set(config.disabledModels ?? []),

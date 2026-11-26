@@ -30,12 +30,13 @@ görünen ilk beş satırı tanıtır.
 
 Aşağıdaki öncelik tabloları ve örnek, seçicinin tamamını sıralama modu kapalıyken geçerlidir.
 
+PX-1276'dan itibaren `subagentModels` artık genel katalog `priority` değerini (`0`–`4`) ezmez ve bu modelleri genel seçicinin en üstüne sabitlemez. Bunun yerine vekil, V1 ve V2 yüzeylerinde giden `spawn_agent` araç açıklamasını yeniden yazarak `subagentModels` seçimlerini sunar; genel seçici ise doğal öncelikleri veya `modelPickerOrder` düzenini korur.
+
 | Katalog girdisi | Öncelik | Kaynak |
 | --- | ---: | --- |
-| `subagentModels[i]` | `i` (`0` - `4`) | `src/codex/catalog/sync.ts` içindeki öne çıkan sıra haritası |
-| Diğer yönlendirilen modeller | `5` | `src/codex/catalog/sync.ts` içindeki yönlendirilen girdi oluşturma |
-| Varsayılan olarak yerel GPT slug'ları | `sourcePriority` | `src/codex/catalog/sync.ts` içindeki yerel girdi oluşturma |
-| Öne çıkan bir liste varken seçilmeyen yerel modeller | En az `featured.length + 100` | `src/codex/catalog/sync.ts` içindeki yerel katalog birleştirme |
+| Olağan yönlendirilen modeller | `5` | `src/codex/catalog/sync.ts` içindeki yönlendirilen girdi oluşturma |
+| `modelPickerOrder` içinde listelenen yönlendirilen modeller (yalnızca yönlendirilen kip) | `1000 + i` | `src/codex/catalog/sync.ts` içindeki salt görüntüleme seçici sırası |
+| Yerel GPT slug'ları | `sourcePriority` (yedek `9`) | Paylaşılan yerel kaynak önceliği çözümleyici |
 
 Yönetim API'si `src/server/management/agent-settings-routes.ts` içinde `slice(0,
 5)` ile `subagentModels`'ı beş girdiyle sınırlar. Bu, yalnızca ilk beş model
@@ -57,13 +58,6 @@ anlamına gelir:
 - `providers` nesnesindeki anahtarların bildirim sırası;
 - bir sağlayıcının `models` dizisindeki kimliklerin sırası.
 
-`orderForSubagents()` daha sonra yapılandırılmış öne çıkan seçimleri
-`subagentModels` ile aynı sırada öne taşımak için kararlı bir sıralama kullanır.
-Öne çıkmayan modeller daha önce belirlenen sağlayıcı/kimlik alfabetik göreli
-sırasını korur (`src/codex/catalog/sync.ts`). Girdiler oluşturulduğunda öne
-çıkan sıra da `0` ile `4` arasındaki önceliklere dönüştürülür, böylece Codex'in
-öncelik sıralaması bu öndeki diziyi korur.
-
 ## Görünürlük sıralamadan ayrıdır
 
 `selectedModels` ve `disabledModels` hangi yönlendirilen modellerin
@@ -78,19 +72,12 @@ edilmediğini değiştirebilir.
 
 ## Geçerli seçici deseni
 
-Uygun hesap seçicisi olmadığında ve boş olmayan bir öne çıkanlar listesi
-olduğunda ortaya çıkan sıra şöyledir:
+`modelPickerOrder` olmadan:
 
-1. `0` ile `4` arasındaki önceliklerle tam olarak yapılandırılmış
-   `subagentModels` sırasındaki modeller.
-2. `5` önceliğinde sağlayıcıya ve ardından model kimliğine göre alfabetik olarak
-   sıralanmış kalan tüm yönlendirilen modeller.
-3. Katalog birleştirme sırasında öne çıkan bloğun altına itilen seçilmemiş yerel
-   modeller.
+1. Tüm yönlendirilen modeller `5` önceliğinde kalır; sağlayıcıya ve ardından model kimliğine göre alfabetik sıralanır.
+2. Yerel GPT girdileri normal kaynak önceliklerini (`sourcePriority`, yedek `9`) kullanır.
 
-`subagentModels` olmadan yönlendirilen modeller `5` önceliğinde kalır, yerel GPT
-girdileri normal önceliklerini kullanır (sourcePriority, kaynak yoksa `9`) ve yönlendirilen grup sağlayıcı/kimlik olarak
-alfabetik kalır.
+`subagentModels` artık seçilen modelleri genel seçicide öne çıkarmaz; yalnızca giden `spawn_agent` araç açıklamasındaki geçersiz kılma listesini belirler.
 
 ## Örnek
 
@@ -106,27 +93,18 @@ subagentModels = [
 ]
 ```
 
-Seçici aşağıdaki gibi başlar:
+`modelPickerOrder` olmadığında genel seçici öncelikleri doğal düzeninde kalır:
 
-| Seçici konumu | Model | Öncelik | Neden orada görünüyor? |
-| ---: | --- | ---: | --- |
-| 1 | `gpt-5.5` | `0` | İlk `subagentModels` seçimi |
-| 2 | `opencode-go/glm-5.2` | `1` | Sağlayıcısı `anthropic`'ten sonra sıralansa bile ikinci seçim |
-| 3 | `anthropic/claude-opus-4-6` | `2` | Üçüncü seçim |
-| 4 | `gpt-5.6-sol` | `3` | Dördüncü seçim |
-| 5 | `gpt-5.6-terra` | `4` | Beşinci seçim |
-| 6 | `anthropic/claude-fable-5` | `5` | Sağlayıcı/kimlik alfabetik sırasına göre kalan ilk yönlendirilen kimlik |
-| 7 ve sonrası | Kalan yönlendirilen modeller | `5` | Alfabetik olarak sağlayıcı, ardından alfabetik olarak model kimliği |
-| Yönlendirilen modellerden sonra | Kalan yerel modeller | `featured.length + 100` veya üzeri | Seçilmemiş yereller öne çıkan bloğun altına taşınır |
+| Seçici grubu | Model | Öncelik | Neden orada görünüyor? |
+| --- | --- | ---: | --- |
+| Yönlendirilen modeller | `anthropic/claude-opus-4-6`, `opencode-go/glm-5.2`, ... | `5` | Alfabetik olarak sağlayıcı, ardından model kimliği |
+| Yerel modeller | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, ... | `sourcePriority` (yedek `9`) | Yerel kaynak sırası |
 
-İlk beş girdi `spawn_agent`'a tanıtılan geçersiz kılmalardır; geri kalanı normal
-seçici sırasında devam eder. Hesap seçicileriyle beş girdi sınırı, yalın yerel
-seçimler seçici nitelikli gruplara genişletildikten sonra geçerlidir.
+Bu sırada `spawn_agent`, giden yeniden yazma üzerinden yapılandırılan beş `subagentModels` seçimini sırayla tanıtır. Hesap seçicileriyle beş girdi sınırı, yalın yerel seçimler seçici nitelikli gruplara genişletildikten sonra geçerlidir.
 
 ## Sırayı değiştirme
 
-Öndeki model sırasını özelleştirmenin desteklenen yolu `subagentModels`'ı
-yeniden sıralamaktır. Kontrol panelinin **Alt Ajanlar** sayfası yalın yerel ve
+`spawn_agent`'a tanıtılacak geçersiz kılmaları seçmek ve sıralamak için `subagentModels`'ı kullanın. Kontrol panelinin **Alt Ajanlar** sayfası yalın yerel ve
 yönlendirilen kimlikleri yeniden sıralayabilir. Tam
 `<seçici>/<yerel-openai-modeli>` seçimleri için `ocx agent subagents set`
 kullanın veya opencodex yapılandırmasını düzenleyin; kontrol paneli bu seçimleri
@@ -136,10 +114,9 @@ seçici nitelikli katalog satırına genişleyebilir, bu nedenle yapılandırıl
 seçimler ve tanıtılan satırlar birebir olmak zorunda değildir.
 
 `modelPickerOrder` yalnızca seçicideki görüntüleme sırasını belirler. Liste yalnızca yönlendirilmiş
-`<provider>/<model>` kimlikleri içeriyorsa, listelenen ve öne çıkarılmamış satırlar ayrı bir
+`<provider>/<model>` kimlikleri içeriyorsa, listelenen satırlar ayrı bir
 görüntüleme aralığında (`1000 + i`) liste sırasıyla yer alır. Listelenmeyen yönlendirilmiş satırlar
-normal önceliklerini korur ve bu aralıktan önce kalır. `subagentModels` içindeki satırlar öne çıkan
-önceliklerini, yerel satırlar da normal konumlarını korur. Göreli sırasını belirlemek istediğiniz
+normal önceliklerini (`5`) korur ve bu aralıktan önce kalır; yerel satırlar da normal konumlarını korur. Göreli sırasını belirlemek istediğiniz
 tüm yönlendirilmiş satırları listeleyin.
 
 Seçicinin tamamını sıralamak için `gpt-5.6-sol` gibi `/` içermeyen en az bir yalın katalog kimliği

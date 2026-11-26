@@ -12,7 +12,7 @@ const globals = ["document", "window", "navigator", "localStorage", "sessionStor
 const ids: PickerModelIdentity[] = ["f", "a", "b", "c"].map(id => ({ provider: "p", id, namespaced: `p/${id}` }));
 const initial = (): PickerOrderSettings => ({ pickerAvailable: ["p/f", "p/a", "p/b", "p/c"],
   chosen: ["native", "p/f"], pickerOrder: ["p/a", "p/b", "p/c", "p/f"], pickerOrderMode: null });
-const changedDraft = ["p/f", "p/b", "p/a", "p/c"];
+const changedDraft = ["p/b", "p/a", "p/c", "p/f"];
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: Error) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
@@ -122,14 +122,23 @@ test("entering Custom reads a fresh GET each activation and only renders pickerA
   await render(); expect(requests.map(r => [r.url, r.method])).toEqual([["/a/api/subagent-models", "GET"]]);
   expect(order()).toEqual([]); expect(busy.at(-1)).toBe(true);
   await reply(0, { ...initial(), available: ["native", "other/roster-only"] });
-  expect(order()).toEqual(["p/f", "p/a", "p/b", "p/c"]); expect(busy.at(-1)).toBe(false);
+  expect(order()).toEqual(["p/a", "p/b", "p/c", "p/f"]); expect(busy.at(-1)).toBe(false);
   await render("/a", ids, false); await render(); expect(requests).toHaveLength(2);
   await reply(1, { ...initial(), pickerOrder: ["p/c", "p/b", "p/a"] });
-  expect(order()).toEqual(["p/f", "p/c", "p/b", "p/a"]);
+  expect(order()).toEqual(["p/c", "p/b", "p/a", "p/f"]);
 });
 
+test("Custom stays editable when chosen is omitted", async () => {
+  await render();
+  const { chosen: _chosen, ...settings } = initial();
+  await reply(0, settings);
+  expect(order()).toEqual(["p/a", "p/b", "p/c", "p/f"]);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  await click("Move p/a down");
+  expect(button("Save draft").disabled).toBe(false);
+});
 for (const [name, override] of [
-  ["missing", {}], ["null", { chosen: null }], ["non-array", { chosen: "p/f" }], ["invalid item", { chosen: [1] }],
+  ["null", { chosen: null }], ["non-array", { chosen: "p/f" }], ["invalid item", { chosen: [1] }],
 ] as const) test(`Custom cannot edit with ${name} chosen`, async () => {
   await render();
   const { chosen: _chosen, ...settings } = initial();
@@ -147,30 +156,30 @@ test("saved bare native order remains locked without sending a replacement", asy
 
 test("forward/backward drop and Up/Down controls submit the complete routed list only", async () => {
   await render(); await reply(0, initial());
-  expect(button("Move p/f down").disabled).toBe(true); expect(button("Move p/a up").disabled).toBe(true);
-  await drop("p/a", "p/c"); expect(order()).toEqual(["p/f", "p/b", "p/a", "p/c"]);
-  await drop("p/c", "p/b"); expect(order()).toEqual(["p/f", "p/c", "p/b", "p/a"]);
+  expect(button("Move p/a up").disabled).toBe(true); expect(button("Move p/f down").disabled).toBe(true);
+  await drop("p/a", "p/c"); expect(order()).toEqual(["p/b", "p/a", "p/c", "p/f"]);
+  await drop("p/c", "p/b"); expect(order()).toEqual(["p/c", "p/b", "p/a", "p/f"]);
   button("Move p/c down").focus(); await click("Move p/c down");
-  expect(order()).toEqual(["p/f", "p/b", "p/c", "p/a"]);
+  expect(order()).toEqual(["p/b", "p/c", "p/a", "p/f"]);
   expect(document.activeElement).toBe(button("Move p/c down"));
-  await click("Move p/a up"); expect(order()).toEqual(changedDraft);
-  expect(host.querySelector('[role="status"]')?.textContent).toBe("p/a: position 3 of 4");
+  await click("Move p/a up"); expect(order()).toEqual(["p/b", "p/a", "p/c", "p/f"]);
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("p/a: position 2 of 4");
   await click("Save draft"); expect(requests.map(r => r.method)).toEqual(["GET", "GET"]);
   await reply(1, initial());
   expect(requests[2]?.method).toBe("PUT");
   expect(requests[2]?.body).toEqual({ pickerOrder: changedDraft, pickerOrderMode: null });
 });
 
-test("external, self, fixed and expired drag tokens cannot reorder", async () => {
+test("external, self, and expired drag tokens cannot reorder while featured rows remain movable", async () => {
   await render(); await reply(0, initial());
-  const original = ["p/f", "p/a", "p/b", "p/c"], external = transfer();
+  const original = ["p/a", "p/b", "p/c", "p/f"], external = transfer();
   external.setData("application/x-ocx-picker-order", "external");
   await dragEvent(row("p/b"), "drop", external); expect(order()).toEqual(original);
-  await drop("p/a", "p/a"); await drop("p/a", "p/f"); expect(order()).toEqual(original);
+  await drop("p/a", "p/a"); expect(order()).toEqual(original);
   const local = transfer(); await dragEvent(button("Drag p/a"), "dragstart", local);
   const wrongType = transfer(); wrongType.setData("text/plain", "p/a");
   expect(await dragEvent(row("p/b"), "dragover", wrongType)).toBe(false);
-  expect(await dragEvent(row("p/f"), "dragover", local)).toBe(false);
+  expect(await dragEvent(row("p/f"), "dragover", local)).toBe(true);
   expect(await dragEvent(row("p/b"), "dragover", local)).toBe(true);
   await dragEvent(row("p/b"), "drop", external); expect(order()).toEqual(original);
   await dragEvent(row("p/b"), "drop", local); expect(order()).toEqual(original);
@@ -187,15 +196,15 @@ test("preflight roster drift blocks PUT, preserves draft, and requires explicit 
   expect(host.textContent).toContain("Picker settings changed.");
   await click("Save draft"); expect(requests.map(r => r.method)).toEqual(["GET", "GET"]);
   await click("Reload and discard draft"); expect(order()).toEqual(changedDraft);
-  await reply(2, updated); expect(order()).toEqual(["p/b", "p/a", "p/c", "p/f"]);
+  await reply(2, updated); expect(order()).toEqual(["p/a", "p/b", "p/c", "p/f"]);
   expect(button("Move p/a down").disabled).toBe(false); expect(receipts).toEqual([]);
-  expect(button("Drag p/b").disabled).toBe(true);
+  expect(button("Drag p/b").disabled).toBe(false);
   expect(button("Drag p/f").disabled).toBe(false);
   expect(button("Move p/a up").disabled).toBe(true);
-  await drop("p/b", "p/f"); expect(order()).toEqual(["p/b", "p/a", "p/c", "p/f"]);
-  await drop("p/f", "p/a"); expect(order()).toEqual(["p/b", "p/f", "p/a", "p/c"]);
+  await drop("p/b", "p/f"); expect(order()).toEqual(["p/a", "p/c", "p/b", "p/f"]);
+  await drop("p/f", "p/a"); expect(order()).toEqual(["p/f", "p/a", "p/c", "p/b"]);
   await click("Save draft"); await reply(3, updated);
-  expect(requests[4]?.body).toEqual({ pickerOrder: ["p/b", "p/f", "p/a", "p/c"], pickerOrderMode: null });
+  expect(requests[4]?.body).toEqual({ pickerOrder: ["p/f", "p/a", "p/c", "p/b"], pickerOrderMode: null });
 });
 
 for (const failure of ["rejected", "malformed JSON", "malformed receipt", "network"] as const)
@@ -262,7 +271,7 @@ for (const stage of stages) {
     expect(requests).toHaveLength(count); expect(receipts).toEqual([]); expect(order()).toEqual([]);
     expect(busy).toEqual(settledBusy); // Old finally must not clear the successor's busy state.
     await reply(current, { ...initial(), pickerOrder: ["p/c", "p/a", "p/b"] });
-    expect(order()).toEqual(["p/f", "p/c", "p/a", "p/b"]);
+    expect(order()).toEqual(["p/c", "p/a", "p/b", "p/f"]);
   });
   test(`identity drift during ${stage} suppresses stale snapshot, PUT and receipt publication`, async () => {
     const settle = await pauseAt(stage), count = requests.length;
@@ -303,7 +312,7 @@ for (const availability of ["absent", "throws"] as const)
     await reply(requests.findIndex(r => r.url === "/right/api/subagent-models"), initial());
     const left = host.querySelector<HTMLElement>('[data-editor="left"]')!;
     const right = host.querySelector<HTMLElement>('[data-editor="right"]')!;
-    const original = ["p/f", "p/a", "p/b", "p/c"], type = "application/x-ocx-picker-order";
+    const original = ["p/a", "p/b", "p/c", "p/f"], type = "application/x-ocx-picker-order";
     const leftDrag = transfer(), rightDrag = transfer();
     await dragEvent(button("Drag p/a", left), "dragstart", leftDrag);
     await dragEvent(button("Drag p/a", right), "dragstart", rightDrag);
@@ -336,14 +345,14 @@ test("fresh legacy featured settings cannot unlock a row missing from the model 
   await render("/a", [a, { provider: "p", id: "team/model", namespaced: "p/team-model" }]);
   await click("Reload and discard draft"); await reply(2, settings);
   expect(order()).toEqual(["p/team-model", "p/a"]);
-  expect(button("Drag p/team-model").disabled).toBe(true);
+  expect(button("Drag p/team-model").disabled).toBe(false);
   expect(requests.map(r => r.method)).toEqual(["GET", "GET", "GET"]);
 });
 
-test("duplicate featured choices use last occurrence and padded roster strings do not lock rows", async () => {
+test("duplicate featured choices and padded roster strings do not lock rows", async () => {
   await render(); await reply(0, { ...initial(), chosen: ["p/a", "p/b", "p/a", " p/c "] });
-  expect(order()).toEqual(["p/b", "p/a", "p/c", "p/f"]);
-  expect(button("Drag p/b").disabled).toBe(true); expect(button("Drag p/a").disabled).toBe(true);
+  expect(order()).toEqual(["p/a", "p/b", "p/c", "p/f"]);
+  expect(button("Drag p/b").disabled).toBe(false); expect(button("Drag p/a").disabled).toBe(false);
   expect(button("Drag p/c").disabled).toBe(false);
 });
 
@@ -375,15 +384,15 @@ test("Models pins cache-inferred Custom across late parent GET publication, then
   const initialReads = requests.map((request, index) => ({ request, index }));
   expect(initialReads).toHaveLength(2);
   for (const { index } of initialReads) await reply(index, custom);
-  expect(order()).toEqual(["p/f", "p/c", "p/a", "p/b"]);
+  expect(order()).toEqual(["p/c", "p/a", "p/f", "p/b"]);
   await click("Move p/a down"); const editor = host.querySelector(".picker-order-editor");
-  expect(order()).toEqual(["p/f", "p/c", "p/b", "p/a"]); expect(button("Save draft").disabled).toBe(false);
+  expect(order()).toEqual(["p/c", "p/f", "p/a", "p/b"]); expect(button("Save draft").disabled).toBe(false);
   // Integration seam: publish the same parent resource state a late GET would install.
   const late = deferred<PickerOrderSettings>();
   const publication = late.promise.then(value => setClientResourceData("ocx.models.catalog.v1:/a:picker-order", value));
   await act(async () => { late.resolve({ ...initial(), pickerOrderMode: "provider" }); await publication; });
   expect(host.querySelector(".picker-order-editor")).toBe(editor);
-  expect(order()).toEqual(["p/f", "p/c", "p/b", "p/a"]); expect(button("Save draft").disabled).toBe(false);
+  expect(order()).toEqual(["p/c", "p/f", "p/a", "p/b"]); expect(button("Save draft").disabled).toBe(false);
   expect(requests.every(r => r.method === "GET")).toBe(true);
   await act(async () => { root!.render(<LanguageProvider><Models apiBase="/b" /></LanguageProvider>); });
   expect(host.querySelector(".picker-order-editor")).toBeNull();

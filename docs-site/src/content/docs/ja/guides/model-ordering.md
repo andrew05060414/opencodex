@@ -24,12 +24,13 @@ selector がない場合の priority は次のとおりです。
 
 以下の優先順位表と例は、ピッカー全体の並び替えを有効にしていない場合のものです。
 
+PX-1276 以降、`subagentModels` はグローバルカタログの `priority`（`0`〜`4`）を上書きせず、グローバルピッカー先頭への固定も行いません。代わりにプロキシが V1 / V2 の送信時 `spawn_agent` ツール説明を書き換えて `subagentModels` を提示し、グローバルピッカーは通常の `priority` または `modelPickerOrder` に従います。
+
 | カタログ項目 | Priority | 根拠 |
- --- | ---: | --- |
-| `subagentModels[i]` | `i`(`0` から `4`) | `src/codex/catalog/sync.ts` の featured rank map |
-| その他のルーティングモデル | `5` | `src/codex/catalog/sync.ts` のルーティング項目生成 |
-| デフォルトネイティブ GPT スラッグ | `sourcePriority` | `src/codex/catalog/sync.ts` のネイティブ項目生成 |
-| featured リストがあるとき選択されていないネイティブモデル | 最小 `featured.length + 100` | `src/codex/catalog/sync.ts` のネイティブカタログマージ |
+| --- | ---: | --- |
+| 一般ルーティングモデル | `5` | `src/codex/catalog/sync.ts` のルーティング項目生成 |
+| `modelPickerOrder` 記載のルーティングモデル（ルーティングのみモード） | `1000 + i` | `src/codex/catalog/sync.ts` の表示用ピッカー順位 |
+| ネイティブ GPT スラッグ | `sourcePriority`（フォールバック `9`） | 共通ネイティブソース優先度リゾルバー |
 
 管理 API は `src/server/management/agent-settings-routes.ts` の `slice(0, 5)` で `subagentModels` を最大
 5 つに制限します。これは最初の 5 モデルオーバーライドだけを広告する Codex `spawn_agent` サーフェスと合致します。
@@ -46,11 +47,6 @@ selector がない場合の priority は次のとおりです。
 - `providers` オブジェクトで key を宣言した順序
 - 各プロバイダーの `models` 配列に ID を書いた順序
 
-その後 `orderForSubagents()` が stable sort を使い、フィーチャー済みモデルを `subagentModels` に書いた順に
-前に動かします。フィーチャー以外のモデルは前に決定されたプロバイダー/ID アルファベット相対順序を保ちます
-(`src/codex/catalog/sync.ts`)。項目生成時の featured rank も priority `0` から `4` に変換されるため
-Codex の priority ソートでもこの先頭順序は保存されます。
-
 ## 公開可否と順序は別物
 
 `selectedModels` と `disabledModels` はどのルーティングモデルを公開するか決めるだけで、ソートを制御しません。
@@ -62,15 +58,12 @@ Codex の priority ソートでもこの先頭順序は保存されます。
 
 ## 最終ピッカーパターン
 
-有効な account selector がなく、featured リストが空でない場合の最終順序は次のとおりです。
+`modelPickerOrder` が未設定の場合：
 
-1. 設定された `subagentModels` 順どおりに、priority `0` から `4` を受けたモデル
-2. 残りのすべてのルーティングモデル、プロバイダー順とモデル ID 順アルファベットソート、priority `5`
-3. カタログマージ過程で featured ブロックの下に押し下げられた選択されていないネイティブモデル
+1. すべてのルーティングモデルは priority `5` で、プロバイダー順・モデル ID 順のアルファベット順になります。
+2. ネイティブ GPT 項目は通常のソース priority（フォールバック `9`）を使います。
 
-`subagentModels` がない場合、ルーティングモデルは priority `5` を維持し、ネイティブ GPT 項目は通常 priority
-(sourcePriority、情報がなければ `9`)を使います。ルーティンググループ内部は引き続きプロバイダー/ID
-アルファベット順です。
+`subagentModels` を設定してもグローバルピッカーでは先頭に固定されず、送信時の `spawn_agent` 説明書き換えで候補リストを制御します。
 
 ## 例
 
@@ -86,27 +79,18 @@ subagentModels = [
 ]
 ```
 
-ピッカーの先頭順序は次のとおりです。
+`modelPickerOrder` が未設定のとき、グローバルピッカーの priority は自然な順を保ちます：
 
-| ピッカー位置 | モデル | Priority | この位置に表示される理由 |
- ---: | --- | ---: | --- |
-| 1 | `gpt-5.5` | `0` | 最初の `subagentModels` 選択 |
-| 2 | `opencode-go/glm-5.2` | `1` | プロバイダーが `anthropic` より後でも 2 番目の選択なのでこの位置に表示 |
-| 3 | `anthropic/claude-opus-4-6` | `2` | 3 番目の選択 |
-| 4 | `gpt-5.6-sol` | `3` | 4 番目の選択 |
-| 5 | `gpt-5.6-terra` | `4` | 5 番目の選択 |
-| 6 | `anthropic/claude-fable-5` | `5` | 残りのルーティングモデルのうちプロバイダー/ID アルファベット順の最初 |
-| 7 以降 | 残りのルーティングモデル | `5` | プロバイダー アルファベット順、同じプロバイダー内ではモデル ID アルファベット順 |
-| ルーティングモデルの後 | 残りのネイティブモデル | `featured.length + 100` 以上 | 選択されていないネイティブモデルは featured ブロックの下に移動 |
+| ピッカーグループ | モデル | Priority | この位置に表示される理由 |
+| --- | --- | ---: | --- |
+| ルーティングモデル | `anthropic/claude-opus-4-6`, `opencode-go/glm-5.2`, ... | `5` | プロバイダー アルファベット順、次にモデル ID アルファベット順 |
+| ネイティブモデル | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, ... | `sourcePriority`（フォールバック `9`） | ネイティブソース順 |
 
-最初の 5 項目は `spawn_agent` に広告されるオーバーライドで、残りは通常のピッカー順序に続きます。
-
-account selector がある場合、5 項目の制限は bare native の選択が selector-qualified グループへ
-展開された後に適用されます。
+一方、`spawn_agent` には送信時の書き換えによって `subagentModels` の 5 つが設定順で提示されます。account selector がある場合、5 項目の制限は bare native の選択が selector-qualified グループへ展開された後に適用されます。
 
 ## 順序を変える方法
 
-先頭モデルの順序を変更するサポート手段は、`subagentModels` を並べ替えることです。
+`spawn_agent` に提示する候補とその順序は `subagentModels` で指定します。
 ダッシュボードの **Sub-agents** ページでは bare native id と routed id を並べ替えられます。
 設定と `ocx agent subagents set` は exact account-qualified
 `<selector>/<native-openai-model>` id も受け付けます。ダッシュボードは保存済みの id を現在利用できなくても保持します。設定する id は最大 5 つにしてください。account selector がある
@@ -114,9 +98,9 @@ account selector がある場合、5 項目の制限は bare native の選択が
 される行は必ずしも一対一ではありません。
 
 `modelPickerOrder` はピッカーの表示順だけを指定します。ルーティング ID
-`<provider>/<model>` だけを指定した場合、一覧にある非 featured 行は指定順の表示帯
-（`1000 + i`）に並びます。一覧にないルーティング行は通常の優先順位を保ち、この表示帯より前に
-残ります。`subagentModels` にも含まれる行は featured の優先順位を保ち、ネイティブ行の位置も変わりません。
+`<provider>/<model>` だけを指定した場合、一覧にあるルーティング行は指定順の表示帯
+（`1000 + i`）に並びます。一覧にないルーティング行は通常の優先順位（`5`）を保ち、この表示帯より前に
+残ります。ネイティブ行の位置も変わりません。
 相対的な順序を指定したいルーティング行はすべて一覧に含めてください。
 
 ピッカー全体を並び替えるには、`/` を含まない、空でも空白だけでもないカタログ ID
