@@ -129,8 +129,8 @@
       "layer": "layer3-local",
       "sourceBranch": "regroup/combos-page",
       "sourceTipSha": "a0a91bb1a",
-      "commits": ["0e6c5bd32"],
-      "carriedCommits": ["0e6c5bd32"],
+      "commits": ["0e6c5bd32", "5a3acfc47"],
+      "carriedCommits": ["0e6c5bd32", "5a3acfc47"],
       "summary": "Combos overview route board (one row per combo, inline quota line, drag-and-drop channel editor, member capability probe) and ProviderModels latest-per-family filter. Upstream #8914 carried only suggested-combos from #8739."
     },
     {
