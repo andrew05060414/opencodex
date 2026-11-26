@@ -79,6 +79,40 @@ import { decisionModelRouteError, normalizeDecisionModelSelector } from "./decis
 import { comboConfigIssues, resolveComboId } from "../../combos/types";
 import { COMBO_DEFAULT_WAIT_FOR_COOLDOWN_MS } from "../../combos";
 
+const deferredCatalogState = new WeakMap<
+  ManagementContext["convergeCodexCatalog"],
+  { running: boolean; rerun: boolean }
+>();
+
+/**
+ * Coalesced background catalog convergence for interactive dashboard mutations: config.json and
+ * live routing state are already committed, so the UI gets an immediate 200 instead of waiting
+ * 10-25s for provider discovery / Codex catalog writes; rapid clicks fold into one trailing run.
+ */
+export function scheduleDeferredCatalogConverge(
+  converge: ManagementContext["convergeCodexCatalog"],
+): void {
+  const state = deferredCatalogState.get(converge) ?? { running: false, rerun: false };
+  deferredCatalogState.set(converge, state);
+  if (state.running) {
+    state.rerun = true;
+    return;
+  }
+  state.running = true;
+  void (async () => {
+    try {
+      do {
+        state.rerun = false;
+        await converge();
+      } while (state.rerun);
+    } catch {
+      // Best-effort background refresh; config.json is already authoritative.
+    } finally {
+      state.running = false;
+    }
+  })();
+}
+
 
 /**
  * Management wire shape: omit fields whose value is the default, so GET responses and
@@ -570,6 +604,18 @@ export async function handleComboRoutes(ctx: ManagementContext): Promise<Respons
       clearComboSelectionState(renameFrom);
       clearComboTargetCooldowns(renameFrom);
     }
+    if (ctx.principal === "gui-session") {
+      scheduleDeferredCatalogConverge(convergeCodexCatalog);
+      if (shouldSyncClaudeAgentDefs) void syncClaudeAgentDefsBestEffort().catch(() => {});
+      return jsonResponse({
+        success: true,
+        id,
+        model: newPublicModel,
+        combo: sparseComboConfig(stored),
+        catalogRefresh: { status: "skipped", reason: "busy", retryable: true },
+        catalogRefreshPending: true,
+      });
+    }
     const catalogRefresh = await convergeCodexCatalog();
     if (shouldSyncClaudeAgentDefs) await syncClaudeAgentDefsBestEffort();
     // Wire shape matches persistence: omit default imageInput "auto".
@@ -602,6 +648,15 @@ export async function handleComboRoutes(ctx: ManagementContext): Promise<Respons
     reconcileLiveStateStores();
     clearComboSelectionState(id);
     clearComboTargetCooldowns(id);
+    if (ctx.principal === "gui-session") {
+      scheduleDeferredCatalogConverge(convergeCodexCatalog);
+      return jsonResponse({
+        success: true,
+        id,
+        catalogRefresh: { status: "skipped", reason: "busy", retryable: true },
+        catalogRefreshPending: true,
+      });
+    }
     const catalogRefresh = await convergeCodexCatalog();
     return jsonResponse({ success: true, id, catalogRefresh });
   }

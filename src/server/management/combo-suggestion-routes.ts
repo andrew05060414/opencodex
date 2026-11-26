@@ -16,6 +16,7 @@ import { readConfigFileSnapshot } from "../../config/diagnostics";
 import { mutatePersistedConfig } from "../../config";
 import { managementBodyTooLargeResponse, readManagementJsonBody } from "./body";
 import { hasHumanDashboardSession } from "./consent-session";
+import { scheduleDeferredCatalogConverge } from "./combo-routes";
 import { isPlainRecord } from "./shared";
 
 const MAX_PROVIDERS = 256;
@@ -207,6 +208,14 @@ async function saveSuggestion(ctx: ManagementContext): Promise<Response> {
   reconcileLiveStateStores();
   clearComboSelectionState(id);
   clearComboTargetCooldowns(id);
+  if (ctx.principal === "gui-session") {
+    scheduleDeferredCatalogConverge(ctx.convergeCodexCatalog);
+    return jsonResponse({
+      success: true,
+      catalogRefresh: { status: "skipped", reason: "busy", retryable: true },
+      catalogRefreshPending: true,
+    }, 200, req, config);
+  }
   const catalogRefresh = await ctx.convergeCodexCatalog();
   return jsonResponse({ success: true, catalogRefresh }, 200, req, config);
 }
