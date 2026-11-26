@@ -16,6 +16,7 @@ import {
   type RouteBoardProvider,
 } from "../../route-board-model";
 import type { ModelOption, ProviderOption } from "../combo-workspace-types";
+import { RemoveComboDialog } from "../combo-workspace-dialogs";
 import { ChannelEditor, type EditableChannel } from "./ChannelEditor";
 import type { SaveMemberModel } from "./MemberTable";
 import type { ProbeMemberModel } from "./MemberProbe";
@@ -49,6 +50,7 @@ export interface RouteBoardProps {
   /** Writes one member model's per-provider settings from the editor's member table. */
   onSaveModel?: SaveMemberModel;
   onProbeModel?: ProbeMemberModel;
+  onRemove?: (id: string) => Promise<SaveResult>;
 }
 
 /** Combos overview: one row per combo, inline strategy and on/off, click a row to edit its channels. */
@@ -60,6 +62,7 @@ export function RouteBoard(props: RouteBoardProps) {
   /** Combos with a save in flight; each run clears only its own id. */
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [messages, setMessages] = useState<Record<string, string>>({});
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; model: string } | null>(null);
   const rows = buildRouteRows({
     combos: props.combos,
     catalog: props.catalog,
@@ -114,6 +117,15 @@ export function RouteBoard(props: RouteBoardProps) {
     if (await run(combo.id, () => props.onSave(item, channels, settings))) setExpanded(null);
   };
 
+  const confirmRemove = async () => {
+    if (!removeTarget || !props.onRemove) return;
+    const target = removeTarget;
+    setRemoveTarget(null);
+    if (await run(target.id, () => props.onRemove!(target.id))) {
+      setExpanded((current) => (current === target.id ? null : current));
+    }
+  };
+
   if (rows.length === 0) {
     return (
       <div className="rb-empty">
@@ -124,47 +136,57 @@ export function RouteBoard(props: RouteBoardProps) {
   }
 
   return (
-    <ul className="rb-list" aria-label={t("routeBoard.listAria")}>
-      {rows.map((row) => (
-        <ModelRouteRow
-          key={row.combo.id}
-          row={row}
-          expanded={expanded === row.combo.id}
-          lastResortActive={props.lastResortActive.has(row.combo.id)}
-          onOpenContext={() => { setMoreFor(row.combo.id); setExpanded(row.combo.id); }}
-          busy={busy.has(row.combo.id)}
-          locked={props.lockedId === row.combo.id}
-          message={messages[row.combo.id] ?? null}
-          onToggleExpanded={() => { setMoreFor(null); setExpanded((current) => current === row.combo.id ? null : row.combo.id); }}
-          onStrategy={(next) => changeStrategy(row.combo, next)}
-          onEnabled={(next) => void run(row.combo.id, () => props.onSetEnabled(row.combo.id, next))}
-        >
-          <ChannelEditor
+    <>
+      <ul className="rb-list" aria-label={t("routeBoard.listAria")}>
+        {rows.map((row) => (
+          <ModelRouteRow
             key={row.combo.id}
-            moreOpen={moreFor === row.combo.id}
-            catalogContext={props.catalog[row.combo.id]?.contextWindow}
-            comboModel={row.publicId}
-            strategy={row.combo.strategy}
-            channels={row.channels}
-            quotaFor={(provider) => channelQuota(
-              providerByName.get(provider),
-              reported.get(provider),
-              row.channels.filter((channel) => channel.provider === provider).map((channel) => channel.model),
-            )}
-            providers={props.providers}
-            models={props.models}
+            row={row}
+            expanded={expanded === row.combo.id}
             lastResortActive={props.lastResortActive.has(row.combo.id)}
-            labels={distinctProviderLabels(row.channels.map((channel) => channel.provider), (provider) => formatProviderDisplayName(provider, t))}
-            capability={props.capability?.[row.combo.id] ?? DEFAULT_CAPABILITY_SETTINGS}
-            saving={busy.has(row.combo.id)}
+            onOpenContext={() => { setMoreFor(row.combo.id); setExpanded(row.combo.id); }}
+            busy={busy.has(row.combo.id)}
             locked={props.lockedId === row.combo.id}
-            onSave={(channels, settings) => void saveChannels(row.combo, channels, settings)}
-            onSaveModel={props.onSaveModel}
-            onProbeModel={props.onProbeModel}
-            onCancel={() => setExpanded(null)}
-          />
-        </ModelRouteRow>
-      ))}
-    </ul>
+            message={messages[row.combo.id] ?? null}
+            onToggleExpanded={() => { setMoreFor(null); setExpanded((current) => current === row.combo.id ? null : row.combo.id); }}
+            onStrategy={(next) => changeStrategy(row.combo, next)}
+            onEnabled={(next) => void run(row.combo.id, () => props.onSetEnabled(row.combo.id, next))}
+          >
+            <ChannelEditor
+              key={row.combo.id}
+              moreOpen={moreFor === row.combo.id}
+              catalogContext={props.catalog[row.combo.id]?.contextWindow}
+              comboModel={row.publicId}
+              strategy={row.combo.strategy}
+              channels={row.channels}
+              quotaFor={(provider) => channelQuota(
+                providerByName.get(provider),
+                reported.get(provider),
+                row.channels.filter((channel) => channel.provider === provider).map((channel) => channel.model),
+              )}
+              providers={props.providers}
+              models={props.models}
+              lastResortActive={props.lastResortActive.has(row.combo.id)}
+              labels={distinctProviderLabels(row.channels.map((channel) => channel.provider), (provider) => formatProviderDisplayName(provider, t))}
+              capability={props.capability?.[row.combo.id] ?? DEFAULT_CAPABILITY_SETTINGS}
+              saving={busy.has(row.combo.id)}
+              locked={props.lockedId === row.combo.id}
+              onSave={(channels, settings) => void saveChannels(row.combo, channels, settings)}
+              onSaveModel={props.onSaveModel}
+              onProbeModel={props.onProbeModel}
+              onRemove={props.onRemove ? () => setRemoveTarget({ id: row.combo.id, model: row.publicId }) : undefined}
+              onCancel={() => setExpanded(null)}
+            />
+          </ModelRouteRow>
+        ))}
+      </ul>
+      {removeTarget && (
+        <RemoveComboDialog
+          model={removeTarget.model}
+          onCancel={() => setRemoveTarget(null)}
+          onConfirm={() => void confirmRemove()}
+        />
+      )}
+    </>
   );
 }

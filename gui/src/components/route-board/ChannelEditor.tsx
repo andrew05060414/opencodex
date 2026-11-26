@@ -91,6 +91,7 @@ export function ChannelEditor({
   onSave,
   onSaveModel,
   onProbeModel,
+  onRemove,
   onCancel,
 }: {
   comboModel: string;
@@ -117,6 +118,8 @@ export function ChannelEditor({
   onSaveModel?: SaveMemberModel;
   /** Probes what one member's relay accepts (image input, effort levels). */
   onProbeModel?: ProbeMemberModel;
+  /** Opens delete confirmation for this combo from the overview editor. */
+  onRemove?: () => void;
   onCancel: () => void;
 }) {
   const t = useT();
@@ -343,6 +346,16 @@ export function ChannelEditor({
       </div>
 
       <div className="rb-editor-footer">
+        {onRemove && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm rb-delete-combo"
+            disabled={saving || locked}
+            onClick={onRemove}
+          >
+            {t("common.delete")}
+          </button>
+        )}
         <span className="rb-editor-spacer" />
         {dirty && <span className="rb-unsaved">{t("routeBoard.edit.unsaved")}</span>}
         <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>{t("common.cancel")}</button>
