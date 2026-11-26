@@ -432,10 +432,7 @@ Data keys authorize only the data matrix and authenticated catalog. Admin creden
 
 ### Model picker ordering settings
 
-`GET /api/subagent-models` retains `chosen`, `available`, and `catalogState`, and adds routed-only
-`pickerAvailable`, saved `pickerOrder`, and nullable `pickerOrderMode`. `available` still includes
-saved disabled/missing roster choices; it is not the eligible-picker set. Bare aliases are excluded
-from the routed preset surface because a bare id activates complete Codex-picker ordering.
+`GET /api/subagent-models` retains `chosen`, `available`, and `catalogState`, and exposes unified `pickerAvailable` (visible bare native models followed by visible routed slugs, matching PUT's visibility check), saved `pickerOrder`, and nullable `pickerOrderMode`. `available` still includes saved disabled/missing roster choices; it is not the eligible-picker set.
 
 PUT accepts `models` and/or `pickerOrder`; `pickerOrderMode` requires `pickerOrder` and accepts
 `alphabetical`, `provider`, `most-used`, or null. Roster arrays keep their existing exact string
@@ -451,7 +448,8 @@ Only roster writes sync Claude agent definitions/auto-apply Desktop profiles. Pi
 converge the Codex catalog once and return its disposition. The Models UI owns a separate bounded
 picker data resource so failure cannot erase the ordinary model inventory; Apply publishes through
 the resource's generation fence, and Most used reads usage only on explicit Apply. Stored mode
-survives availability drift, while complete/native custom orders await explicit replacement.
+survives availability drift, and the Custom editor drags and round-trips unified native and routed
+orders with bare native ids matched verbatim.
 
 The shared atomic replacement publisher also identifies explicit Remote Workspace file writes as `remote-workspace`. Remote Workspace uses a separate, explicitly enabled server surface with structural WebSocket callbacks and awaited per-server cleanup; [its contract](remote-workspace.md) owns that integration and records its isolated owner and support limits.
 

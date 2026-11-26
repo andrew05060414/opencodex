@@ -91,8 +91,7 @@ export default function ModelPickerOrderEditor({ apiBase, active, identities, on
       }
       const rows = customPickerRows(settings, identities);
       if (!rows) {
-        setBlocked(settings.pickerOrder.some(id => !id.includes("/"))
-          ? "models.pickerOrder.nativeLocked" : "models.pickerOrder.catalogRequired");
+        setBlocked("models.pickerOrder.catalogRequired");
         return;
       }
       if (!save) {
@@ -166,6 +165,7 @@ export default function ModelPickerOrderEditor({ apiBase, active, identities, on
               event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(DRAG_TYPE, token);
             }}><IconGrip width={14} height={14} aria-hidden="true" /></button>
           <code className="picker-order-name">{id}</code>
+          {!id.includes("/") && <span className="models-chip muted text-caption">{t("models.pickerOrder.native")}</span>}
           {fixed && <span className="muted text-caption">{t("models.pickerOrder.featured")}</span>}
           <span className="picker-order-actions">
             <button type="button" className="btn btn-ghost btn-sm"

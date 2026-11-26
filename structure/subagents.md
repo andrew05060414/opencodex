@@ -486,17 +486,18 @@ behaviors.
 
 ### Saved picker presets
 
-The Models page saves routed snapshots in `modelPickerOrder` and records their origin in
-`modelPickerOrderMode` (`alphabetical`, `provider`, `most-used`). Mode is UI provenance, not a
-catalog sorting policy: catalog writers consume the saved array. Routed-only featured/native
-bands and complete-picker natural-rank preservation remain as described above. Public
-`buildCatalogEntries` accepts the order before optional native-source inputs and applies the complete-order
-pass after building. On-disk convergence retains its existing post-merge final pass.
+The Models page and `ocx models order` save unified visible native and routed snapshots in
+`modelPickerOrder` and record their origin in `modelPickerOrderMode` (`alphabetical`, `provider`,
+`most-used`). Mode is UI provenance, not a catalog sorting policy: catalog writers consume the
+saved array. Including a bare native id activates complete-picker ordering while keeping
+`subagentModels` and natural guidance ranks separate; routed-only or empty lists retain legacy
+catalog ordering. Public `buildCatalogEntries` accepts the order before optional native-source
+inputs and applies the complete-order pass after building. On-disk convergence retains its
+existing post-merge final pass.
 
 Claude ModelInfo ordering receives optional `{ modelPickerOrder, featured }` after `fastRows`.
 It orders routed output groups after alias deduplication, preserving the collision winner and
 base/1M/Fast siblings. Native groups and explicit Desktop profile ownership are unchanged.
-Native Codex advertisements still follow display priority; private guidance ranks do not freeze them.
 
 Codex display-cache expiry, retained blocking main-policy evidence, and reset history follow the
 [quota cache contract](providers/openai-tiers.md#quota-cache-and-short-window-history).
