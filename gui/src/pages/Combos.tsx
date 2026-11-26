@@ -17,6 +17,7 @@ import { readSessionListCacheEntry, writeSessionListCacheEntry } from "../sessio
 import { Notice } from "../ui";
 import { useT } from "../i18n/shared";
 import { useDataSurface } from "../data-surface";
+import { setClientResourceData } from "../client-resource";
 import { DataSurfaceSkeleton } from "../components/data-surface";
 import { navigateHash, replaceHash } from "../hash-routing";
 import { jevAutoCreateDecisionProvider } from "../app-routing";
@@ -577,25 +578,43 @@ export default function Combos({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(wire),
       });
-      const data = res.ok
+      const payload = res.ok
         ? await res.json() as unknown
         : await res.json().catch(() => null) as unknown;
-      const serverError = responseError(data);
-      if (!res.ok || serverError || !responseSucceeded(data)) {
+      const serverError = responseError(payload);
+      if (!res.ok || serverError || !responseSucceeded(payload)) {
         // A body-less failure (proxy 502 while the service restarts, an HTML error page) still
         // names its status, so "could not save" is never the whole story.
         const err = serverError || (res.ok ? t("cws.saveFailed") : `${t("cws.saveFailed")} (${res.status})`);
         if (!overview) notify(err, false);
         return { ok: false as const, error: err };
       }
-      const savedResponse = data as { id?: unknown; model?: unknown; combo?: unknown };
+      const savedResponse = payload as { id?: unknown; model?: unknown; combo?: unknown };
       const saved = savedResponse.combo && typeof savedResponse.combo === "object"
         ? parseComboList({ combos: [{ ...savedResponse.combo, id: savedResponse.id, model: savedResponse.model }] })[0]
         : undefined;
-      if (!saved) {
+      if (!overview && !saved) {
         const err = t("cws.saveFailed");
         notify(err, false);
         return { ok: false as const, error: err };
+      }
+      if (data && !isCreate) {
+        const targetId = renameFrom ?? item.id;
+        const next: CachedCombosPage = {
+          ...data,
+          combos: data.combos.map((combo) => (combo.id === targetId ? (saved ?? item) : combo)),
+          ...(overview?.channels
+            ? {
+                lastResort: {
+                  ...(data.lastResort ?? {}),
+                  [item.id]: overview.channels.filter((channel) => channel.lastResort).map((channel) => channel.key),
+                },
+              }
+            : {}),
+        };
+        setClientResourceData(cacheKey, next);
+        setRetainedData(next);
+        writeSessionListCacheEntry(cacheKey, next);
       }
       resource.refresh();
       notify(
@@ -604,7 +623,7 @@ export default function Combos({
           : isCreate ? t("cws.created", { model: item.model }) : t("cws.saved"),
         true,
       );
-      return { ok: true as const, item: saved };
+      return { ok: true as const, ...(saved ? { item: saved } : {}) };
     } catch (error) {
       // fetch rejects only when the request never got an answer: the service is down or restarting.
       const reason = error instanceof Error && error.message ? error.message : "network error";
@@ -689,14 +708,24 @@ export default function Combos({
   const removeCombo = async (id: string) => {
     try {
       const res = await fetch(`${apiBase}/api/combos?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      const data = res.ok
+      const payload = res.ok
         ? await res.json() as unknown
         : await res.json().catch(() => null) as unknown;
-      const serverError = responseError(data);
-      if (!res.ok || serverError || !responseSucceeded(data)) {
+      const serverError = responseError(payload);
+      if (!res.ok || serverError || !responseSucceeded(payload)) {
         const err = serverError || t("cws.removeFailed");
         notify(err, false);
         return { ok: false as const, error: err };
+      }
+      if (data) {
+        const next: CachedCombosPage = {
+          ...data,
+          combos: data.combos.filter((combo) => combo.id !== id),
+          cataloguedComboIds: data.cataloguedComboIds.filter((cid) => cid !== id),
+        };
+        setClientResourceData(cacheKey, next);
+        setRetainedData(next);
+        writeSessionListCacheEntry(cacheKey, next);
       }
       resource.refresh();
       notify(t("cws.removed", { id }), true);
