@@ -589,8 +589,8 @@ ocx models live --json
 ```
 
 Use `pickerAvailable` public IDs for a manual full permutation, including every
-routed candidate exactly once. Keep the current featured models in their exact
-required leading order; ambiguous, missing, extra or duplicate IDs are refused.
+visible native and routed candidate exactly once. Bare native IDs match verbatim
+without alias guessing; ambiguous, missing, extra or duplicate IDs are refused.
 The placeholder below stands for the complete reviewed comma-separated list:
 
 ```bash
@@ -604,12 +604,12 @@ write can still race. Re-read on refusal and after success; never auto-reset to
 make an invalid order pass.
 
 As alternatives, `models order set --mode alphabetical|provider|most-used --json`
-derives a complete routed order. Preset modes do not prepend the manual featured
-prefix. Most-used reads all-time/all-surface usage and refuses incomplete history;
-unranked candidates remain present. A saved order containing bare native IDs
-blocks both manual and non-default presets. Only an explicitly requested
-`models order reset --json` or `models order set --mode default --json` clears
-saved order/mode first. Reset does not change featured selection.
+derives a complete unified order across visible native and routed candidates.
+Most-used reads all-time/all-surface usage and refuses incomplete history;
+unranked candidates remain present. Existing native-inclusive orders can be
+replaced directly without resetting first. `models order reset --json` or
+`models order set --mode default --json` clears saved order/mode without
+changing featured selection.
 
 ## 15. Create or revise a routing profile from an editable document
 

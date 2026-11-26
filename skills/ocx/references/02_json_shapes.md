@@ -254,11 +254,11 @@ source is `operator`, `provider` or `fallback`. A recognized saved-but-failed-re
 response instead has `saved: true`, provider/modelId/override and failed
 `catalogRefresh`, with exit 1.
 
-Order status returns `pickerOrder`, `pickerOrderMode`, routed-only `pickerAvailable`
-and `chosen` when known. A bare native saved ID is retained in `pickerOrder` even
-though absent from `pickerAvailable`. Missing `chosen` means unknown featured
-state. Order writes return `{ok, pickerOrder, pickerOrderMode, applied, force,
-catalogRefresh}`. Here `applied` is the featured roster, not client synchronization.
+Order status returns `pickerOrder`, `pickerOrderMode`, unified `pickerAvailable`
+(visible bare native and routed IDs), and `chosen` when known. Saved bare native
+and routed IDs round-trip together through `pickerOrder`. Missing `chosen` means
+unknown featured state. Order writes return `{ok, pickerOrder, pickerOrderMode,
+applied, force, catalogRefresh}`. Here `applied` is the featured roster, not client synchronization.
 Reset returns an empty saved order and null mode; it does not clear featured models.
 
 Profile show is the profile itself, with `id`, public `model`, opaque `revision`,

@@ -86,25 +86,50 @@ describe("pure picker projections", () => {
     const { chosen: _, ...unchosen } = settings;
     expect(cli.customPickerRows(unchosen, ids)).toEqual({ fixed: [], order: ["p/a", "p/b"] });
   });
-  test("GUI conformance: modes, manual normalization, fixed prefix and identity ambiguity", () => {
-    const variants: cli.PickerModelIdentity[][] = [identities,
-      [...identities, { provider: "alpha", id: "different", namespaced: "alpha/a" }],
-      [{ provider: "p", id: "a/b", namespaced: "p/a-b" }, { provider: "p", id: "a-b", namespaced: "p/a-b-encoded" }],
+  test("GUI conformance: modes, manual normalization, mixed native+routed rows and identity ambiguity", () => {
+    const variants: Array<{ available: string[]; rows: cli.PickerModelIdentity[] }> = [
+      { available: identities.map(row => row.namespaced), rows: identities },
+      { available: ["gpt-5.6-sol", ...identities.map(row => row.namespaced)],
+        rows: [{ provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" }, ...identities] },
+      { available: ["gpt-5.6-sol", "openai/gpt-5.6-sol", "alpha/a"],
+        rows: [
+          { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+          { provider: "openai", id: "gpt-5.6-sol", namespaced: "openai/gpt-5.6-sol" },
+          { provider: "alpha", id: "a", namespaced: "alpha/a" },
+        ] },
+      { available: identities.map(row => row.namespaced),
+        rows: [...identities, { provider: "alpha", id: "different", namespaced: "alpha/a" }] },
+      { available: ["p/a-b", "p/a-b-encoded"],
+        rows: [{ provider: "p", id: "a/b", namespaced: "p/a-b" }, { provider: "p", id: "a-b", namespaced: "p/a-b-encoded" }] },
     ];
-    for (const rows of variants) {
-      const available = rows.map(row => row.namespaced);
+    for (const { available, rows } of variants) {
       const usage = rows.map((row, index) => ({ provider: row.provider, model: row.id, requests: index + 1 }));
       for (const mode of ["default", "alphabetical", "provider", "most-used"] as const) {
         expect(cli.modelPickerOrder(mode, available, usage, rows)).toEqual(gui.modelPickerOrder(mode, available, usage, rows));
       }
-      const tokens = [...available, "native", ...rows.map(row => `${row.provider}/${row.id}`)];
+      const tokens = [...available, "native", "gpt-5.6-sol", "openai/gpt-5.6-sol", ...rows.map(row => `${row.provider}/${row.id}`)];
       expect(cli.normalizePickerIds(tokens, available, rows)).toEqual(gui.normalizePickerIds(tokens, available, rows));
       expect(cli.pickerIdentityCoverage(available, rows)).toEqual(gui.pickerIdentityCoverage(available, rows));
-      for (const pickerOrder of [[], ["native", ...available], available]) {
+      for (const pickerOrder of [[], ["native", ...available], ["gpt-5.6-sol", ...available.slice().reverse()], available]) {
         const settings = { pickerAvailable: available, pickerOrder, pickerOrderMode: null, chosen: [...available].reverse() };
         expect(cli.customPickerRows(settings, rows)).toEqual(gui.customPickerRows(settings, rows));
       }
     }
+  });
+  test("bare native ids match verbatim without slugsEquivalent or provider/id alias guessing", () => {
+    const rows = [
+      { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+      { provider: "alpha", id: "a", namespaced: "alpha/a" },
+    ];
+    const available = ["gpt-5.6-sol", "alpha/a"];
+    expect(cli.normalizePickerIds(["openai/gpt-5.6-sol", "GPT-5.6-SOL", "gpt-5.6-sol"], available, rows))
+      .toEqual(["gpt-5.6-sol"]);
+    expect(cli.pickerIdentityCoverage(["gpt-5.6-sol", "openai/gpt-5.6-sol", "alpha/a"], [
+      ...rows, { provider: "openai", id: "gpt-5.6-sol", namespaced: "openai/gpt-5.6-sol" },
+    ])).toBe(true);
+    expect(cli.customPickerRows({
+      pickerAvailable: available, pickerOrder: ["alpha/a", "gpt-5.6-sol"], pickerOrderMode: null,
+    }, rows)).toEqual({ fixed: [], order: ["alpha/a", "gpt-5.6-sol"] });
   });
 });
 
@@ -148,7 +173,7 @@ describe("models order commands", () => {
     expect(await handleModelsOrderCommand(["set", "--models=p/org/a,p/org-a"], duplicate.deps)).toBe(2);
     expect(duplicate.writes()).toEqual([]);
   });
-  for (const settings of [null, {}, { ...initial, chosen: null }, { ...initial, pickerAvailable: ["native"] },
+  for (const settings of [null, {}, { ...initial, chosen: null }, { ...initial, pickerAvailable: [""] },
     { ...initial, pickerAvailable: ["alpha/a", "alpha/a"] }, { ...initial, pickerOrderMode: "custom" }]) {
     test(`malformed settings refuse status ${JSON.stringify(settings)}`, async () => {
       const f = fixture({ settings }); expect(await handleModelsOrderCommand(["status", "--json"], f.deps)).toBe(1);
@@ -190,13 +215,22 @@ describe("models order commands", () => {
     });
   }
   for (const args of [["set", "--models=alpha/a,alpha/b,beta/z"], ["set", "--mode=provider"]]) {
-    for (const settings of [{ ...initial, pickerOrder: ["native", "alpha/a"] }, { ...initial, pickerAvailable: [] }]) {
-      test(`refuses native/empty replacement ${JSON.stringify([args, settings.pickerAvailable])}`, async () => {
-        const f = fixture({ settings });
-        expect(await handleModelsOrderCommand(args, f.deps)).toBe(2); expect(f.writes()).toEqual([]);
-      });
-    }
+    test(`refuses empty candidate replacement ${JSON.stringify(args)}`, async () => {
+      const f = fixture({ settings: { ...initial, pickerAvailable: [] } });
+      expect(await handleModelsOrderCommand(args, f.deps)).toBe(2); expect(f.writes()).toEqual([]);
+    });
   }
+  test("replaces an existing native-inclusive saved order without requiring reset", async () => {
+    const mixedCandidates = ["gpt-5.6-sol", ...candidates];
+    const mixedIdentities = [{ provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" }, ...identities];
+    const settings = { pickerAvailable: mixedCandidates, pickerOrder: ["gpt-5.6-sol", "alpha/a"], pickerOrderMode: null, chosen: [] };
+    const f = fixture({ settings, models: mixedIdentities });
+    expect(await handleModelsOrderCommand(["set", "--models=beta/z,gpt-5.6-sol,alpha/a,alpha/b", "--json"], f.deps)).toBe(0);
+    expect(f.writes()[0]?.body).toEqual({ pickerOrder: ["beta/z", "gpt-5.6-sol", "alpha/a", "alpha/b"], pickerOrderMode: null });
+    const rejected = fixture({ settings, models: mixedIdentities });
+    expect(await handleModelsOrderCommand(["set", "--models=beta/z,openai/gpt-5.6-sol,alpha/a,alpha/b"], rejected.deps)).toBe(2);
+    expect(rejected.writes()).toEqual([]);
+  });
   for (const csv of ["alpha/a,alpha/b", "alpha/a,alpha/b,unknown/x", "alpha/a,alpha/b,beta/z,alpha/c"]) {
     test(`refuses incomplete manual permutation ${csv}`, async () => {
       const f = fixture(); expect(await handleModelsOrderCommand(["set", `--models=${csv}`], f.deps)).toBe(2);
@@ -285,5 +319,52 @@ describe("picker save through the actual settings handler", () => {
     expect(config.claudeCode?.subagentModelForce).toBe("alpha/b");
     expect(config.modelPickerOrder).toEqual(reset ? undefined : ["alpha/b", "alpha/a"]);
     expect(result()).toMatchObject({ applied: ["alpha/b"], force: "alpha/b", pickerOrder: reset ? [] : ["alpha/b", "alpha/a"] });
+  });
+  test("mixed native and routed order edits and saves round-trip through the actual settings handler", async () => {
+    const config: OcxConfig = { port: 10100, defaultProvider: "alpha", modelCacheTtlMs: 60_000,
+      providers: { alpha: { adapter: "openai-chat", baseUrl: "https://fixture.invalid/v1", models: ["a", "b"], liveModels: false } },
+      subagentModels: ["alpha/b"], disabledModels: ["gpt-5.5"] };
+    const persisted: OcxConfig[] = [];
+    const routedRows = [{ provider: "alpha", id: "a", namespaced: "alpha/a" }, { provider: "alpha", id: "b", namespaced: "alpha/b" }];
+    const handler = (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(String(input), init);
+      return handleSubagentModelRoutes({ req, url: new URL(req.url), config,
+        deps: { saveConfigPreservingClaudeCode: saved => { persisted.push(structuredClone(saved)); },
+          fetchAllModels: async () => routedRows },
+        convergeCodexCatalog: async () => ({ status: "committed", changed: false, degraded: false, notices: [] }),
+        syncClaudeAgentDefsBestEffort: async () => { throw new Error("Must not synchronize featured state"); },
+      }, async () => { throw new Error("Must not apply Desktop"); });
+    };
+    const deps: RuntimeApiDeps = { baseUrl: "http://127.0.0.1:14501", fetchImpl: (async (input, init) => {
+      if (String(input).endsWith("/api/models")) {
+        return Response.json([
+          { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol" },
+          ...routedRows,
+        ]);
+      }
+      const response = await handler(input, init);
+      if (!response) throw new Error("Handler did not match");
+      return response;
+    }) as typeof fetch };
+
+    expect(await handleModelsOrderCommand(["status", "--json"], deps)).toBe(0);
+    const before = result() as { pickerAvailable: string[]; pickerOrder: string[] };
+    expect(before.pickerAvailable).toContain("gpt-5.6-sol");
+    expect(before.pickerAvailable).not.toContain("gpt-5.5");
+    expect(before.pickerAvailable).toContain("alpha/a");
+    expect(before.pickerAvailable).toContain("alpha/b");
+
+    const rest = before.pickerAvailable.filter(id => !["alpha/b", "gpt-5.6-sol", "alpha/a"].includes(id));
+    const mixedOrder = ["alpha/b", "gpt-5.6-sol", "alpha/a", ...rest];
+    output.mockClear();
+    expect(await handleModelsOrderCommand(["set", `--models=${mixedOrder.join(",")}`, "--json"], deps)).toBe(0);
+    expect(persisted).toHaveLength(1);
+    expect(config.modelPickerOrder).toEqual(mixedOrder);
+    expect(config.subagentModels).toEqual(["alpha/b"]);
+    expect(result()).toMatchObject({ ok: true, pickerOrder: mixedOrder, pickerOrderMode: null });
+
+    output.mockClear();
+    expect(await handleModelsOrderCommand(["status", "--json"], deps)).toBe(0);
+    expect(result()).toMatchObject({ pickerOrder: mixedOrder, pickerAvailable: before.pickerAvailable, pickerOrderMode: null });
   });
 });
