@@ -555,4 +555,84 @@ describe("PX-1276 rework: spawn_agent tool description follows subagentModels on
     const mcpSpawn = body.tools.find(t => t.function.name === "mcp__other__spawn_agent");
     expect(mcpSpawn?.function.description).toBe(upstreamBlock);
   });
+
+  test("V1 deferred spawn_agent via tool_search_output rewrites both _rawBody and translated adapter body", async () => {
+    const parsed = parseRequest({
+      model: "gpt-6-astra",
+      tools: [
+        { type: "tool_search", execution: "client" },
+      ],
+      input: [
+        { role: "user", content: "Search and spawn a sub-agent." },
+        {
+          type: "tool_search_output",
+          call_id: "call_ts_1",
+          status: "completed",
+          tools: [
+            {
+              type: "namespace",
+              name: "multi_agent_v1",
+              tools: [
+                {
+                  type: "function",
+                  name: "spawn_agent",
+                  description: `\n        ${upstreamBlock}\n        Spawn a sub-agent for a well-scoped task.`,
+                  parameters: { type: "object", properties: {} },
+                },
+                {
+                  type: "function",
+                  name: "send_input",
+                  description: "Send input to an agent.",
+                  parameters: { type: "object", properties: {} },
+                },
+              ],
+            },
+            {
+              type: "namespace",
+              name: "mcp__other",
+              tools: [
+                {
+                  type: "function",
+                  name: "spawn_agent",
+                  description: upstreamBlock,
+                  parameters: { type: "object", properties: {} },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const rewritten = await rewriteSpawnAgentToolModelOverrides(
+      parsed,
+      { subagentModels: subagents },
+      routedDeps,
+    );
+    expect(rewritten).toBe(1);
+
+    // Native passthrough reads parsed._rawBody directly.
+    const rawSearchOutput = (parsed._rawBody as {
+      input: Array<{ type?: string; tools?: Array<{ name: string; tools: Array<{ name: string; description: string }> }> }>;
+    }).input.find(item => item.type === "tool_search_output");
+    const rawV1Spawn = rawSearchOutput?.tools?.find(ns => ns.name === "multi_agent_v1")
+      ?.tools.find(t => t.name === "spawn_agent");
+    expect(rawV1Spawn?.description).toContain("- `google/gemini-2.5-flash`");
+    expect(rawV1Spawn?.description).not.toContain("`gpt-a`");
+    expect(rawV1Spawn?.description).toContain("Spawn a sub-agent for a well-scoped task.");
+    const rawMcpSpawn = rawSearchOutput?.tools?.find(ns => ns.name === "mcp__other")
+      ?.tools.find(t => t.name === "spawn_agent");
+    expect(rawMcpSpawn?.description).toBe(upstreamBlock);
+
+    // Translated adapters read parsed.context.tools.
+    const req = createOpenAIChatAdapter(chatProvider).buildRequest(parsed) as { body: string };
+    const body = JSON.parse(req.body) as {
+      tools: Array<{ function: { name: string; description?: string } }>;
+    };
+    const v1Spawn = body.tools.find(t => t.function.name === "multi_agent_v1__spawn_agent");
+    expect(v1Spawn?.function.description).toContain("- `google/gemini-2.5-flash`");
+    expect(v1Spawn?.function.description).not.toContain("`gpt-a`");
+    expect(v1Spawn?.function.description).toContain("Spawn a sub-agent for a well-scoped task.");
+    const mcpSpawn = body.tools.find(t => t.function.name === "mcp__other__spawn_agent");
+    expect(mcpSpawn?.function.description).toBe(upstreamBlock);
+  });
 });

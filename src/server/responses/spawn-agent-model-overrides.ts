@@ -79,8 +79,9 @@ function rewrittenSpawnAgentDescription(description: string, block: string): str
 /**
  * Rewrite every native spawn_agent tool definition reachable from the raw
  * request body: the flat V2 function, V1 functions nested inside a non-MCP
- * `namespace` tool, and replayed `additional_tools` input items. Returns the
- * number of descriptions changed.
+ * `namespace` tool, and `additional_tools` / `tool_search_output` input items
+ * (deferred V1 collaboration tools when the model supports tool search). Returns
+ * the number of descriptions changed.
  */
 export function rewriteSpawnAgentToolDescriptions(
   rawBody: unknown,
@@ -106,7 +107,11 @@ export function rewriteSpawnAgentToolDescriptions(
   if (Array.isArray(rawBody.tools)) for (const tool of rawBody.tools) visit(tool);
   if (Array.isArray(rawBody.input)) {
     for (const item of rawBody.input) {
-      if (isRecord(item) && item.type === "additional_tools" && Array.isArray(item.tools)) {
+      if (
+        isRecord(item)
+        && (item.type === "additional_tools" || item.type === "tool_search_output")
+        && Array.isArray(item.tools)
+      ) {
         for (const tool of item.tools) visit(tool);
       }
     }
