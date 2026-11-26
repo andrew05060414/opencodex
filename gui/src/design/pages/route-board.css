@@ -120,6 +120,8 @@
 .rb-editor-hint { margin: 10px 0 0; color: var(--ocx-fg-subtle); font-size: 12.5px; }
 .rb-editor-warn { color: var(--ocx-warning); }
 .rb-editor-footer { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.rb-delete-combo { color: var(--ocx-danger); }
+.rb-delete-combo:hover:not(:disabled) { background: var(--ocx-danger-soft); color: var(--ocx-danger); }
 .rb-editor-spacer { flex: 1 1 auto; }
 .rb-unsaved { color: var(--ocx-warning); font-size: 12.5px; }
 

@@ -310,7 +310,7 @@ function installFetch() {
           const sent = JSON.parse(String(init!.body)) as { provider: string; modelId: string };
           return Response.json({ ok: true, provider: sent.provider, modelId: sent.modelId, changed: true, hasOverrides: true, saved: true, catalogRefresh: { status: "skipped" } });
         }
-        return Response.json(url.endsWith("/api/combos") ? { success: true } : { ok: true });
+        return Response.json(url.includes("/api/combos") ? { success: true } : { ok: true });
       }
       if (url.endsWith("/api/combos")) return Response.json(combosPayload);
       if (url.endsWith("/api/config")) {
@@ -774,6 +774,29 @@ describe("Combos overview page", () => {
     await act(async () => { button(host, "Advanced").click(); });
     await flush();
     expect(host.querySelector<HTMLInputElement>("#cwi-edit-alias")?.value).toBe("draft-alias");
+  });
+
+  test("deleting a combo from the overview editor asks for confirmation and calls DELETE /api/combos", async () => {
+    await renderPage();
+    await act(async () => { row("alpha").querySelector<HTMLButtonElement>(".rb-row-toggle")!.click(); });
+    await flush();
+    await act(async () => { button(row("alpha"), "Delete").click(); });
+    await flush();
+    const dialog = host.querySelector<HTMLDialogElement>("dialog.modal-overlay");
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toContain("Remove combo/alpha?");
+    // Cancelling closes the dialog without issuing a DELETE.
+    await act(async () => { button(dialog!, "Cancel").click(); });
+    await flush();
+    expect(calls).toHaveLength(0);
+
+    // Confirming deletes the combo via DELETE /api/combos?id=alpha.
+    await act(async () => { button(row("alpha"), "Delete").click(); });
+    await flush();
+    const confirmDialog = host.querySelector<HTMLDialogElement>("dialog.modal-overlay")!;
+    await act(async () => { button(confirmDialog, "Remove").click(); });
+    await flush();
+    expect(calls).toEqual([{ url: "/api/combos?id=alpha", method: "DELETE", body: undefined }]);
   });
 });
 

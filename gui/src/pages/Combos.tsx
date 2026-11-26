@@ -766,6 +766,7 @@ export default function Combos({
             lockedId={draftComboId}
             onSaveModel={saveModelSettings}
             onProbeModel={probeModel}
+            onRemove={removeCombo}
           />
         )}
         {workspaceMounted && (
