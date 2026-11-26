@@ -1,10 +1,12 @@
 import type { EffectiveSubagentModel } from "../../codex/catalog/subagent-roster";
+import type { OcxTool } from "../../types";
 
 // PX-1276: rewrite the "Available model overrides" block inside the native
-// `spawn_agent` tool description on the outbound wire body so the advertised
-// models follow config.subagentModels instead of catalog display `priority`.
-// Upstream renders that block from the five lowest-priority picker-visible rows
-// (codex-rs core/src/tools/handlers/multi_agents_spec.rs
+// `spawn_agent` tool description on both the outbound raw body (native
+// passthrough) and `parsed.context.tools` (translated adapters) so the
+// advertised models follow config.subagentModels instead of catalog display
+// `priority`. Upstream renders that block from the five lowest-priority
+// picker-visible rows (codex-rs core/src/tools/handlers/multi_agents_spec.rs
 // `spawn_agent_models_description`), which was the only channel that used to
 // surface the featured picks once their priorities were pinned to 0..4. The
 // rewrite keeps upstream's exact text grammar; eligibility, the five-model cap
@@ -23,6 +25,13 @@ const V1_SPAWN_TOOL_FLAT_NAME = "multi_agent_v1__spawn_agent";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNativeSpawnAgentTool(name: unknown, namespace: unknown): boolean {
+  if (name !== "spawn_agent" && name !== V1_SPAWN_TOOL_FLAT_NAME) return false;
+  // An MCP server's own spawn_agent says nothing about the native surface.
+  if (typeof namespace === "string" && namespace.startsWith(MCP_NAMESPACE_PREFIX)) return false;
+  return true;
 }
 
 /** The exact block upstream renders for `spawn_agent_models_description`. */
@@ -87,10 +96,7 @@ export function rewriteSpawnAgentToolDescriptions(
         for (const nested of tool.tools) visit(nested);
       }
     }
-    const isSpawnTool = tool.name === "spawn_agent" || tool.name === V1_SPAWN_TOOL_FLAT_NAME;
-    if (!isSpawnTool || typeof tool.description !== "string") return;
-    // An MCP server's own spawn_agent says nothing about the native surface.
-    if (typeof tool.namespace === "string" && tool.namespace.startsWith(MCP_NAMESPACE_PREFIX)) return;
+    if (!isNativeSpawnAgentTool(tool.name, tool.namespace) || typeof tool.description !== "string") return;
     const next = rewrittenSpawnAgentDescription(tool.description, block);
     if (next !== undefined && next !== tool.description) {
       tool.description = next;
@@ -103,6 +109,29 @@ export function rewriteSpawnAgentToolDescriptions(
       if (isRecord(item) && item.type === "additional_tools" && Array.isArray(item.tools)) {
         for (const tool of item.tools) visit(tool);
       }
+    }
+  }
+  return rewritten;
+}
+
+/**
+ * Rewrite parsed `context.tools` entries in place so translated provider
+ * adapters (OpenAI Chat, Anthropic, Google, Kiro, etc.) emit the same
+ * configured model overrides as native Responses passthrough.
+ */
+export function rewriteParsedSpawnAgentTools(
+  tools: OcxTool[] | undefined,
+  models: readonly EffectiveSubagentModel[],
+): number {
+  if (!Array.isArray(tools) || tools.length === 0) return 0;
+  const block = spawnAgentModelOverridesBlock(models);
+  let rewritten = 0;
+  for (const tool of tools) {
+    if (!isNativeSpawnAgentTool(tool.name, tool.namespace) || typeof tool.description !== "string") continue;
+    const next = rewrittenSpawnAgentDescription(tool.description, block);
+    if (next !== undefined && next !== tool.description) {
+      tool.description = next;
+      rewritten += 1;
     }
   }
   return rewritten;

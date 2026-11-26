@@ -12,25 +12,20 @@ Codex 的 models-manager 按 `priority` 升序排列选择器中可见的目录�
 丢弃，因此在生成的 JSON 数组中把某个条目前移，并不会让它在选择器中前移。该约束直接记录在
 `src/codex/catalog/sync.ts` 中。
 
-因此，opencodex 通过分配更低的 priority 控制置顶位置，而不依赖数组位置。本表中的固定值及下例适用于
-没有有效账户 selector 的配置。存在 `N` 个 selector 时，配置 rank 为 `i` 的置顶裸原生模型会展开为
-priority 为 `i * N + j` 的 selector 行，其中 `j` 是从 0 开始的 selector 位置。置顶的路由行使用
-`i * N`，精确的账户限定原生 id 使用其 selector 对应的 `i * N + j`。Codex 仍只公布选择器中可见的
-前五行。未选中的路由行会移到这些 selector 分组之外。
+因此，自 PX-1276 起，`subagentModels` 不再覆盖全局目录 `priority`（`0` 至 `4`），也不会再把精选模型强制置顶到全局模型选择器。取而代之的是，代理会在出站转发时根据 `effectiveSubagentRoster().advertised` 在 V1 与 V2 两种协作面上重写 `spawn_agent` 工具描述中的候选列表，而全局选择器继续沿用自然优先级或 `modelPickerOrder`。
 
-没有 selector 时的相关 priority 如下：
-
-以下优先级表和示例适用于未开启完整选择器排序的情况。
+没有开启完整选择器排序时，相关的无 selector priority 如下：
 
 | 目录条目 | Priority | 来源 |
 | --- | ---: | --- |
-| `subagentModels[i]` | `i`（`0` 至 `4`） | `src/codex/catalog/sync.ts` 中的 featured rank map |
-| 其他路由模型 | `5` | `src/codex/catalog/sync.ts` 中创建路由条目的逻辑 |
-| 默认原生 GPT slug | `sourcePriority` | `src/codex/catalog/sync.ts` 中创建原生条目的逻辑 |
-| 存在 featured 列表时未选中的原生模型 | 至少为 `featured.length + 100` | `src/codex/catalog/sync.ts` 中合并原生目录的逻辑 |
+| 普通路由模型 | `5` | `src/codex/catalog/sync.ts` 中创建路由条目的逻辑 |
+| `modelPickerOrder` 列出的路由模型（仅路由排序模式） | `1000 + i` | `src/codex/catalog/sync.ts` 中仅控制显示的排序区间 |
+| 原生 GPT slug | `sourcePriority`（回退 `9`） | 共享原生来源优先级解析器 |
+
+原生来源优先级依次读取当前发现结果、原始目录备份、同模型的保留来源值与上游快照，每项须为 `0` 至 `1000` 的整数，非法值跳过，最终回退为 `9`。已发布的显示 priority 不会反向用作来源优先级。实时 Codex 模型列表、落盘目录与模型缓存对相同输入保持一致的 priority。账户 selector 分组保留其 stride 策略；完整选择器排序仍是最终覆盖项。
 
 管理 API 在 `src/server/management/agent-settings-routes.ts` 中使用 `slice(0, 5)`，把
-`subagentModels` 限制为最多五项。这与 Codex `spawn_agent` 界面只公布前五个模型 override 的行为
+`subagentModels` 限制为最多五项。这与 Codex `spawn_agent` 界面最多公布五个模型 override 的行为
 一致。五项之外的模型仍可继续显示在主选择器中，也可通过精确 id 调用。
 
 ## Priority 相同时如何排序
@@ -44,11 +39,6 @@ priority 为 `i * N + j` 的 selector 行，其中 `j` 是从 0 开始的 select
 - `providers` 对象中各 key 的声明顺序；
 - 每个 provider 的 `models` 数组中各 id 的排列顺序。
 
-随后，`orderForSubagents()` 使用稳定排序，把 featured 模型按 `subagentModels` 中的顺序移到最前。
-非 featured 模型会保持之前确定的 provider/id 字母相对顺序
-（`src/codex/catalog/sync.ts`）。创建条目时，featured rank 还会转换为 `0` 至 `4` 的
-priority，因此 Codex 的 priority 排序会保留这个开头序列。
-
 ## 可见性与排序彼此独立
 
 `selectedModels` 和 `disabledModels` 只决定暴露哪些路由模型，不控制排序。
@@ -60,14 +50,12 @@ priority，因此 Codex 的 priority 排序会保留这个开头序列。
 
 ## 最终选择器顺序
 
-没有有效账户 selector 且 featured 列表非空时，最终顺序为：
+未配置 `modelPickerOrder` 时：
 
-1. 严格按照配置的 `subagentModels` 顺序排列，priority 为 `0` 至 `4`；
-2. 所有剩余路由模型，先按 provider、再按模型 id 的字母顺序排列，priority 为 `5`；
-3. 在目录合并过程中被移到 featured 区块之后的未选中原生模型。
+1. 所有路由模型的 priority 均为 `5`，先按 provider、再按模型 id 字母排序；
+2. 原生 GPT 条目沿用正常的来源 priority（回退 `9`）。
 
-如果没有 `subagentModels`，路由模型保持 priority `5`，原生 GPT 条目使用正常 priority
-（sourcePriority，缺少来源时回退到 `9`），路由组内部仍按 provider/id 字母排序。
+配置 `subagentModels` 不再把精选模型顶到其他路由或原生模型前面；它只在 `multiAgentGuidanceEnabled` 开启且目录状态不为 `stale` / `unknown` 时，通过出站重写控制 `spawn_agent` 推荐的模型列表。
 
 ## 示例
 
@@ -83,34 +71,26 @@ subagentModels = [
 ]
 ```
 
-选择器开头的实际顺序如下：
+未设置 `modelPickerOrder` 时，全局选择器优先级保持自然分布：
 
-| 选择器位置 | 模型 | Priority | 出现在此处的原因 |
-| ---: | --- | ---: | --- |
-| 1 | `gpt-5.5` | `0` | 第一个 `subagentModels` 选择 |
-| 2 | `opencode-go/glm-5.2` | `1` | 第二个选择，即使其 provider 在字母顺序上位于 `anthropic` 之后 |
-| 3 | `anthropic/claude-opus-4-6` | `2` | 第三个选择 |
-| 4 | `gpt-5.6-sol` | `3` | 第四个选择 |
-| 5 | `gpt-5.6-terra` | `4` | 第五个选择 |
-| 6 | `anthropic/claude-fable-5` | `5` | 剩余路由模型中按 provider/id 字母排序的第一项 |
-| 第 7 项起 | 其余路由模型 | `5` | 先按 provider 字母排序，再按模型 id 字母排序 |
-| 路由模型之后 | 其余原生模型 | `featured.length + 100` 或更高 | 未选中的原生模型移到 featured 区块之后 |
+| 选择器分组 | 模型 | Priority | 出现在此处的原因 |
+| --- | --- | ---: | --- |
+| 路由模型 | `anthropic/claude-opus-4-6`, `opencode-go/glm-5.2`, ... | `5` | 先按 provider 字母排序，再按模型 id 字母排序 |
+| 原生模型 | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, ... | `sourcePriority`（回退 `9`） | 原生来源顺序 |
 
-前五个条目是向 `spawn_agent` 公布的 override，其余模型继续按普通选择器顺序排列。
-
-存在账户 selector 时，五项限制会在裸原生选择展开为 selector-qualified 分组之后应用。
+与此同时，`spawn_agent` 工具描述通过出站改写按配置顺序展示这五个 `subagentModels` 推荐项。存在账户 selector 时，裸原生选择会展开为 selector-qualified 分组，并仍受五个展示上限约束。
 
 ## 更改顺序
 
-自定义开头模型顺序的受支持方式是重新排列 `subagentModels`。仪表盘的 **Sub-agents** 页面可以调整
+使用 `subagentModels` 选择并排列提供给 `spawn_agent` 的推荐模型。仪表盘的 **Sub-agents** 页面可以调整
 裸原生和路由 id 的顺序。配置和 `ocx agent subagents set` 也接受精确的账户限定
 `<selector>/<native-openai-model>` id，仪表盘会保留已保存的 id，即使当前不可用。配置的
 id 请勿超过五个。存在账户 selector 时，一个裸原生选项可能展开为多个 selector-qualified 行，因此
 已配置的选项与公布的行不一定一一对应。
 
 `modelPickerOrder` 只控制选择器的显示顺序。如果列表只有路由 ID `<provider>/<model>`，
-其中未置顶的行会按列表顺序进入独立的显示区间（`1000 + i`）。未列出的路由行保留原有优先级，
-因此仍排在该区间之前。同时列在 `subagentModels` 中的行保留置顶优先级，原生行也保持原有位置。
+列出的路由行会按列表顺序进入独立的显示区间（`1000 + i`）。未列出的路由行保留原有优先级（`5`），
+因此仍排在该区间之前，原生行也保持原有位置。
 需要控制相对顺序的路由行都应列入列表。
 
 要对整个选择器排序，请加入至少一个不含 `/` 的裸目录 ID，例如 `gpt-5.6-sol`。

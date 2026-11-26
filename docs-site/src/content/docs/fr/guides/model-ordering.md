@@ -25,13 +25,15 @@ lignes visibles dans le sélecteur.
 
 Sans ordre global du sélecteur, les priorités sans sélecteur pertinentes sont :
 
+Depuis PX-1276, `subagentModels` ne réécrit plus la `priority` (`0` à `4`) dans le catalogue global et ne place plus ces modèles en tête du sélecteur. Le proxy réécrit plutôt le bloc des modèles proposés dans la description sortante de `spawn_agent` sur V1 et V2, tandis que le sélecteur global conserve les priorités naturelles ou votre `modelPickerOrder`.
+
+Sans ordre global du sélecteur, les priorités sans sélecteur pertinentes sont :
+
 | Entrée du catalogue | Priorité | Source |
 | --- | --- : | --- |
-| `subagentModels[i]` | `i` (`0` à `4`) | La carte de classement présentée dans `src/codex/catalog/sync.ts` |
-| Autres modèles acheminés | `5` | Création d'une entrée routé dans `src/codex/catalog/sync.ts` |
-| Modèles routés non mis en avant et présents dans `modelPickerOrder` | `1000 + i` | Rang d’affichage du sélecteur dans `src/codex/catalog/sync.ts` |
-| Slugs GPT natifs par défaut | `sourcePriority` | Création d'entrées natives dans `src/codex/catalog/sync.ts` |
-| Modèles natifs non sélectionnés alors qu'une liste sélectionnée existe | Au moins `featured.length + 100` | Fusion du catalogue natif dans `src/codex/catalog/sync.ts` |
+| Modèles acheminés ordinaires | `5` | Création d'une entrée routée dans `src/codex/catalog/sync.ts` |
+| Modèles routés présents dans `modelPickerOrder` (liste routée uniquement) | `1000 + i` | Rang d’affichage du sélecteur dans `src/codex/catalog/sync.ts` |
+| Slugs GPT natifs par défaut | `sourcePriority` (repli `9`) | Résolveur partagé de priorité source native |
 
 La direction API limite `subagentModels` à cinq entrées avec `slice(0, 5)` en
 `src/server/management/agent-settings-routes.ts`. Cela correspond à la surface Codex `spawn_agent`, qui

@@ -24,12 +24,13 @@ selector가 없을 때의 priority는 다음과 같습니다.
 
 아래 우선순위 표와 예시는 선택기 전체 정렬을 켜지 않은 경우를 설명합니다.
 
+PX-1276 이후 `subagentModels`는 전역 카탈로그 `priority`(`0`~`4`)를 덮어쓰거나 전역 선택기 맨 위에 모델을 고정하지 않습니다. 대신 프록시가 V1/V2 송신 시 `spawn_agent` 도구 설명을 재작성해 `subagentModels`를 노출하며, 전역 선택기는 자연 우선순위나 `modelPickerOrder`를 유지합니다.
+
 | 카탈로그 항목 | Priority | 근거 |
 | --- | ---: | --- |
-| `subagentModels[i]` | `i` (`0`부터 `4`) | `src/codex/catalog/sync.ts`의 featured rank map |
-| 그 밖의 라우팅 모델 | `5` | `src/codex/catalog/sync.ts`의 라우팅 항목 생성 |
-| 기본 네이티브 GPT slug | `sourcePriority` | `src/codex/catalog/sync.ts`의 네이티브 항목 생성 |
-| featured 목록이 있을 때 선택되지 않은 네이티브 모델 | 최소 `featured.length + 100` | `src/codex/catalog/sync.ts`의 네이티브 카탈로그 병합 |
+| 일반 라우팅 모델 | `5` | `src/codex/catalog/sync.ts`의 라우팅 항목 생성 |
+| `modelPickerOrder`에 포함된 라우팅 모델(라우팅 전용 모드) | `1000 + i` | `src/codex/catalog/sync.ts`의 표시 전용 선택기 순위 |
+| 네이티브 GPT slug | `sourcePriority`(폴백 `9`) | 공용 네이티브 소스 우선순위 리졸버 |
 
 관리 API는 `src/server/management/agent-settings-routes.ts`의 `slice(0, 5)`로 `subagentModels`를 최대
 5개로 제한합니다. 이는 처음 5개 모델 override만 광고하는 Codex `spawn_agent` 서피스와 맞습니다.

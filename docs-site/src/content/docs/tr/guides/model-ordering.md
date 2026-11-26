@@ -30,12 +30,13 @@ görünen ilk beş satırı tanıtır.
 
 Aşağıdaki öncelik tabloları ve örnek, seçicinin tamamını sıralama modu kapalıyken geçerlidir.
 
+PX-1276'dan itibaren `subagentModels` artık genel katalog `priority` değerini (`0`–`4`) ezmez ve bu modelleri genel seçicinin en üstüne sabitlemez. Bunun yerine vekil, V1 ve V2 yüzeylerinde giden `spawn_agent` araç açıklamasını yeniden yazarak `subagentModels` seçimlerini sunar; genel seçici ise doğal öncelikleri veya `modelPickerOrder` düzenini korur.
+
 | Katalog girdisi | Öncelik | Kaynak |
 | --- | ---: | --- |
-| `subagentModels[i]` | `i` (`0` - `4`) | `src/codex/catalog/sync.ts` içindeki öne çıkan sıra haritası |
-| Diğer yönlendirilen modeller | `5` | `src/codex/catalog/sync.ts` içindeki yönlendirilen girdi oluşturma |
-| Varsayılan olarak yerel GPT slug'ları | `sourcePriority` | `src/codex/catalog/sync.ts` içindeki yerel girdi oluşturma |
-| Öne çıkan bir liste varken seçilmeyen yerel modeller | En az `featured.length + 100` | `src/codex/catalog/sync.ts` içindeki yerel katalog birleştirme |
+| Olağan yönlendirilen modeller | `5` | `src/codex/catalog/sync.ts` içindeki yönlendirilen girdi oluşturma |
+| `modelPickerOrder` içinde listelenen yönlendirilen modeller (yalnızca yönlendirilen kip) | `1000 + i` | `src/codex/catalog/sync.ts` içindeki salt görüntüleme seçici sırası |
+| Yerel GPT slug'ları | `sourcePriority` (yedek `9`) | Paylaşılan yerel kaynak önceliği çözümleyici |
 
 Yönetim API'si `src/server/management/agent-settings-routes.ts` içinde `slice(0,
 5)` ile `subagentModels`'ı beş girdiyle sınırlar. Bu, yalnızca ilk beş model

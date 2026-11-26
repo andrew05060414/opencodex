@@ -4018,7 +4018,6 @@ export const ja: Record<TKey, string> = {
   "usage.range.applied": "選択した期間：{start} – {end}（両端を含む）。",
   "models.pickerOrder.editorHint": "ルーティングモデルを並べ替えて下書きを保存します。おすすめ行は固定され、ネイティブモデルは表示されません。",
   "models.pickerOrder.nativeLocked": "保存済みの順序にネイティブモデルが含まれています。ルーティングのプリセットかデフォルトを適用してからカスタム順序を編集してください。",
-  "models.pickerOrder.unknownChosen": "おすすめモデルが不明です。再読み込みしてから編集してください。",
   "models.pickerOrder.changed": "設定が変更されました。下書きは保持されます。再読み込みすると下書きを破棄し、現在の設定を使用します。",
   "models.pickerOrder.savedReload": "順序を保存しました。再編集する前に現在の設定を読み込んでください。",
   "models.pickerOrder.requestFailed": "リクエストに失敗しました。下書きは保持されます。再試行するか再読み込みしてください。",

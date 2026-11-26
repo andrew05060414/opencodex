@@ -35,39 +35,14 @@ opencodex 允許你為目錄中的所有模型選擇多代理協作介面。儀�
 
 ## `spawn_agent` 列出哪些模型
 
-Codex 在 `spawn_agent` 工具說明中最多列出五個模型，並由 Codex 自己挑選：它將選擇器中可見的目錄列依 `priority` 由小到大排序，取前五個。**Subagents** 頁面上的名冊（`subagentModels`）只能透過依名冊順序為其中的模型指定最低的 priority（沒有帳號選擇器時為 `0` 到 `4`）來影響這份清單，不會將清單限制在名冊之內。
+Codex 本身會依 `priority` 由小到大從選擇器中可見的目錄列取前五個，產生初始的 `spawn_agent` 模型 override 區塊。自 PX-1276 起，`subagentModels` 不再佔用來置頂全域目錄的 `priority`（`0` 到 `4`）；在 `multiAgentGuidanceEnabled` 開啟且目錄狀態不為 `stale` 或 `unknown` 時，代理會在 V1 與 V2 兩種協作面的出站轉發中直接把 `spawn_agent` 工具說明改寫為 `effectiveSubagentRoster().advertised`（最多五個符合條件的選擇，V2 會略過 `"disabled"` 固定項）。
 
-如果只設定一到四個模型，Codex 會依 priority 以接下來的列填滿其餘位置。這些列不是你選的，儀表板也不會顯示是哪些模型。實際是哪些列取決於目錄：
+因為 `subagentModels` 不再重排全域選擇器：
 
-| 目錄 | 填補其餘位置的列 |
-| --- | --- |
-| 沒有 Codex 帳號選擇器 | 其他路由的 `provider/model` 列。它們的 priority 都是 `5`，因此依 provider 名稱、再依模型 id 的字母順序排列。未設定的原生 GPT 列的 priority 不低於 `100` 加上已設定 id 的數量，因此排在後面。 |
-| 有 Codex 帳號選擇器 | 帳號限定的原生列（`<selector>/<native-model>`），緊接在已設定的列之後。未設定的路由列移到 priority `1005`，排在它們之後。 |
-
-例如，沒有帳號選擇器且名冊如下時：
-
-```json
-{ "subagentModels": ["xai/grok-4.5", "anthropic/claude-sonnet-5"] }
-```
-
-| 位置 | 模型 | Priority | 原因 |
-| ---: | --- | ---: | --- |
-| 1 | `xai/grok-4.5` | `0` | 名冊第一項 |
-| 2 | `anthropic/claude-sonnet-5` | `1` | 名冊第二項 |
-| 3 | `deepseek/deepseek-v4-flash` | `5` | 依字母順序第一個剩餘的路由列 |
-| 4 | `google/gemini-3-pro` | `5` | 下一個路由列 |
-| 5 | `moonshot/kimi-k3` | `5` | 下一個路由列 |
-| 6+ | `zai/glm-5.2`，接著是原生 GPT 列 | `5`，接著是 `102 + sourcePriority` | 不在前五之內 |
-
-名冊為空時，opencodex 不固定任何列，前五個依目錄原有的 priority 決定。
-
-被填補的位置與一般列出的模型相同，主代理可能會選用它們。這份清單也不是允許清單：主代理寫出確切名稱時，Codex 也接受前五之外的目錄模型。若要控制 Codex 列出的模型：
-
-- 設定五個模型。名冊滿了就沒有可填補的位置。
-- 對於永遠不想被提供的模型，將其停用，或不放進其 provider 的 `selectedModels`。已停用或未選取的模型會離開選擇器，不會填補位置。
-- `modelPickerOrder` 會改變 Codex 排序所用的 priority。只含路由列的清單會將列出的未設定列移到 `1000` 以上，因此未列出的路由列會先填補位置。包含裸原生 id 的清單會為整個選擇器排序（包括已設定的列）：列出的列排在前面，先於任何未列出的列佔用列出位置。參見 [Model ordering](/guides/model-ordering/)。
-
-在 v2 上，Codex 會在取前五個之前略過固定為 `"disabled"` 的列；其餘機制相同。opencodex 的 v2 指引名冊（`{{roster}}`）只列出位於前五之內的已設定名冊模型，因此填補的模型只會出現在 Codex 的工具說明中，不會出現在 opencodex 指引裡。Codex 在工作階段開始時讀取目錄，因此名冊的變更從新的工作階段開始生效。
+- 全域選擇器順序沿用自然目錄優先級（一般路由列 `5`，裸原生列使用 `sourcePriority`、回退 `9`）或你設定的 `modelPickerOrder`。
+- 調整 `modelPickerOrder` 只改變選擇器顯示順序，在出站改寫生效時不會改變 `spawn_agent` 公佈的模型。
+- 若 `multiAgentGuidanceEnabled` 為 `false` 或目錄狀態為 `stale`/`unknown`，代理會保留上游原生的 `spawn_agent` 說明，避免公佈陳舊的磁碟設定。
+- 公佈的清單不是允許清單：主代理寫出確切名稱時，Codex 仍接受前五之外的目錄模型；v2 指引名冊（`{{roster}}`）也遵循同一份已設定的名冊。參見 [Model ordering](/guides/model-ordering/)。
 
 ## 委託模型與推理強度
 

@@ -12,8 +12,10 @@ import {
   rewriteSpawnAgentToolDescriptions,
   spawnAgentModelOverridesBlock,
 } from "../../src/server/responses/spawn-agent-model-overrides";
+import { parseRequest } from "../../src/responses/parser";
+import { createOpenAIChatAdapter } from "../../src/adapters/openai-chat";
 import type { RawEntry } from "../../src/codex/catalog/parsing";
-import type { CatalogModel } from "../../src/types";
+import type { CatalogModel, OcxProviderConfig } from "../../src/types";
 
 // PX-1276: Decouple Subagent 5 recommended models from global model selector priority,
 // and support unified custom ordering for native and routed models.
@@ -449,5 +451,108 @@ describe("PX-1276 rework: spawn_agent tool description follows subagentModels on
   test("empty advertised roster renders the upstream empty marker", () => {
     expect(spawnAgentModelOverridesBlock([]))
       .toBe("No picker-visible model overrides are currently loaded.");
+  });
+
+  const chatProvider: OcxProviderConfig = {
+    adapter: "openai-chat",
+    baseUrl: "https://chat-gateway.example.invalid/v1",
+    apiKey: "test-key",
+  };
+  const routedDeps = {
+    collectCatalogState: () => ({ state: "fresh" as const }),
+    resolveEffectiveSubagentRoster: (models: readonly string[], surface: "v1" | "v2") =>
+      effectiveSubagentRoster(models, surface, catalog),
+  };
+
+  test("V2 flat spawn_agent rewrite reaches translated adapter outbound request body", async () => {
+    const parsed = parseRequest({
+      model: "tyler/deepseek-v4",
+      input: [{ role: "user", content: "Delegate a task." }],
+      tools: [
+        {
+          type: "function",
+          name: "exec",
+          description: "Run JavaScript",
+          parameters: { type: "object", properties: {} },
+        },
+        {
+          type: "function",
+          name: "spawn_agent",
+          description: `\n        ${upstreamBlock}\n        Spawns an agent to work on the specified task.`,
+          parameters: { type: "object", properties: {} },
+        },
+      ],
+    });
+    const rewritten = await rewriteSpawnAgentToolModelOverrides(
+      parsed,
+      { subagentModels: subagents },
+      routedDeps,
+    );
+    expect(rewritten).toBe(1);
+    const req = createOpenAIChatAdapter(chatProvider).buildRequest(parsed) as { body: string };
+    const body = JSON.parse(req.body) as {
+      tools: Array<{ function: { name: string; description?: string } }>;
+    };
+    const spawnTool = body.tools.find(t => t.function.name === "spawn_agent");
+    expect(spawnTool?.function.description).toContain(OVERRIDES_HEADER);
+    expect(spawnTool?.function.description).toContain(
+      "- `google/gemini-2.5-flash`: Routed via opencodex → google gemini-2.5-flash Reasoning efforts: low, high (default).",
+    );
+    expect(spawnTool?.function.description).toContain(
+      "- `tyler/deepseek-v4`: Routed via opencodex → tyler deepseek-v4 Reasoning efforts: medium. Service tiers: ultrafast.",
+    );
+    expect(spawnTool?.function.description).not.toContain("`gpt-a`");
+    expect(spawnTool?.function.description).not.toContain("`gpt-b`");
+    expect(spawnTool?.function.description).toContain("Spawns an agent to work on the specified task.");
+    expect(body.tools.find(t => t.function.name === "exec")?.function.description).toBe("Run JavaScript");
+  });
+
+  test("V1 namespaced spawn_agent rewrite reaches translated adapter outbound request body", async () => {
+    const parsed = parseRequest({
+      model: "tyler/deepseek-v4",
+      input: [{ role: "user", content: "Delegate a task." }],
+      tools: [
+        {
+          type: "namespace",
+          name: "multi_agent_v1",
+          tools: [
+            {
+              type: "function",
+              name: "spawn_agent",
+              description: `\n        ${upstreamBlock}\n        Spawn a sub-agent for a well-scoped task.`,
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+        },
+        {
+          type: "namespace",
+          name: "mcp__other",
+          tools: [
+            {
+              type: "function",
+              name: "spawn_agent",
+              description: upstreamBlock,
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+        },
+      ],
+    });
+    const rewritten = await rewriteSpawnAgentToolModelOverrides(
+      parsed,
+      { subagentModels: subagents },
+      routedDeps,
+    );
+    expect(rewritten).toBe(1);
+    const req = createOpenAIChatAdapter(chatProvider).buildRequest(parsed) as { body: string };
+    const body = JSON.parse(req.body) as {
+      tools: Array<{ function: { name: string; description?: string } }>;
+    };
+    const v1Spawn = body.tools.find(t => t.function.name === "multi_agent_v1__spawn_agent");
+    expect(v1Spawn?.function.description).toContain("- `google/gemini-2.5-flash`");
+    expect(v1Spawn?.function.description).toContain("Spawn a sub-agent for a well-scoped task.");
+    expect(v1Spawn?.function.description).not.toContain("`gpt-a`");
+    const mcpSpawn = body.tools.find(t => t.function.name === "mcp__other__spawn_agent");
+    expect(mcpSpawn?.function.description).toBe(upstreamBlock);
   });
 });

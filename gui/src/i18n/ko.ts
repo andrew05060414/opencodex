@@ -4018,7 +4018,6 @@ export const ko: Record<TKey, string> = {
   "usage.range.applied": "선택한 기간: {start} – {end} (양 끝 시각 포함).",
   "models.pickerOrder.editorHint": "라우팅 모델의 순서를 바꾼 뒤 초안을 저장하세요. 추천 모델은 고정되며 네이티브 모델은 표시하지 않습니다.",
   "models.pickerOrder.nativeLocked": "저장된 순서에 네이티브 모델이 포함되어 있습니다. 라우팅 프리셋이나 기본값을 적용한 뒤 사용자 지정 순서를 편집하세요.",
-  "models.pickerOrder.unknownChosen": "추천 모델 정보를 확인할 수 없습니다. 다시 불러온 뒤 편집하세요.",
   "models.pickerOrder.changed": "모델 선택 설정이 바뀌었습니다. 초안은 유지됩니다. 다시 불러오면 초안을 버리고 현재 설정을 사용합니다.",
   "models.pickerOrder.savedReload": "순서가 저장되었습니다. 다시 편집하려면 현재 설정을 불러오세요.",
   "models.pickerOrder.requestFailed": "요청에 실패했습니다. 초안은 유지됩니다. 재시도하거나 다시 불러오세요.",

@@ -90,21 +90,22 @@ test("Custom normalizes exact canonical names before provider/raw aliases, witho
   expect(normalizePickerIds(["p/team/model"], ["p/team/model", "p/team-model"], identities)).toEqual(["p/team/model"]);
 });
 
-test("featured rank wins, survivors retain saved order, newcomers follow GET candidate order", () => {
+test("saved order wins without a fixed featured prefix, newcomers follow GET candidate order", () => {
   expect(customPickerRows({ pickerAvailable: ["p/new", "p/b", "p/a", "p/top", "p/b"],
     chosen: ["native", "p/top", "p/a", "missing/model"], pickerOrder: ["gone/model", "p/b", "p/a"], pickerOrderMode: null,
-  }, ["new", "b", "a", "top"].map(id => ({ provider: "p", id, namespaced: `p/${id}` })))).toEqual({ fixed: ["p/top", "p/a"], order: ["p/top", "p/a", "p/b", "p/new"] });
+  }, ["new", "b", "a", "top"].map(id => ({ provider: "p", id, namespaced: `p/${id}` })))).toEqual({ fixed: [], order: ["p/b", "p/a", "p/new", "p/top"] });
   expect(customPickerRows({ pickerAvailable: [], chosen: [], pickerOrder: [], pickerOrderMode: null }, []))
     .toEqual({ fixed: [], order: [] });
 });
 
-test("unknown chosen cannot edit; malformed supplied chosen rejects; native saved ids remain untouched", () => {
+test("unknown chosen stays editable; malformed supplied chosen rejects; native saved ids remain untouched", () => {
   const settings = { pickerAvailable: ["p/a"], pickerOrder: ["native", "p/a"], pickerOrderMode: null };
   expect(isPickerOrderSettings(settings)).toBe(true);
   expect(customPickerRows(settings, [])).toBeNull();
   expect(customPickerRows({ ...settings, chosen: [] }, [])).toBeNull();
   expect(settings.pickerOrder).toEqual(["native", "p/a"]);
-  expect(customPickerRows({ ...settings, pickerOrder: [] }, [])).toBeNull();
+  expect(customPickerRows({ ...settings, pickerOrder: [] }, [{ provider: "p", id: "a", namespaced: "p/a" }]))
+    .toEqual({ fixed: [], order: ["p/a"] });
   for (const chosen of [null, undefined, "p/a", [2]]) expect(isPickerOrderSettings({ ...settings, chosen })).toBe(false);
   expect(isPickerOrderSettings({ ...settings, chosen: [] })).toBe(true);
 });
@@ -166,19 +167,19 @@ test("incomplete or ambiguous catalog identities block projection, even with can
     expect(customPickerRows(settings, identities)).toBeNull();
   }
   expect(pickerIdentityCoverage(settings.pickerAvailable, [team, a, { ...team }])).toBe(true);
-  expect(customPickerRows(settings, [team, a])).toEqual({ fixed: ["p/team-model"], order: ["p/team-model", "p/a"] });
+  expect(customPickerRows(settings, [team, a])).toEqual({ fixed: [], order: ["p/team-model", "p/a"] });
 });
 
-test("featured ranks use last duplicate, exact canonical precedence, and untrimmed roster strings", () => {
+test("featured picks no longer pin fixed rows regardless of duplicates, aliases, or padding", () => {
   const identities = [{ provider: "p", id: "team/model", namespaced: "p/team-model" },
     { provider: "p", id: "a", namespaced: "p/a" }, { provider: "p", id: "b", namespaced: "p/b" }];
   const settings = { pickerAvailable: ["p/team-model", "p/a", "p/b"], pickerOrder: [], pickerOrderMode: null };
   expect(customPickerRows({ ...settings, chosen: ["p/a", "p/b", "p/a"] }, identities))
-    .toEqual({ fixed: ["p/b", "p/a"], order: ["p/b", "p/a", "p/team-model"] });
+    .toEqual({ fixed: [], order: ["p/team-model", "p/a", "p/b"] });
   expect(customPickerRows({ ...settings, chosen: ["p/team/model", "p/b", "p/team-model"] }, identities))
-    .toEqual({ fixed: ["p/b", "p/team-model"], order: ["p/b", "p/team-model", "p/a"] });
+    .toEqual({ fixed: [], order: ["p/team-model", "p/a", "p/b"] });
   expect(customPickerRows({ ...settings, chosen: ["p/team-model", "p/b", "p/team/model"] }, identities))
-    .toEqual({ fixed: ["p/team-model", "p/b"], order: ["p/team-model", "p/b", "p/a"] });
+    .toEqual({ fixed: [], order: ["p/team-model", "p/a", "p/b"] });
   const chosen = [" p/a ", "", "  "];
   expect(customPickerRows({ ...settings, chosen, pickerOrder: [" p/a "] }, identities))
     .toEqual({ fixed: [], order: ["p/a", "p/team-model", "p/b"] });

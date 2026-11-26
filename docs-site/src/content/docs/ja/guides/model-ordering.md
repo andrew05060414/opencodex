@@ -24,12 +24,13 @@ selector がない場合の priority は次のとおりです。
 
 以下の優先順位表と例は、ピッカー全体の並び替えを有効にしていない場合のものです。
 
+PX-1276 以降、`subagentModels` はグローバルカタログの `priority`（`0`〜`4`）を上書きせず、グローバルピッカー先頭への固定も行いません。代わりにプロキシが V1 / V2 の送信時 `spawn_agent` ツール説明を書き換えて `subagentModels` を提示し、グローバルピッカーは通常の `priority` または `modelPickerOrder` に従います。
+
 | カタログ項目 | Priority | 根拠 |
- --- | ---: | --- |
-| `subagentModels[i]` | `i`(`0` から `4`) | `src/codex/catalog/sync.ts` の featured rank map |
-| その他のルーティングモデル | `5` | `src/codex/catalog/sync.ts` のルーティング項目生成 |
-| デフォルトネイティブ GPT スラッグ | `sourcePriority` | `src/codex/catalog/sync.ts` のネイティブ項目生成 |
-| featured リストがあるとき選択されていないネイティブモデル | 最小 `featured.length + 100` | `src/codex/catalog/sync.ts` のネイティブカタログマージ |
+| --- | ---: | --- |
+| 一般ルーティングモデル | `5` | `src/codex/catalog/sync.ts` のルーティング項目生成 |
+| `modelPickerOrder` 記載のルーティングモデル（ルーティングのみモード） | `1000 + i` | `src/codex/catalog/sync.ts` の表示用ピッカー順位 |
+| ネイティブ GPT スラッグ | `sourcePriority`（フォールバック `9`） | 共通ネイティブソース優先度リゾルバー |
 
 管理 API は `src/server/management/agent-settings-routes.ts` の `slice(0, 5)` で `subagentModels` を最大
 5 つに制限します。これは最初の 5 モデルオーバーライドだけを広告する Codex `spawn_agent` サーフェスと合致します。

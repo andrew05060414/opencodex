@@ -626,8 +626,10 @@ export async function rewriteSpawnAgentToolModelOverrides(
     ?? await createRequestScopedSubagentRosterResolver();
   const effective = await resolveRoster(configured, surface);
   if (effective.advertised.length === 0) return 0;
-  const { rewriteSpawnAgentToolDescriptions } = await import("./spawn-agent-model-overrides");
-  return rewriteSpawnAgentToolDescriptions(parsed._rawBody, effective.advertised);
+  const { rewriteSpawnAgentToolDescriptions, rewriteParsedSpawnAgentTools } = await import("./spawn-agent-model-overrides");
+  const rawRewritten = rewriteSpawnAgentToolDescriptions(parsed._rawBody, effective.advertised);
+  const parsedRewritten = rewriteParsedSpawnAgentTools(parsed.context.tools, effective.advertised);
+  return Math.max(rawRewritten, parsedRewritten);
 }
 
 export const V2_GUIDANCE_CHAR_BUDGET = 700;

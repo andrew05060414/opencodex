@@ -115,27 +115,9 @@ advertises) but `expose_spawn_agent_model_overrides` on V2 (default `true`; when
 is omitted *and* the `model`/`reasoning_effort` schema fields are removed). And V2's
 `hide_spawn_agent_metadata` defaults true, which removes `service_tier`.
 
-`modelPickerOrder` (#1649) is now purely a **display** ordering (PX-1276). The advertised
-spawn_agent list no longer derives from native `priority` at all: the proxy rewrites the
-outbound `Available model overrides` block in the tool description from
-`effectiveSubagentRoster().advertised` on both V1 and V2
-(`src/server/responses/spawn-agent-model-overrides.ts`), so the native tool always offers the
-configured picks regardless of picker order. `SPAWN_PRIORITY_FIELD` still preserves the natural
-priority used by `effectiveSubagentRoster`, so OpenCodex's preferred/guidance candidate
-calculation stays independent of display order, and the same `stale`/`unknown` catalog-state
-silence that gates V2 guidance gates the rewrite on both surfaces. Exact-name override lookup
-is not restricted to the advertised rows. V1 still receives no OpenCodex preferred-roster
-injection; V2 can additionally receive natural-priority guidance when its catalog state permits.
+`modelPickerOrder` (#1649) is now purely a **display** ordering (PX-1276). The advertised `spawn_agent` list no longer derives from native `priority`: the proxy rewrites the outbound `Available model overrides` block in both `parsed._rawBody` (native passthrough) and `parsed.context.tools` (translated adapters) from `effectiveSubagentRoster().advertised` on both V1 and V2 (`src/server/responses/spawn-agent-model-overrides.ts`), so the native tool always offers the configured picks regardless of picker order. `SPAWN_PRIORITY_FIELD` preserves the natural priority used by `effectiveSubagentRoster` independently of display order. Both `multiAgentGuidanceEnabled === false` (honoring operator opt-out from proxy subagent model steering) and `stale`/`unknown` catalog state (avoiding advertising disk picks a running app-server may not be able to spawn) intentionally disable the rewrite on both surfaces, leaving upstream's tool description intact. Exact-name override lookup is not restricted to advertised rows; V1 receives no OpenCodex preferred-roster injection, while V2 can additionally receive natural-priority guidance when catalog state permits.
 
-A nonblank bare id in `modelPickerOrder` opts into complete-picker display ordering. Exact
-ids take precedence over raw/encoded equivalents; routed-only and empty lists keep the legacy
-ordering behavior. This does not change the separate `opencodex_spawn_priority` contract.
-Retained rows recompute their natural ranks from the current featured-roster input (empty in
-production since PX-1276) and account-selector stride before display order is applied, so a
-discovery outage cannot preserve an obsolete featured or picker rank. Canonical `opencode-go` rows retain their configured reasoning ladder
-and provider-scoped context metadata both when generated and when merged from retained catalog
-state; `deepseek-v4.1-flash` therefore keeps its 1,048,576-token window, while synthetic max/ultra
-choices are not added to that provider's declared ladder.
+A nonblank bare id in `modelPickerOrder` opts into complete-picker display ordering; exact ids take precedence over raw/encoded equivalents, and routed-only or empty lists keep legacy ordering without changing `opencodex_spawn_priority`. Retained rows recompute natural ranks from the current featured-roster input (empty in production since PX-1276) and account-selector stride before display order applies, so a discovery outage cannot preserve an obsolete rank. Canonical `opencode-go` rows retain their configured reasoning ladder and provider-scoped context metadata across generation and merge (`deepseek-v4.1-flash` keeps its 1,048,576-token window without synthetic max/ultra additions).
 `meta-muse` declares `max` for both seeded models under the [Muse provider contract](providers-and-adapters.md), so routed-client catalogs can expose it without extending OpenCode Go's ladder.
 The first-party DeepSeek `deepseek-flash` row declares native `text` and `image` input and therefore
 does not require the vision sidecar by default; explicit `noVisionModels` or text-only declarations
