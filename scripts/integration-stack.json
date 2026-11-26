@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-23",
+  "updatedAt": "2026-11-26",
   "upstreamRepo": "lidge-jun/opencodex",
   "forkRepo": "andrew05060414/opencodex",
   "upstreamBase": "upstream/dev",
@@ -36,16 +36,6 @@
       "draft": true,
       "title": "feat(models): labelled capability estimates, automatic prices with their source, and a Usage page that loads",
       "notes": "Merged atop v2.100.8 (resolved single logs-client-chip/label conflict with #8741)."
-    },
-    {
-      "number": 8737,
-      "branch": "regroup/client-model-picker",
-      "remoteRef": "origin/regroup/client-model-picker",
-      "headSha": "c6437da59fa445782320a263804de8ca2be59137",
-      "status": "on-hold",
-      "draft": true,
-      "title": "feat(models): one Client model picker section with Pinned in picker and grouping by model family",
-      "notes": "Owner placed PR on hold on GitHub (do not rebase/push PR #8737). Carried locally only; merged cleanly atop v2.100.8 after resolving 11 i18n injectAgentsDesc lines and 2 agents.md rows."
     }
   ],
   "localPatches": [
@@ -133,6 +123,24 @@
       "commits": ["cf2dd1dec", "cee4b1589", "f0ac8a272"],
       "carriedCommits": ["90efe221e", "e2de60ddd", "9ff62dcb1"],
       "summary": "Loopback companion /healthz note, deploy-local.ps1 with branch guardrail, and integration-stack sync script"
+    },
+    {
+      "id": "combos-overview-route-board",
+      "layer": "layer3-local",
+      "sourceBranch": "regroup/combos-page",
+      "sourceTipSha": "a0a91bb1a",
+      "commits": ["0e6c5bd32"],
+      "carriedCommits": ["0e6c5bd32"],
+      "summary": "Combos overview route board (one row per combo, inline quota line, drag-and-drop channel editor, member capability probe) and ProviderModels latest-per-family filter. Upstream #8914 carried only suggested-combos from #8739."
+    },
+    {
+      "id": "client-model-picker",
+      "layer": "layer3-local",
+      "sourceBranch": "regroup/client-model-picker",
+      "sourceTipSha": "c6437da59",
+      "commits": [],
+      "carriedCommits": ["f06291c6d"],
+      "summary": "One Client model picker section with Pinned in picker and collapsible model-family groups. Upstream closed PR #8737 without merging on 2026-11-25; promoted to localPatches so rebuilds never drop it."
     }
   ],
   "retired": [
@@ -142,8 +150,8 @@
     },
     {
       "id": "upstreamed-prs",
-      "prs": [8644, 8746, 8749, 8649, 8750, 8751, 8742, 8739, 8740, 8651],
-      "reason": "Merged or carried directly into upstream/dev (#8778, #8870, #8871, #8914, #8751, #8742, #8644, #8740 in 45c512dbd, #8651 in 51775ceb6)."
+      "prs": [8644, 8746, 8749, 8649, 8750, 8751, 8742, 8740, 8651],
+      "reason": "Merged or fully carried directly into upstream/dev (#8778, #8870, #8871, #8751, #8742, #8644, #8740 in 45c512dbd, #8651 in 51775ceb6). Note: #8739 was only partially carried in #8914 (suggested-combos only); its route-board overview is tracked under localPatches[combos-overview-route-board]."
     }
   ]
 }

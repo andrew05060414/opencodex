@@ -63,16 +63,20 @@ function Get-PrStatus {
         return [pscustomobject]@{ number = $Number; state = 'ERROR'; mergedAt = $null; mergeable = 'UNKNOWN'; headRefOid = $null; canRetire = $false; error = ($raw | Out-String).Trim() }
     }
     $obj = $raw | ConvertFrom-Json
-    $canRetire = ($obj.state -in @('MERGED', 'CLOSED'))
+    # Only MERGED PRs are safe to retire automatically. CLOSED without merge may mean upstream
+    # rejected or partially carried the PR (like #8739 -> #8914) and must be reviewed manually.
+    $canRetire = ($obj.state -eq 'MERGED')
+    $closedUnmerged = ($obj.state -eq 'CLOSED')
     return [pscustomobject]@{
-        number     = $Number
-        state      = $obj.state
-        isDraft    = [bool]$obj.isDraft
-        mergedAt   = $obj.mergedAt
-        mergeable  = $obj.mergeable
-        headRefOid = $obj.headRefOid
-        canRetire  = $canRetire
-        error      = $null
+        number         = $Number
+        state          = $obj.state
+        isDraft        = [bool]$obj.isDraft
+        mergedAt       = $obj.mergedAt
+        mergeable      = $obj.mergeable
+        headRefOid     = $obj.headRefOid
+        canRetire      = $canRetire
+        closedUnmerged = $closedUnmerged
+        error          = $null
     }
 }
 
@@ -107,6 +111,7 @@ foreach ($pr in $Manifest.upstreamPrs) {
         upstreamHead      = if ($st.headRefOid) { $st.headRefOid.Substring(0, 9) } else { $null }
         includedInHead    = $localMatchesRemote
         readyToRetire     = $st.canRetire
+        closedUnmerged    = [bool]$st.closedUnmerged
         error             = $st.error
     }
 }
@@ -164,7 +169,7 @@ if (-not $Rebuild) {
     Write-Host ""
     Write-Host "--- Tracked Upstream PRs ---" -ForegroundColor Cyan
     foreach ($p in $prResults) {
-        $flag = if ($p.readyToRetire) { 'RETIRE(upstream done)' } elseif (-not $p.includedInHead) { 'UPDATE(new remote commits)' } else { 'IN-HEAD' }
+        $flag = if ($p.readyToRetire) { 'RETIRE(merged)' } elseif ($p.closedUnmerged) { 'CLOSED-UNMERGED(do NOT auto-retire; inspect/promote to localPatches)' } elseif (-not $p.includedInHead) { 'UPDATE(new remote commits)' } else { 'IN-HEAD' }
         Write-Host ("  #{0,-5} {1,-32} state={2,-7} mergeable={3,-11} head={4} -> {5}" -f $p.number, $p.branch, $p.upstreamState, $p.mergeable, $p.upstreamHead, $flag)
     }
     if ($branchWarnings.Count -gt 0) {
@@ -210,11 +215,14 @@ foreach ($patch in $Manifest.localPatches) {
     }
 }
 
-# 2. Merge still-open upstream PRs
+# 2. Merge still-open (or closed-unmerged local-carried) upstream PRs
 foreach ($pr in $prResults) {
     if ($pr.readyToRetire) {
-        Write-Host "[rebuild] Skipping retired/upstreamed PR #$($pr.number) ($($pr.upstreamState))" -ForegroundColor DarkGray
+        Write-Host "[rebuild] Skipping merged PR #$($pr.number) ($($pr.upstreamState))" -ForegroundColor DarkGray
         continue
+    }
+    if ($pr.closedUnmerged) {
+        Write-Host "[rebuild] Warning: PR #$($pr.number) ($($pr.branch)) is CLOSED without merge on upstream; keeping its branch until manually reviewed or promoted to localPatches." -ForegroundColor Yellow
     }
     $ref = "origin/$($pr.branch)"
     Write-Host "[rebuild] Merging #$($pr.number) ($ref)..." -ForegroundColor Cyan
