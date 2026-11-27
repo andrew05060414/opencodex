@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { join, resolve, basename } from "node:path";
 import { isStandaloneTarget, standaloneExecutableName } from "./standalone-targets";
 import { stageStandaloneKeyringAddon } from "./standalone-keyring";
+import { wrapWithBuildSlot } from "./lib/build-slot";
 
 function hostTarget(): string {
   const platform = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
@@ -75,7 +76,8 @@ compileArgs.push(join(repoRoot, "src", "cli", "index.ts"), "--outfile", executab
 // process.exit() skips `finally`, so exit only after the placeholder is back.
 let compileExitCode: number;
 try {
-  compileExitCode = Bun.spawnSync(compileArgs, { stdout: "inherit", stderr: "inherit" }).exitCode ?? 1;
+  const compileInv = wrapWithBuildSlot("compile", compileArgs[0]!, compileArgs.slice(1));
+  compileExitCode = Bun.spawnSync([compileInv.command, ...compileInv.args], { stdout: "inherit", stderr: "inherit" }).exitCode ?? 1;
 } finally {
   restoreGenPlaceholder();
 }
