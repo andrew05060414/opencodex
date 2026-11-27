@@ -28,6 +28,7 @@ both `--adapter` and `--base-url`.
 | `show <name>` | `--json` | Show config with API keys masked. |
 | `remove <name>` | `--json`, `--live`, `--yes` | Local removal refuses the default and last provider. Live removal requires `--yes` and uses server dependency checks, default reassignment and account/custom-model cleanup. |
 | `set-default <name>` | `--json`, `--live` | Select a local default, or update the running proxy with `--live`. |
+| `rename <from> <to>` | `--json` | Rename a provider on the running proxy; routing references and owned keychain accounts move with it. |
 | `pacing <name>` | `--json`, `--enabled <on\|off>`, `--rpm <number>`, `--min-interval-ms <integer>`, `--max-concurrent <integer>`, `--file <FILE\|->` | Read configured rules and runtime status; update scalars or replace rules from a file. File and scalar flags are exclusive. |
 | `snapshot` | `--json` | Read a redacted, validated public provider-editor document from the running proxy. |
 | `apply` | `--baseline <FILE\|->`, `--file <FILE\|->`, `--yes`, `--json` | Apply a reviewed editor document with a baseline comparison; removals/renames require `--yes`. |

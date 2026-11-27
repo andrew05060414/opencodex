@@ -193,6 +193,7 @@ describe("catalog: three-way tiers", () => {
   test("free classification: freeTier, keyOptional, loopback; accounts wins over free", () => {
     expect(isFreeProvider(prov({ freeTier: true }))).toBe(true);
     expect(isFreeProvider(prov({ keyOptional: true }))).toBe(true);
+    expect(isFreeProvider(prov({ adapter: "google", googleMode: "vertex", keyOptional: true }))).toBe(false);
     expect(isFreeProvider(prov({ baseUrl: "http://[::1]:8080/v1" }))).toBe(true);
     expect(isFreeProvider(prov())).toBe(false);
     expect(providerTier("nvidia", prov({ freeTier: true }))).toBe("free");

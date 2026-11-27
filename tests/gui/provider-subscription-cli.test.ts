@@ -43,6 +43,21 @@ describe("subscription CLI grouping", () => {
     expect(isFreeProvider({ adapter: "openai-chat", baseUrl: "https://api.example.com/v1", keyOptional: true })).toBe(true);
   });
 
+  test("Vertex ADC is paid and labelled as local gcloud credentials", () => {
+    const row = {
+      name: "google-vertex",
+      adapter: "google",
+      baseUrl: "https://aiplatform.googleapis.com",
+      authMode: "key",
+      googleMode: "vertex" as const,
+      keyOptional: true,
+      hasApiKey: false,
+    };
+    expect(isFreeProvider(row)).toBe(false);
+    expect(providerTier("google-vertex", row)).toBe("paid");
+    expect(authModeLabel(row, englishT)).toBe(en["vertex.localCredentials"]);
+  });
+
   test("the add-provider catalog lists claude-cli under Paid and nowhere else", () => {
     const keylessFree: CatalogPreset = { id: "keyless", label: "Keyless", adapter: "openai-chat", baseUrl: "https://api.example.com/v1", auth: "key", keyOptional: true };
     const buckets = bucketPresets([CLAUDE_CLI, keylessFree]);

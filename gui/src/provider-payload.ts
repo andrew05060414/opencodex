@@ -11,6 +11,10 @@ export interface ProviderPayloadForm {
   defaultModel: string;
   allowPrivateNetwork?: boolean;
   preserveResponsesReasoningContent?: boolean;
+  googleMode?: "vertex";
+  vertexAdc?: boolean;
+  project?: string;
+  location?: string;
 }
 
 export interface ProviderPostPreset {
@@ -72,10 +76,14 @@ export function codexPresetDescriptionKey(preset: ProviderPostPreset): CodexPres
 }
 
 export interface ProviderPayload {
+  googleMode?: "vertex";
+  project?: string;
+  location?: string;
   adapter: string;
   baseUrl: string;
   responsesPath?: string;
   apiKey?: string;
+  keyOptional?: boolean;
   apiKeyTransport?: "x-api-key" | "bearer";
   defaultModel?: string;
   authMode?: "key" | "forward" | "oauth";
@@ -89,6 +97,11 @@ export function buildProviderPayload(form: ProviderPayloadForm): ProviderPayload
     adapter: form.adapter.trim(),
     baseUrl: form.baseUrl.trim(),
   };
+  if (form.adapter === "google" && form.googleMode === "vertex") {
+    provider.googleMode = "vertex";
+    if (form.project?.trim()) provider.project = form.project.trim();
+    if (form.location?.trim()) provider.location = form.location.trim();
+  }
 
   if (form.responsesPath?.trim()) {
     provider.responsesPath = form.responsesPath.trim();
@@ -96,7 +109,9 @@ export function buildProviderPayload(form: ProviderPayloadForm): ProviderPayload
   if (form.authMode === "key" || form.authMode === "forward") {
     provider.authMode = form.authMode;
   }
-  if (form.authMode === "key" && form.apiKey.trim()) {
+  if (provider.googleMode === "vertex" && form.vertexAdc) {
+    provider.keyOptional = true;
+  } else if (form.authMode === "key" && form.apiKey.trim()) {
     provider.apiKey = form.apiKey.trim();
   }
   if (form.adapter.trim() === "anthropic" && form.authMode === "key" && form.apiKeyTransport === "bearer") {

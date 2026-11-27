@@ -54,7 +54,8 @@ const USAGE = `Usage:
   ocx provider presets [--json]
   ocx provider account-mode <pool|direct> [--json]
   ocx provider selected <name> [--set <model,model...>] [--clear] [--json]
-  ocx provider keychain <name> [status|store|restore] [--json]`;
+  ocx provider keychain <name> [status|store|restore] [--json]
+  ocx provider rename <from> <to> [--json]`;
 
 function cleared(value: string | undefined): string | undefined {
   return value === "-" ? "" : value;
@@ -379,6 +380,20 @@ async function keychain(argv: string[], deps: RuntimeApiDeps): Promise<void> {
     : `${name}: API key restored to config.json; keychain entries removed.`]);
 }
 
+async function rename(argv: string[], deps: RuntimeApiDeps): Promise<void> {
+  const args = [...argv];
+  const from = args.shift()?.trim();
+  const to = args.shift()?.trim();
+  const wantsJson = takeFlag(args, "--json");
+  if (!from || !to) throw new CliUsageError("both the current and new provider names are required", USAGE);
+  rejectArgs(args, USAGE);
+  const result = await runtimeRequest<Record<string, unknown>>("/api/providers/rename", {
+    method: "POST",
+    body: JSON.stringify({ from, to }),
+  }, deps);
+  printData(result, wantsJson, [`${from}: renamed to ${to}; references, routing and owned keychain accounts moved.`]);
+}
+
 export async function handleProviderRuntimeCommand(sub: string, argv: string[], deps: RuntimeApiDeps = {}): Promise<number | null> {
   if (sub === "edit" || sub === "update") return runProviderAction(() => edit(argv, deps));
   const handlers: Record<string, (args: string[], deps: RuntimeApiDeps) => Promise<number | void>> = {
@@ -389,6 +404,7 @@ export async function handleProviderRuntimeCommand(sub: string, argv: string[], 
     "account-mode": accountMode,
     selected,
     keychain,
+    rename,
   };
   const handler = handlers[sub];
   if (!handler) return null;

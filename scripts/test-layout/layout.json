@@ -1428,6 +1428,7 @@
     "provider-egress-outbound.test.ts": "providers",
     "provider-egress.test.ts": "lib",
     "provider-id-rewrite.test.ts": "providers",
+    "provider-rename.test.ts": "server",
     "provider-key-store.test.ts": "providers",
     "provider-live-models.test.ts": "providers",
     "provider-model-aliases.test.ts": "providers",

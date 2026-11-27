@@ -25,6 +25,7 @@
  */
 
 import { isSubscriptionCliProvider } from "./subscription-cli";
+import { isVertexAdcProvider } from "./vertex-adc";
 import type { ProviderDiscoverySummary } from "../models-groups";
 
 /**
@@ -46,6 +47,7 @@ export interface WorkspaceProvider {
   /** Optional upstream HTTP version pin. Cursor defaults to HTTP/2 when omitted. */
   upstreamHttpVersion?: "auto" | "http1.1" | "h1" | "http2" | "h2";
   authMode?: "key" | "forward" | "oauth" | "local" | string;
+  googleMode?: "ai-studio" | "vertex" | "cloud-code-assist";
   keyOptional?: boolean;
   /** Free pricing (may still require an API key). */
   freeTier?: boolean;
@@ -179,13 +181,13 @@ export function isAccountProvider(name: string, p: WorkspaceProvider): boolean {
 /**
  * Free pricing (badge / filter / sort): `freeTier`, keyless free (`keyOptional`),
  * local runtimes, or loopback. Forward passthrough is NOT free — those are
- * account providers, and a subscription CLI row (`claude-cli`) is NOT free either:
- * its `keyOptional` means the CLI owns the credential and bills the user's
- * subscription, so it sorts, filters and groups with the paid API rows. Does **not**
- * imply ready-without-key — use `binProviderStatus` for readiness.
+ * account providers, and credential-owning rows (`claude-cli`, Vertex ADC) are NOT free
+ * either: their `keyOptional` means an external sign-in owns the credential and bills the
+ * user, so they sort, filter and group with the paid API rows. Does **not** imply
+ * ready-without-key — use `binProviderStatus` for readiness.
  */
 export function isFreeProvider(p: WorkspaceProvider): boolean {
-  if (isSubscriptionCliProvider(p)) return false;
+  if (isSubscriptionCliProvider(p) || isVertexAdcProvider(p)) return false;
   return p.freeTier === true
     || p.keyOptional === true
     || p.authMode === "local"

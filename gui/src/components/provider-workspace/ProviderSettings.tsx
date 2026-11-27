@@ -15,7 +15,7 @@ import { confirmAction } from "../../action-dialogs";
 import { createBoundedFetch } from "../../bounded-fetch";
 import { startVisibilityPoll } from "../../visibility-poll";
 import { useT } from "../../i18n/shared";
-import { IconLock } from "../../icons";
+import { ProviderRename } from "./ProviderRename";
 import { isCatalogProviderId } from "../../provider-icons";
 import { openAiAccountProviderState } from "../../provider-payload";
 import { canConfigureResponsesReasoningReplay } from "../../responses-reasoning-replay";
@@ -392,10 +392,7 @@ export default function ProviderSettings({
 
   return (
     <div className="pwi-settings-form">
-      <label className="pwi-settings-field">
-        <span className="pwi-settings-label"><IconLock style={{ width: 12, height: 12 }} /> {t("pws.providerId")}</span>
-        <input className="input" value={item.name} readOnly disabled />
-      </label>
+      <ProviderRename name={item.name} apiBase={apiBase} disabled={formDirty || saving} />
       <label className="pwi-settings-field">
         <span className="pwi-settings-label">{t("modal.adapter")}</span>
         {isPreset ? <input className="input" value={adapter} readOnly disabled /> : (
