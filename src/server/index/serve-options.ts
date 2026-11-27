@@ -210,7 +210,7 @@ import {
   catalogFastRowEligible,
   expandFastRow,
 } from "../fast-row";
-import { classifyUsageClient } from "../../usage/client";
+import { classifyUsageClient, usageClientLogContext } from "../../usage/client";
 import { isOllamaNativePath } from "../ollama-native-paths";
 import { ollamaError } from "../ollama-inbound";
 import { dispatchOllamaRoute } from "./ollama-routes";
@@ -1277,7 +1277,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "unknown",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
           inboundProtocol: "responses",
         };
@@ -1317,7 +1317,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "image_gen",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
         const endpoint = url.pathname.endsWith("/edits") ? "edits" as const : "generations" as const;
@@ -1403,7 +1403,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "context_history",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
         return runAdmittedHttpTurn(req, policy, async turnAdmissionLease => {
@@ -1430,7 +1430,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "web_search",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
         return runAdmittedHttpTurn(req, policy, async turnAdmissionLease => {
@@ -1455,7 +1455,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "unknown",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
           inboundProtocol: "responses",
         };
@@ -1551,7 +1551,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "unknown",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
           inboundProtocol: "messages",
         };
@@ -1589,7 +1589,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "unknown",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
           inboundProtocol: "chat",
         };
@@ -1627,7 +1627,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: TRANSCRIPTION_MODEL,
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
         return runAdmittedHttpTurn(req, policy, async lease => {
@@ -1686,7 +1686,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "gpt-live",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
         return runAdmittedHttpTurn(req, policy, async turnAdmissionLease => {
@@ -1737,7 +1737,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "gpt-live",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
         let liveRequestFinalized = false;
