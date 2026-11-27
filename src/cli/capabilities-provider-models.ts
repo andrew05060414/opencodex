@@ -49,6 +49,13 @@ export const PROVIDER_MODEL_CAPABILITIES: readonly Capability[] = [
     details: ["At least one edit is required; only supplied fields are patched. update is an existing alias. Use provider show only for local state, not as proof of the live write.","Management errors use safe fixed provider diagnostics; catalog failures retain the saved receipt and a nonzero exit."],
   },
   {
+    command: ["provider", "rename"], summary: "Rename a provider on the running proxy, migrating routing references and owned keychain accounts.",
+    usage: "ocx provider rename <from> <to> [--json]",
+    routes: [{ method: "POST", path: "/api/providers/rename" }], mutates: true, json: "envelope",
+    flags: [{ name: "--json", value: "boolean", summary: "Emit the rename receipt." }],
+    details: ["One server POST rewrites the provider id everywhere it is referenced (default provider, routing, custom models, OAuth accounts, context caps) and moves keychain accounts owned by the old name; there is no local offline rename.", "A destination keychain account conflict, unavailable keychain, or write failure refuses the rename without partially moving credentials."],
+  },
+  {
     command: ["provider", "test"], summary: "Probe discovery connectivity or explicitly test one model completion.",
     usage: "ocx provider test <name> [--model <id> [--yes]] [--json]",
     routes: [{ method: "POST", path: "/api/providers/test" }, { method: "POST", path: "/api/providers/test-completion" }], mutates: true, json: "payload",

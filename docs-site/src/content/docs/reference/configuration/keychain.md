@@ -53,3 +53,8 @@ When not to opt in: a proxy running as a headless service (systemd, launchd, Tas
 container usually has no unlocked keychain session, so requests would fail closed. Use an
 `${ENV_VAR}` reference in the service environment there instead. Env references are left untouched
 by `store`.
+
+Renaming a key or local provider (`ocx provider rename <from> <to>` or the dashboard) moves the
+keychain items with it: the secrets are copied to accounts under the new name, the references in
+`config.json` are rewritten in the same mutation, and the old items are deleted once the rename is
+durable. A destination account that already holds a different secret refuses the rename unchanged.

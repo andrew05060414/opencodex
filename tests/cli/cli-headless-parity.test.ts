@@ -731,6 +731,20 @@ describe("headless GUI parity CLI", () => {
     expect(bad.requests).toEqual([]);
   });
 
+  test("provider rename posts both names to /api/providers/rename", async () => {
+    const runtime = fakeRuntime();
+    expect(await handleProviderRuntimeCommand("rename", ["old-name", "new-name", "--json"], runtime.deps)).toBe(0);
+    expect(runtime.requests).toEqual([{
+      path: "/api/providers/rename",
+      method: "POST",
+      body: { from: "old-name", to: "new-name" },
+    }]);
+
+    const missing = fakeRuntime();
+    expect(await handleProviderRuntimeCommand("rename", ["only-from"], missing.deps)).toBe(2);
+    expect(missing.requests).toEqual([]);
+  });
+
   test("provider edit --retain-models sends the csv list and - clears it", async () => {
     const runtime = fakeRuntime();
     const code = await handleProviderRuntimeCommand("edit", [
