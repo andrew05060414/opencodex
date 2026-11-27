@@ -12,6 +12,18 @@ import { saveConfig } from "../../src/config";
 import * as atomicWrite from "../../src/config/atomic-write";
 import type { ManagementContext } from "../../src/server/management/context";
 import { removeTreeWithRetry } from "../helpers/remove-tree";
+import { restoreProviderKeyFromKeychain, setProviderKeychainEntryFactoryForTests, type ProviderKeychainEntry } from "../../src/providers/key-store";
+
+
+function fakeKeychain() {
+  const store = new Map<string, string>();
+  const factory = (service: string, account: string): ProviderKeychainEntry => ({
+    getPassword: () => store.get(`${service}\u0000${account}`) ?? null,
+    setPassword: value => { store.set(`${service}\u0000${account}`, value); },
+    deletePassword: () => store.delete(`${service}\u0000${account}`),
+  });
+  return { store, factory };
+}
 
 function config(): OcxConfig {
   return {
@@ -93,3 +105,75 @@ test("durable rename updates live routes, preserves concurrent disk fields and s
     removeTreeWithRetry(home);
   }
 });
+
+
+test("rename migrates owned keychain accounts so restore still works", async () => {
+  const previousHome = process.env.OPENCODEX_HOME;
+  const home = mkdtempSync(join(tmpdir(), "ocx-rename-keychain-"));
+  process.env.OPENCODEX_HOME = home;
+  const keychain = fakeKeychain();
+  setProviderKeychainEntryFactoryForTests(keychain.factory);
+  try {
+    const live = config();
+    live.providers.old!.apiKey = "keychain:old/active";
+    live.providers.old!.apiKeyPool = [
+      { id: "active", key: "keychain:old/active" },
+      { id: "spare", key: "keychain:old/spare" },
+    ];
+    keychain.store.set("opencodex.provider-api-key.v1\u0000old/active", "active-secret");
+    keychain.store.set("opencodex.provider-api-key.v1\u0000old/spare", "spare-secret");
+    saveConfig(live);
+    const response = await handleProviderRename({
+      config: live,
+      req: new Request("http://localhost/api/providers/rename", { method: "POST", body: JSON.stringify({ from: "old", to: "new" }) }),
+      convergeCodexCatalog: async () => ({}),
+    } as unknown as ManagementContext);
+    expect(response.status).toBe(200);
+    expect(live.providers.new?.apiKey).toBe("keychain:new/active");
+    expect(live.providers.new?.apiKeyPool?.map(entry => entry.key)).toEqual(["keychain:new/active", "keychain:new/spare"]);
+    expect(keychain.store.get("opencodex.provider-api-key.v1\u0000new/active")).toBe("active-secret");
+    expect(keychain.store.get("opencodex.provider-api-key.v1\u0000new/spare")).toBe("spare-secret");
+    expect(keychain.store.has("opencodex.provider-api-key.v1\u0000old/active")).toBe(false);
+    expect(keychain.store.has("opencodex.provider-api-key.v1\u0000old/spare")).toBe(false);
+    expect(restoreProviderKeyFromKeychain(live, "new")).toEqual({ ok: true, restored: 2 });
+    expect(live.providers.new?.apiKey).toBe("active-secret");
+  } finally {
+    setProviderKeychainEntryFactoryForTests(null);
+    if (previousHome === undefined) delete process.env.OPENCODEX_HOME;
+    else process.env.OPENCODEX_HOME = previousHome;
+    removeTreeWithRetry(home);
+  }
+}, 15000);
+
+test("rename refuses a conflicting destination keychain account without moving anything", async () => {
+  const previousHome = process.env.OPENCODEX_HOME;
+  const home = mkdtempSync(join(tmpdir(), "ocx-rename-keychain-conflict-"));
+  process.env.OPENCODEX_HOME = home;
+  const keychain = fakeKeychain();
+  setProviderKeychainEntryFactoryForTests(keychain.factory);
+  try {
+    const live = config();
+    live.providers.old!.apiKey = "keychain:old/active";
+    keychain.store.set("opencodex.provider-api-key.v1\0old/active", "active-secret");
+    keychain.store.set("opencodex.provider-api-key.v1\0new/active", "unrelated-secret");
+    saveConfig(live);
+    const diskBefore = readFileSync(join(home, "config.json"), "utf8");
+    const response = await handleProviderRename({
+      config: live,
+      req: new Request("http://localhost/api/providers/rename", { method: "POST", body: JSON.stringify({ from: "old", to: "new" }) }),
+      convergeCodexCatalog: async () => ({}),
+    } as unknown as ManagementContext);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "provider_keychain_destination_conflict" });
+    expect(live.providers.old).toBeDefined();
+    expect(live.providers.new).toBeUndefined();
+    expect(keychain.store.get("opencodex.provider-api-key.v1\0old/active")).toBe("active-secret");
+    expect(keychain.store.get("opencodex.provider-api-key.v1\0new/active")).toBe("unrelated-secret");
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(diskBefore);
+  } finally {
+    setProviderKeychainEntryFactoryForTests(null);
+    if (previousHome === undefined) delete process.env.OPENCODEX_HOME;
+    else process.env.OPENCODEX_HOME = previousHome;
+    removeTreeWithRetry(home);
+  }
+}, 15000);
