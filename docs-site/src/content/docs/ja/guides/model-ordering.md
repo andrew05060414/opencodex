@@ -139,10 +139,10 @@ V1 には OpenCodex の推奨候補リストを注入しません。V2 にはク
 `disabledModels` と各プロバイダーの `selectedModels` は
 表示の有無を制御するフィールドです。別の `modelOrder`、`providerOrder`、priority map 設定はありません。
 
-## ダッシュボードの並び順プリセット
+## ダッシュボードの並び順プリセットとカスタム混在編集
 
-**Models**でデフォルト、モデル名A–Z、プロバイダー別、使用量スナップショットを選び、順序を適用します。現在選択可能なルーティングIDと `modelPickerOrderMode`（`alphabetical`、`provider`、`most-used`）を保存します。使用量は適用時に保持された全履歴を一度だけ読み、再読込やモデルの増減では再計算しません。既存のカスタム・ネイティブ全体順は明示的な適用まで保持されます。デフォルトは候補が空でも両フィールドを削除できます。
+**Models**でデフォルト、モデル名A–Z、プロバイダー別、使用量スナップショットを選んで適用するか、**カスタム順序**で表示中のネイティブモデルとルーティングモデルを同一一覧でドラッグ並べ替えして保存できます。現在表示可能なネイティブIDとルーティングIDの統一候補から `modelPickerOrder`（プリセットでは `modelPickerOrderMode` も）を保存します。使用量は適用時に保持された全履歴を一度だけ読み、再読込やモデルの増減では再計算しません。デフォルトは候補が空でも両フィールドを削除できます。
 
-`GET/PUT /api/subagent-models` の `chosen` と `available` は無効・欠落した保存済みrosterも保持します。`pickerAvailable` は選択可能なルーティングIDのみです。Modelsは `pickerOrder` と `pickerOrderMode` を送り、`models` は送りません。Rosterだけの保存は順序設定を維持し、不正入力・保存失敗は以前の状態を保ちます。
+`GET/PUT /api/subagent-models` の `chosen` と `available` は無効・欠落した保存済みrosterも保持します。`pickerAvailable` はPUTが受理する表示可能なネイティブIDとルーティングIDの統一候補一覧です。Modelsは `pickerOrder` と `pickerOrderMode` を送り、`models` は送りません。ネイティブIDは別名推測なしでそのまま照合され、ネイティブIDを含む保存済み順序も再編集・往復保存できます。
 
-featured・ネイティブの優先順位帯を保ち、CodexカタログとClaude検出のルーティンググループに適用します。Claudeのネイティブ先頭グループと明示的なDesktopプロファイル・alias所有権は維持されます。OpenCodexのガイド順位とfallback設定は変わりませんが、ネイティブCodexの上位5候補や推奨デフォルトは変わる場合があります。保存による再起動は行いません。更新が保留中、または古いカタログを保持するクライアントでは開き直しが必要な場合があります。
+ネイティブIDを含む順序ではCodexカタログの全体表示順が有効になります。Claude検出ではルーティンググループのみを並べ替え、ネイティブ先頭グループと明示的なDesktopプロファイル・alias所有権は維持されます。OpenCodexのガイド順位、`spawn_agent` 上書き、fallback設定は独立して維持されます。保存による再起動は行いません。更新が保留中、または古いカタログを保持するクライアントでは開き直しが必要な場合があります。

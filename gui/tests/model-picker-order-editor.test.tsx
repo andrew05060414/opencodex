@@ -147,11 +147,67 @@ for (const [name, override] of [
   expect(button("Save draft").disabled).toBe(true);
   await click("Save draft"); expect(requests).toHaveLength(1);
 });
-test("saved bare native order remains locked without sending a replacement", async () => {
-  await render(); await reply(0, { ...initial(), pickerOrder: ["native", "p/a"] });
-  expect(host.textContent).toContain("This saved order includes native models.");
-  expect(button("Save draft").disabled).toBe(true); expect(receipts).toEqual([]);
-  expect(requests.map(r => r.method)).toEqual(["GET"]);
+test("mixed native, bare combo alias, and routed picker order drags, saves, and round-trips without locking or mislabeling native", async () => {
+  const mixedIds: PickerModelIdentity[] = [
+    { provider: "openai", id: "gpt-5.6-sol", namespaced: "gpt-5.6-sol", native: true },
+    { provider: "openai", id: "gpt-5.5", namespaced: "gpt-5.5", native: true },
+    { provider: "combo", id: "my-fast", namespaced: "fast" },
+    ...ids.slice(1, 3),
+  ];
+  const mixedSettings: PickerOrderSettings = {
+    pickerAvailable: ["gpt-5.6-sol", "gpt-5.5", "fast", "p/a", "p/b"],
+    chosen: ["gpt-5.6-sol"],
+    pickerOrder: ["p/b", "fast", "gpt-5.6-sol", "p/a", "gpt-5.5"],
+    pickerOrderMode: null,
+  };
+  await render("/a", mixedIds);
+  await reply(0, mixedSettings);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(order()).toEqual(["p/b", "fast", "gpt-5.6-sol", "p/a", "gpt-5.5"]);
+  expect(row("gpt-5.6-sol").textContent).toContain("Native");
+  expect(row("fast").textContent).not.toContain("Native");
+  expect(row("p/b").textContent).not.toContain("Native");
+
+  await drop("gpt-5.5", "p/b");
+  expect(order()).toEqual(["gpt-5.5", "p/b", "fast", "gpt-5.6-sol", "p/a"]);
+  await click("Move p/b down");
+  const expected = ["gpt-5.5", "fast", "p/b", "gpt-5.6-sol", "p/a"];
+  expect(order()).toEqual(expected);
+  expect(button("Save draft").disabled).toBe(false);
+
+  await click("Save draft");
+  expect(requests.map(r => r.method)).toEqual(["GET", "GET"]);
+  await reply(1, mixedSettings);
+  expect(requests[2]?.method).toBe("PUT");
+  expect(requests[2]?.body).toEqual({ pickerOrder: expected, pickerOrderMode: null });
+
+  const accepted = { pickerOrder: expected, pickerOrderMode: null, catalogRefresh: { status: "committed", degraded: false } };
+  await reply(2, { ok: true, ...accepted });
+  expect(receipts).toEqual([accepted]);
+  expect(order()).toEqual(expected);
+
+  await click("Reload and discard draft");
+  await reply(3, { ...mixedSettings, pickerOrder: expected });
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(order()).toEqual(expected);
+  expect(row("fast").textContent).not.toContain("Native");
+  expect(button("Drag gpt-5.6-sol").disabled).toBe(false);
+  expect(button("Drag fast").disabled).toBe(false);
+  expect(button("Drag p/b").disabled).toBe(false);
+});
+
+test("bare combo alias missing from model identity catalog blocks editing until catalog reloads", async () => {
+  const settings: PickerOrderSettings = {
+    pickerAvailable: ["fast", "p/a"],
+    chosen: [],
+    pickerOrder: [],
+    pickerOrderMode: null,
+  };
+  await render("/a", [ids[1]!]);
+  await reply(0, settings);
+  expect(order()).toEqual([]);
+  expect(button("Save draft").disabled).toBe(true);
+  expect(host.textContent).toContain("Reload the Models page to refresh its catalog");
 });
 
 test("forward/backward drop and Up/Down controls submit the complete routed list only", async () => {

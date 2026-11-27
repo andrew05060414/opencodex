@@ -126,10 +126,10 @@ V2 在客户端目录状态允许时，可以额外接收基于原有优先级�
 `disabledModels` 和各提供商的 `selectedModels` 仍是可见性字段。没有独立的 `modelOrder`、
 `providerOrder` 或优先级映射设置。
 
-## 仪表盘排序预设
+## 仪表盘排序预设与自定义混排
 
-在 **Models** 中选择默认、按模型名 A–Z、按提供商或使用量快照，再应用顺序。保存当前可用的路由 ID 和 `modelPickerOrderMode`（`alphabetical`、`provider`、`most-used`）。使用量排序仅在应用时读取一次保留的全部历史；重新打开或模型增减不会重新计算。已有自定义、原生完整顺序会保留，直到明确应用替换。即使没有可用模型，默认也能清除两个字段。
+在 **Models** 中选择默认、按模型名 A–Z、按提供商或使用量快照，再应用顺序；或选择 **自定义顺序**，在同一列表里拖拽混排可见原生模型与路由模型后保存草稿。预设与自定义均基于当前可见的原生和路由 ID 保存 `modelPickerOrder`（预设同步记录 `modelPickerOrderMode`：`alphabetical`、`provider` 或 `most-used`）。使用量排序仅在应用时读取一次保留的全部历史；重新打开或模型增减不会重新计算。即使没有可用模型，默认也能清除两个字段。
 
-`GET/PUT /api/subagent-models` 的 `chosen`、`available` 保留禁用或缺失的已存 roster；`pickerAvailable` 只包含可选路由 ID。Models 只发送 `pickerOrder`、`pickerOrderMode`，不发送 `models`。只保存 roster 不影响排序，非法输入或保存失败会保留原状态。
+`GET/PUT /api/subagent-models` 的 `chosen`、`available` 保留禁用或缺失的已存 roster；`pickerAvailable` 返回当前可见的裸原生 ID 与路由 ID 统一候选集（与 PUT 校验一致）。Models 只发送 `pickerOrder`、`pickerOrderMode`，不发送 `models`。只保存 roster 不影响排序，非法输入或保存失败会保留原状态。裸原生 ID 在编辑器与 `ocx models order` 中按原样精确匹配，不做别名猜测，含原生 ID 的已保存顺序可直接再次编辑与往返保存。
 
-预设保留精选、原生优先级区间，应用于 Codex 目录与 Claude 发现列表的路由分组。Claude 原生前缀、明确的 Desktop 配置及 alias 归属不变。OpenCodex 指导排序与 fallback 设置不变，但原生 Codex 工具显示的前五候选及推荐默认模型可能改变。保存不会重启客户端；目录刷新可能尚未完成，旧列表可能需要重新打开客户端。
+含裸原生 ID 的顺序会在 Codex 目录启用完整混排；Claude 发现列表仍只重排路由分组，Claude 原生前缀、明确的 Desktop 配置及 alias 归属不变。OpenCodex 指导排序、`spawn_agent` 覆盖与 fallback 设置保持独立不受影响。保存不会重启客户端；目录刷新可能尚未完成，旧列表可能需要重新打开客户端。

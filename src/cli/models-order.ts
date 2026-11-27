@@ -27,7 +27,7 @@ function unusable(): never { throw new Error("Invalid model management response"
 
 async function readSettings(deps: RuntimeApiDeps): Promise<PickerOrderSettings> {
   const value = await runtimeRequest(SETTINGS, { redirect: "error" }, deps);
-  if (!isPickerOrderSettings(value) || value.pickerAvailable.some(id => !id.includes("/"))
+  if (!isPickerOrderSettings(value)
     || new Set(value.pickerAvailable).size !== value.pickerAvailable.length) unusable();
   return { pickerAvailable: value.pickerAvailable, pickerOrder: value.pickerOrder,
     pickerOrderMode: value.pickerOrderMode, ...(value.chosen === undefined ? {} : { chosen: value.chosen }) };
@@ -37,18 +37,17 @@ async function readIdentities(deps: RuntimeApiDeps): Promise<PickerModelIdentity
   if (!Array.isArray(rows)) unusable();
   return rows.map(row => {
     if (!record(row) || typeof row.provider !== "string" || !row.provider.trim()
-      || !isValidModelDiscoveryModelId(row.id) || !isValidModelDiscoveryModelId(row.namespaced)) unusable();
-    return { provider: row.provider, id: row.id, namespaced: row.namespaced };
+      || !isValidModelDiscoveryModelId(row.id) || !isValidModelDiscoveryModelId(row.namespaced)
+      || (row.native !== undefined && typeof row.native !== "boolean")) unusable();
+    return { provider: row.provider, id: row.id, namespaced: row.namespaced,
+      ...(row.native === true ? { native: true } : {}) };
   });
 }
 function snapshot(settings: PickerOrderSettings, identities: PickerModelIdentity[]): string {
   return JSON.stringify([settings, identities]);
 }
-function assertRouted(settings: PickerOrderSettings): void {
-  if (settings.pickerOrder.some(id => !id.includes("/"))) {
-    throw new CliUsageError("Saved order includes native models. Run ocx models order reset before replacing it.");
-  }
-  if (settings.pickerAvailable.length === 0) throw new CliUsageError("No routed picker candidates are available.");
+function assertCandidates(settings: PickerOrderSettings): void {
+  if (settings.pickerAvailable.length === 0) throw new CliUsageError("No picker candidates are available.");
 }
 function manualOrder(csv: string, settings: PickerOrderSettings, identities: PickerModelIdentity[]): string[] {
   const tokens = csv.split(",").map(id => id.trim());
@@ -59,10 +58,10 @@ function manualOrder(csv: string, settings: PickerOrderSettings, identities: Pic
     return result[0]!;
   });
   if (new Set(order).size !== order.length || order.length !== settings.pickerAvailable.length) {
-    throw new CliUsageError("--models must contain every routed candidate exactly once", ORDER_USAGE);
+    throw new CliUsageError("--models must contain every available picker candidate exactly once", ORDER_USAGE);
   }
   if (!customPickerRows(settings, identities)) {
-    throw new CliUsageError("Model identities are incomplete or the saved order needs reset. Read status before trying again.");
+    throw new CliUsageError("Model identities are incomplete or ambiguous. Read status before trying again.");
   }
   return order;
 }
@@ -107,7 +106,7 @@ export async function handleModelsOrderCommand(argv: string[], deps: RuntimeApiD
       printData(settings, wantsJson, [
         `Saved mode: ${settings.pickerOrderMode ?? (settings.pickerOrder.length ? "custom" : "default")}`,
         `Saved order: ${settings.pickerOrder.join(", ") || "default"}`,
-        `Routed candidates: ${settings.pickerAvailable.join(", ") || "none"}`,
+        `Candidates: ${settings.pickerAvailable.join(", ") || "none"}`,
         `Featured: ${settings.chosen === undefined ? "unknown" : settings.chosen.join(", ") || "none"}`,
       ]);
       return 0;
@@ -116,7 +115,7 @@ export async function handleModelsOrderCommand(argv: string[], deps: RuntimeApiD
     let savedMode: string | null = null;
     if (sub !== "reset" && mode !== "default") {
       const settings = await readSettings(pinned);
-      assertRouted(settings);
+      assertCandidates(settings);
       const identities = await readIdentities(pinned);
       if (!pickerIdentityCoverage(settings.pickerAvailable, identities)) {
         throw new CliUsageError("Model identities are incomplete or ambiguous; picker order was not changed.");

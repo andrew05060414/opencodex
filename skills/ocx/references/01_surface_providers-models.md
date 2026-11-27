@@ -955,7 +955,7 @@ State-changing: yes. JSON mode: `envelope`.
 
 Usage: `ocx models order status [--json]`
 
-Read saved picker order, routed candidates and featured state.
+Read saved picker order, unified native and routed candidates, and featured state.
 
 State-changing: no. JSON mode: `envelope`.
 
@@ -967,13 +967,13 @@ State-changing: no. JSON mode: `envelope`.
 |---|---|---|
 | `--json` | boolean | Emit the validated command result as JSON. |
 
-- Preserves native IDs in saved order. pickerAvailable is routed-only; unknown featured state is not an empty successful roster.
+- Preserves native and routed IDs in saved order and pickerAvailable; unknown featured state is not an empty successful roster.
 
 ### `ocx models order set`
 
 Usage: `ocx models order set (--models <csv> | --mode <default|alphabetical|provider|most-used>) [--json]`
 
-Replace the routed picker order with an explicit list or sort mode.
+Replace the picker order with an explicit unified list or sort mode.
 
 State-changing: yes. JSON mode: `envelope`.
 
@@ -986,12 +986,12 @@ State-changing: yes. JSON mode: `envelope`.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--models` | string | Complete unique routed candidate permutation, preserving the exact featured prefix; exclusive with --mode. |
-| `--mode` | string | default clears; alphabetical, provider and most-used compute complete routed orders. |
+| `--models` | string | Complete unique permutation of all visible native and routed picker candidates; exclusive with --mode. |
+| `--mode` | string | default clears; alphabetical, provider and most-used compute complete unified orders. |
 | `--json` | boolean | Emit the validated command result as JSON. |
 
-- Manual/preset replacement refuses a native-inclusive saved order until explicit reset/default. It never edits the featured models/force fields.
-- Manual mode rechecks settings and identities before PUT and refuses observed drift; this is not server CAS. Raw/encoded ambiguities and missing identities refuse before writing.
+- Supports mixed native and routed orders directly without resetting first, and never edits featured models or force fields. Bare native IDs match pickerAvailable verbatim without alias guessing.
+- Manual mode rechecks settings and identities before PUT and refuses observed drift; this is not server CAS. Raw/encoded ambiguities and missing routed identities refuse before writing.
 - Most-used reads all/all usage, uses requested model identities and refuses incomplete evidence. Presets retain unranked candidates. A saved receipt does not prove client convergence.
 
 ### `ocx models order reset`
@@ -1010,4 +1010,4 @@ State-changing: yes. JSON mode: `envelope`.
 |---|---|---|
 | `--json` | boolean | Emit the validated command result as JSON. |
 
-- Sends only pickerOrder:null and pickerOrderMode:null. Explicitly clears native-inclusive order as well; does not change featured models or force selection.
+- Sends only pickerOrder:null and pickerOrderMode:null. Clears any routed or mixed native-inclusive order without changing featured models or force selection.

@@ -137,10 +137,10 @@ V1에는 OpenCodex의 선호 후보 목록을 주입하지 않습니다. V2는 �
 `disabledModels`와 각 공급자의 `selectedModels`는 노출 여부를 정하는 필드입니다.
 별도의 `modelOrder`, `providerOrder`, priority map 설정은 없습니다.
 
-## 대시보드 정렬 프리셋
+## 대시보드 정렬 프리셋 및 사용자 지정 혼합 정렬
 
-**Models**에서 기본값·모델 이름순·프로바이더별·사용량순 스냅샷을 선택한 뒤 **순서 적용**을 누르세요. 현재 표시 가능한 라우팅 ID와 `modelPickerOrderMode`(`alphabetical`, `provider`, `most-used`)를 저장합니다. 사용량순은 적용 시 보관된 전체 사용량을 한 번 읽습니다. 다시 열거나 모델이 추가·삭제되어도 자동 재계산하지 않습니다. 기존 사용자 지정·네이티브 전체 순서는 명시적으로 적용하기 전까지 유지됩니다. 기본값은 사용 가능한 모델이 없어도 두 피커 필드를 지웁니다.
+**Models**에서 기본값·모델 이름순·프로바이더별·사용량순 스냅샷을 적용하거나, **사용자 지정 순서**에서 표시되는 네이티브 모델과 라우팅 모델을 한 목록에서 끌어다 놓아 혼합 정렬한 뒤 저장할 수 있습니다. 현재 표시 가능한 네이티브 및 라우팅 ID 통합 목록으로 `modelPickerOrder`(프리셋은 `modelPickerOrderMode` 포함)를 저장합니다. 사용량순은 적용 시 보관된 전체 사용량을 한 번 읽으며 다시 열거나 모델이 증감해도 자동 재계산하지 않습니다. 기본값은 사용 가능한 모델이 없어도 두 피커 필드를 지웁니다.
 
-`GET/PUT /api/subagent-models`의 `chosen`·`available`은 비활성·누락된 저장 roster도 보존하고, `pickerAvailable`은 선택 가능한 라우팅 ID만 제공합니다. Models는 `pickerOrder`·`pickerOrderMode`만 보내며 `models`를 보내지 않습니다. Roster만 저장하면 피커 설정은 유지됩니다. 잘못된 요청이나 저장 실패는 이전 상태를 보존합니다.
+`GET/PUT /api/subagent-models`의 `chosen`·`available`은 비활성·누락된 저장 roster도 보존하고, `pickerAvailable`은 PUT이 허용하는 표시 가능한 네이티브 및 라우팅 ID 통합 목록을 제공합니다. Models는 `pickerOrder`·`pickerOrderMode`만 보내며 `models`를 보내지 않습니다. 네이티브 ID는 별칭 추측 없이 원문 그대로 일치시키며, 네이티브 ID가 포함된 저장 순서도 잠기지 않고 바로 재편집·왕복 저장할 수 있습니다.
 
-라우팅 전용 프리셋은 featured·네이티브 우선순위 구간을 유지하며 Codex 카탈로그와 Claude 검색 목록의 라우팅 그룹에 적용됩니다. Claude 네이티브 선두 그룹과 명시적 Desktop 프로필·alias 소유권은 유지됩니다. OpenCodex 가이드 순위와 fallback 설정은 유지되지만 네이티브 Codex에 표시되는 상위 5개·권장 기본 모델은 달라질 수 있습니다. 저장은 클라이언트를 재시작하지 않으며 카탈로그 갱신이 미완료이면 나중에 다시 열어야 할 수 있습니다.
+네이티브 ID가 포함된 순서는 Codex 카탈로그의 전체 표시 순서를 활성화합니다. Claude 검색 목록에서는 라우팅 그룹만 재정렬하며 네이티브 선두 그룹과 명시적 Desktop 프로필·alias 소유권은 유지됩니다. OpenCodex 가이드 순위, `spawn_agent` 재정의 및 fallback 설정은 별도로 유지됩니다. 저장은 클라이언트를 재시작하지 않으며 카탈로그 갱신이 미완료이면 나중에 다시 열어야 할 수 있습니다.

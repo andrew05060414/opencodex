@@ -6,7 +6,7 @@ export interface ModelPickerUsage {
   resolvedModel?: string;
   requests: number;
 }
-export interface PickerModelIdentity { provider: string; id: string; namespaced: string }
+export interface PickerModelIdentity { provider: string; id: string; namespaced: string; native?: boolean }
 export interface PickerOrderSaved {
   pickerOrder: string[];
   pickerOrderMode: SavedModelPickerOrderMode | null;
@@ -95,8 +95,6 @@ export function modelPickerOrderMode(
   models: readonly string[], saved: readonly string[], mode?: SavedModelPickerOrderMode | null,
 ): ModelPickerOrderMode {
   if (saved.length === 0) return "default";
-  // Existing complete/native orders are never silently replaced by a routed preset.
-  if (saved.some(id => !id.includes("/"))) return "custom";
   if (mode === "alphabetical" || mode === "provider" || mode === "most-used") return mode;
   const candidates = new Set(models);
   if (new Set(saved).size !== saved.length || saved.length !== candidates.size
@@ -110,12 +108,12 @@ export function modelPickerOrderMode(
 }
 
 
-/** Resolve exact canonical ids before legacy provider/raw spellings; never guess a bare native id. */
+/** Resolve exact canonical/native ids before legacy non-native provider/raw spellings; never alias-guess native rows. */
 export function normalizePickerIds(ids: readonly string[], available: readonly string[], identities: readonly PickerModelIdentity[]): string[] {
-  const candidates = new Set(available.filter(id => id.includes("/")));
+  const candidates = new Set(available);
   const resolve = (id: string): string | undefined => {
     if (candidates.has(id)) return id;
-    const matches = new Set(identities.filter(row => candidates.has(row.namespaced)
+    const matches = new Set(identities.filter(row => row.native !== true && candidates.has(row.namespaced)
       && id === `${row.provider}/${row.id}`).map(row => row.namespaced));
     return matches.size === 1 ? [...matches][0] : undefined;
   };
@@ -127,12 +125,19 @@ export function pickerSnapshotSignature(apiBase: string, generation: number, set
     settings.pickerOrder, settings.pickerOrderMode]);
 }
 
-/** Every candidate needs one observed provider/raw identity, with no encoded/raw collisions. */
+/** Every candidate needs an unambiguous identity: either native or a 1:1 non-native provider/raw mapping. */
 export function pickerIdentityCoverage(available: readonly string[], identities: readonly PickerModelIdentity[]): boolean {
-  const candidates = new Set(available.filter(id => id.includes("/")));
+  const candidates = new Set(available);
+  const nativeCandidates = new Set<string>();
+  const routedCandidates = new Set<string>();
   const rawBySlug = new Map<string, Set<string>>(), slugsByRaw = new Map<string, Set<string>>();
   for (const row of identities) {
     if (!candidates.has(row.namespaced)) continue;
+    if (row.native === true) {
+      nativeCandidates.add(row.namespaced);
+      continue;
+    }
+    routedCandidates.add(row.namespaced);
     const raw = `${row.provider}/${row.id}`;
     const raws = rawBySlug.get(row.namespaced) ?? new Set<string>();
     const slugs = slugsByRaw.get(raw) ?? new Set<string>();
@@ -140,15 +145,17 @@ export function pickerIdentityCoverage(available: readonly string[], identities:
     rawBySlug.set(row.namespaced, raws); slugsByRaw.set(raw, slugs);
   }
   return [...candidates].every(slug => {
+    const isNative = nativeCandidates.has(slug);
+    const isRouted = routedCandidates.has(slug);
+    if (isNative && isRouted) return false;
+    if (isNative) return true;
     const raws = rawBySlug.get(slug);
     return raws?.size === 1 && slugsByRaw.get([...raws][0]!)?.size === 1;
   });
 }
 
 export function customPickerRows(settings: PickerOrderSettings, identities: readonly PickerModelIdentity[]): { order: string[]; fixed: string[] } | null {
-  // Complete/native orders cannot safely become routed-only drafts.
-  if (settings.pickerOrder.some(id => !id.includes("/"))) return null;
-  const available = [...new Set(settings.pickerAvailable.filter(id => id.includes("/")))];
+  const available = [...new Set(settings.pickerAvailable)];
   if (!pickerIdentityCoverage(available, identities)) return null;
   // PX-1276: featured subagent picks are ordinary rows — the saved order alone
   // decides display order, so nothing is pinned ahead of it anymore.
