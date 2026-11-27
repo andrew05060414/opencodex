@@ -10,6 +10,8 @@ export const CLIENT_LABELS = {
   grok: "Grok",
   opencode: "OpenCode",
   aside: "Aside",
+  antigravity: "Antigravity",
+  agy: "Antigravity CLI (agy)",
   other: "logsV2.clientOther",
   unknown: "logsV2.clientUnknown",
 } as const satisfies Record<UsageClient, string>;

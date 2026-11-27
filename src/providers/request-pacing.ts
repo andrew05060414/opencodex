@@ -43,6 +43,14 @@ export function registerProviderResponseProvenance(markers: WeakMap<Response, un
   responseProvenance.add(markers);
 }
 
+/** Carry registered WeakMap markers across Response body wrappers (e.g., quota-peek rebuilds). */
+export function carryProviderResponseProvenance(source: Response, target: Response): Response {
+  for (const markers of responseProvenance) {
+    if (markers.has(source)) markers.set(target, markers.get(source));
+  }
+  return target;
+}
+
 export type RequestPacingQueueOverloadReason = "queue_full" | "queue_expired" | "keys_exhausted";
 
 export class RequestPacingQueueOverloadError extends Error {

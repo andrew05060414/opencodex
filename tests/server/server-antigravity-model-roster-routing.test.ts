@@ -16,7 +16,7 @@ import { createOAuthRefreshIntentLock, getAccountSet, saveCredential, setAccount
 import { resetAntigravityRateLimitPolicy } from "../../src/oauth/antigravity-rate-limit-policy";
 import { classifyModelFamilyForQuota } from "../../src/oauth/account-quota-rank";
 import { clearPoolRotationState } from "../../src/oauth/pool-kernel";
-import { antigravityAccountModelSupport, antigravityAccountSupportsModel, clearAntigravityAccountRosters, recordAntigravityAccountRoster } from "../../src/providers/antigravity-account-roster";
+import { antigravityAccountSupportSummary, antigravityAccountSupportsModel, clearAntigravityAccountRosters, recordAntigravityAccountRoster } from "../../src/providers/antigravity-account-roster";
 import { handleResponses } from "../../src/server/responses";
 import type { OcxConfig } from "../../src/types";
 import { installIsolatedCodexHome, type IsolatedCodexHome } from "../helpers/isolated-codex-home";
@@ -248,7 +248,7 @@ test("Google's bare model 404 rotates to a sibling and is remembered only after 
   expect(sends).toEqual([bearer(0), bearer(1)]);
   expect(antigravityAccountSupportsModel(provider, ids[0]!, model)).toBe(false);
   expect(antigravityAccountSupportsModel(provider, ids[1]!, model)).toBeUndefined();
-  const support = antigravityAccountModelSupport(provider, ids[0]!);
+  const support = antigravityAccountSupportSummary(provider, ids[0]!);
   expect(support.deniedModels.map(d => d.model)).toEqual([model]);
   expect(support.deniedModels[0]!.expiresAt - support.deniedModels[0]!.deniedAt).toBe(6 * 60 * 60 * 1000);
   // The next request skips the account that lacks the model.

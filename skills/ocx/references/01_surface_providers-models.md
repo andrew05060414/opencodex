@@ -667,7 +667,7 @@ State-changing: yes. JSON mode: `payload`.
 | `--native` | boolean | Read the ChatGPT/Codex roster now for new native GPT models instead of a routed provider. |
 | `--json` | boolean | Emit discovery status, newArrivals and recentArrivals. |
 
-- Clears the provider's model cache and runs catalog convergence; new models follow the configured new-model policy. Providers with liveModels off report applicable:false.
+- Refreshes one provider's model list. New models follow the configured new-model policy. If discovery is already running for that provider, the route returns HTTP 409 (`discovery_in_progress`). During cooldown it returns the recorded failure. Providers with liveModels off report applicable:false.
 - --native runs the authenticated roster read the hourly catalog auto-refresh runs, records unpinned GPT models, and converges the catalog; running Codex sessions need a restart to see them.
 
 ### `ocx models context status`

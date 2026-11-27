@@ -232,6 +232,7 @@ const rows = {
     "Claude Code'un ocx-* ajan türleri ve Codex {cmd} adayları \"Seçicide sabitlenenler\" listesinden gelir:",
     "Các loại tác tử ocx-* của Claude Code và ứng viên {cmd} của Codex lấy từ \"Ghim trong bộ chọn\":",
     "Os tipos de agente ocx-* do Claude Code e os candidatos de {cmd} do Codex vêm de \"Fixados no seletor\":",
+    "Los tipos de agente ocx-* de Claude Code y los candidatos de {cmd} de Codex provienen de «Fijados en el selector»:",
   ],
   pinnedNone: [
     "nothing pinned yet",
@@ -245,6 +246,7 @@ const rows = {
     "henüz sabitlenen yok",
     "chưa ghim mô hình nào",
     "nada fixado ainda",
+    "nada fijado todavía",
   ],
   pinnedEdit: [
     "Edit on Models",
@@ -258,6 +260,7 @@ const rows = {
     "Modeller'de düzenle",
     "Sửa trong Models",
     "Editar em Modelos",
+    "Editar en Modelos",
   ],
 } satisfies Record<string, Row>;
 

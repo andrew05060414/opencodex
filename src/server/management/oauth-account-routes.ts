@@ -566,7 +566,7 @@ export async function handleOauthAccountRoutes(ctx: ManagementContext): Promise<
       && (isAnthropicOAuthInstance(provider) && effectiveProvider.authMode === "oauth"
         || isGenericFailoverProvider(provider, effectiveProvider));
     const antigravityModelSupport = provider === "google-antigravity"
-      ? (await import("../../providers/antigravity-account-roster")).antigravityAccountModelSupport : undefined;
+      ? (await import("../../providers/antigravity-account-roster")).antigravityAccountSupportSummary : undefined;
     const {
       oauthAccountHealthFields,
       projectOAuthAccountHealth,

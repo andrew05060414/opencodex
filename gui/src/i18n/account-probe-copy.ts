@@ -79,6 +79,6 @@ const tables: Record<Locale, Record<AccountProbeCopyKey, string>> = Object.fromE
   ]),
 ) as Record<Locale, Record<AccountProbeCopyKey, string>>;
 
-export function accountProbeDict(locale: Locale): Record<AccountProbeCopyKey, string> {
+export function accountProbeCopy(locale: Locale): Record<AccountProbeCopyKey, string> {
   return tables[locale];
 }

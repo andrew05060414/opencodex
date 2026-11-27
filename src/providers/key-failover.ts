@@ -16,7 +16,7 @@ export {
 } from "./api-key-cooldowns";
 import { affinitySelectionIsCurrent, commitProviderApiKeySelection, providerApiKeySelectionIsCurrent } from "./api-key-selection";
 import { currentCacheAffinityIdentity } from "./cache-affinity-identity";
-import { providerRequestPacingStatus, REQUEST_PACING_MAX_QUEUE_AGE_MS, RequestPacingQueueOverloadError } from "./request-pacing";
+import { carryProviderResponseProvenance, providerRequestPacingStatus, REQUEST_PACING_MAX_QUEUE_AGE_MS, RequestPacingQueueOverloadError } from "./request-pacing";
 import { isCanonicalOpenAiForwardProvider } from "./openai-tiers-destination";
 import { isCanonicalMistralChat } from "./mistral-transport";
 import type { ProviderApiKeySelection } from "../types/provider";
@@ -81,11 +81,11 @@ interface QuotaResetReadOptions {
 }
 
 function rebuiltResponse(response: Response, body: ReadableStream<Uint8Array>): Response {
-  return new Response(body, {
+  return carryProviderResponseProvenance(response, new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
-  });
+  }));
 }
 
 function replayOnlyResponse(response: Response, chunks: readonly Uint8Array[]): Response {

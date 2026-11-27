@@ -199,7 +199,7 @@ export interface AntigravityAccountModelSupport {
 }
 
 /** One account's known model support: its fresh roster plus unexpired denials. Data only, no secrets. */
-export function antigravityAccountModelSupport(providerName: string, accountId: string, now = Date.now()): AntigravityAccountModelSupport {
+export function antigravityAccountSupportSummary(providerName: string, accountId: string, now = Date.now()): AntigravityAccountModelSupport {
   const key = rosterKey(providerName, accountId);
   const generation = accountGeneration(providerName, accountId);
   const roster = freshRoster(providerName, accountId, now);
