@@ -10,7 +10,7 @@ const form: ProviderPayloadForm = {
 test("ADC retains Vertex mode after renaming and never sends the hidden API key", () => {
   const body = buildProviderPostBody({ id: "google-vertex" }, form);
   expect(body.name).toBe("my-vertex");
-  expect(body.provider).toMatchObject({ googleMode: "vertex", project: "my-project", location: "global" });
+  expect(body.provider).toMatchObject({ googleMode: "vertex", project: "my-project", location: "global", keyOptional: true });
   expect(body.provider.apiKey).toBeUndefined();
   expect(body.provider).not.toHaveProperty("vertexAdc");
 });

@@ -83,6 +83,7 @@ export interface ProviderPayload {
   baseUrl: string;
   responsesPath?: string;
   apiKey?: string;
+  keyOptional?: boolean;
   apiKeyTransport?: "x-api-key" | "bearer";
   defaultModel?: string;
   authMode?: "key" | "forward" | "oauth";
@@ -108,7 +109,9 @@ export function buildProviderPayload(form: ProviderPayloadForm): ProviderPayload
   if (form.authMode === "key" || form.authMode === "forward") {
     provider.authMode = form.authMode;
   }
-  if (form.authMode === "key" && !(provider.googleMode === "vertex" && form.vertexAdc) && form.apiKey.trim()) {
+  if (provider.googleMode === "vertex" && form.vertexAdc) {
+    provider.keyOptional = true;
+  } else if (form.authMode === "key" && form.apiKey.trim()) {
     provider.apiKey = form.apiKey.trim();
   }
   if (form.adapter.trim() === "anthropic" && form.authMode === "key" && form.apiKeyTransport === "bearer") {
