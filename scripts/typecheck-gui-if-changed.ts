@@ -26,6 +26,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
+import { wrapWithBuildSlot } from "./lib/build-slot";
 
 /** True when any changed path is the gui directory or inside it (slash-guarded). */
 function guiPathsChanged(files: string[]): boolean {
@@ -85,14 +86,18 @@ if (import.meta.main) {
 
   console.log("typecheck:gui: gui/ changed — running tsc -b (trigger=gui-changed, scope=gui project)");
   const override = process.env.TYPECHECK_CMD;
-  const [cmd, ...args]: string[] = override
+  const [rawCmd, ...rawArgs]: string[] = override
     ? (override.trimStart().startsWith("[") ? JSON.parse(override) as string[] : override.split(" "))
     : [process.execPath, "x", "tsc", "-b"];
+  const inv = override
+    ? { command: rawCmd!, args: rawArgs }
+    : wrapWithBuildSlot("compile", rawCmd!, rawArgs);
 
-  const result = spawnSync(cmd!, args, {
+  const result = spawnSync(inv.command, inv.args, {
     cwd: guiDir,
     encoding: "utf8",
     stdio: "inherit",
+    windowsHide: true,
   });
 
   // The compiler is local and deterministic: a compile error fails the push,
