@@ -1326,7 +1326,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         }, { requestId, start, logCtx });
       }
 
-      // Public OpenAI Videos routes (#9110): images-endpoint admission; only the paid create takes a turn slot.
+      // Public OpenAI Videos routes (#9110): images-endpoint admission; every upstream call takes a turn slot.
       const videoRoute = url.pathname.startsWith("/v1/videos") ? matchVideoRoute(req.method, url.pathname) : undefined;
       if (videoRoute) {
         // A create keeps the listener timeout until its body is read, so a stalled upload cannot hold its slots.
@@ -1341,17 +1341,17 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const requestId = nextRequestLogId(start);
         const logCtx: RequestLogContext = {
           model: "video", provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(admission),
         };
-        const run = async (lease?: import("../../lib/admission").AdmissionLease): Promise<Response> => {
+        const run = async (lease: import("../../lib/admission").AdmissionLease): Promise<Response> => {
           const response = await handleVideos(req, url, config, videoRoute, logCtx, admission, {
-            ...(lease ? { lease } : {}), onRequestBodyRead: () => disableResponsesRequestTimeout(req, requestServer),
+            lease, onRequestBodyRead: () => disableResponsesRequestTimeout(req, requestServer),
           });
           addFinalRequestLog(requestId, start, logCtx, response.status, response.status === 499 ? { closeReason: "client_cancel" } : undefined);
           return withCors(response, req, policy);
         };
-        return videoRoute.kind === "create" ? runAdmittedHttpTurn(req, policy, lease => run(lease), { requestId, start, logCtx }) : run();
+        return runAdmittedHttpTurn(req, policy, run, { requestId, start, logCtx }, { existingJobRead: videoRoute.kind !== "create" });
       }
 
       if (req.method === "GET" && url.pathname.startsWith("/v1/opencodex/artifacts/")) {
@@ -1652,7 +1652,7 @@ export function createServeOptions(ctx: ServeOptionsContext) {
         const logCtx: RequestLogContext = {
           model: "gpt-live",
           provider: "unknown",
-          ...requestMetricsLogContext, client: classifyUsageClient(req.headers),
+          ...requestMetricsLogContext, ...usageClientLogContext(req.headers),
           ...admissionFields(audioClient.admission),
         };
         return runAdmittedHttpTurn(req, policy, async turnAdmissionLease => {
